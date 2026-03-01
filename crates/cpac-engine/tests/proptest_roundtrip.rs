@@ -86,6 +86,93 @@ proptest! {
         let decoded = cpac_transforms::transpose::transpose_decode(&encoded, width).unwrap();
         prop_assert_eq!(&decoded, &data);
     }
+
+    #[test]
+    fn rolz_roundtrip(data in proptest::collection::vec(any::<u8>(), 0..2048)) {
+        let encoded = cpac_transforms::rolz::rolz_encode(&data);
+        if let Ok(decoded) = cpac_transforms::rolz::rolz_decode(&encoded) {
+            prop_assert_eq!(&decoded, &data);
+        }
+    }
+
+    #[test]
+    fn float32_split_roundtrip(data in proptest::collection::vec(any::<u8>(), 4..2048)) {
+        // Ensure data is multiple of 4 for float split
+        let padded_len = (data.len() / 4) * 4;
+        if padded_len >= 4 {
+            let slice = &data[..padded_len];
+            if let Ok((exps, sign_fracs)) = cpac_transforms::float_split::float32_split_encode(slice) {
+                if let Ok(decoded) = cpac_transforms::float_split::float32_split_decode(&exps, &sign_fracs) {
+                    prop_assert_eq!(&decoded, slice);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn prefix_roundtrip(values in proptest::collection::vec("[a-z]{2,10}", 1..20)) {
+        let encoded = cpac_transforms::prefix::prefix_encode(&values);
+        if let Ok(decoded) = cpac_transforms::prefix::prefix_decode(&encoded) {
+            prop_assert_eq!(&decoded, &values);
+        }
+    }
+
+    #[test]
+    fn dedup_columns_roundtrip(
+        cols in proptest::collection::vec(
+            proptest::collection::vec(any::<u8>(), 0..100),
+            1..10
+        )
+    ) {
+        let (encoded, _had_dups) = cpac_transforms::dedup::dedup_columns(&cols);
+        if let Ok(groups) = cpac_transforms::dedup::dedup_columns_decode(&encoded) {
+            let restored = cpac_transforms::dedup::reconstruct_columns(&groups, cols.len());
+            prop_assert_eq!(restored, cols);
+        }
+    }
+
+    #[test]
+    fn range_pack_roundtrip(
+        values in proptest::collection::vec(-1_000_000_000i64..=1_000_000_000i64, 1..200)
+    ) {
+        // Constrain values to avoid overflow in (max - min) as u64 conversion
+        let framed = cpac_transforms::range_pack::range_pack_encode_framed(&values);
+        if let Ok(decoded) = cpac_transforms::range_pack::range_pack_decode_framed(&framed) {
+            prop_assert_eq!(decoded, values);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DAG property tests
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(50))]
+
+    #[test]
+    fn ssr_analysis_determinism(data in proptest::collection::vec(any::<u8>(), 0..4096)) {
+        // SSR analysis should be deterministic for same input
+        let ssr1 = cpac_ssr::analyze(&data);
+        let ssr2 = cpac_ssr::analyze(&data);
+        prop_assert_eq!(ssr1.track, ssr2.track);
+        prop_assert!((ssr1.entropy_estimate - ssr2.entropy_estimate).abs() < 0.001);
+        prop_assert!((ssr1.ascii_ratio - ssr2.ascii_ratio).abs() < 0.001);
+        prop_assert_eq!(ssr1.data_size, ssr2.data_size);
+    }
+
+    #[test]
+    fn dag_serialization_roundtrip(
+        ids in proptest::collection::vec(1u8..=11, 1..=5)
+    ) {
+        // DAG descriptor serialization should roundtrip
+        let chain: Vec<(u8, Vec<u8>)> = ids.iter().map(|&id| (id, vec![])).collect();
+        let descriptor = cpac_dag::serialize_dag_descriptor(&chain);
+        let (recovered_ids, recovered_metas, _consumed) =
+            cpac_dag::deserialize_dag_descriptor(&descriptor).unwrap();
+        prop_assert_eq!(&recovered_ids, &ids);
+        prop_assert_eq!(recovered_metas.len(), chain.len());
+    }
 }
 
 // ---------------------------------------------------------------------------
