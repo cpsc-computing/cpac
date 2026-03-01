@@ -53,4 +53,6 @@ Final state: 13 crates, ~220+ tests, 3 Criterion bench suites, clippy clean, fmt
 - Phase 1.3 completed: Added 5 compression ratio gate tests (JSON, XML, log, binary, random)
 - Phase 2.1 & 2.2 completed: Quick/balanced/full benchmark modes with baseline comparisons
 - Phase 1.5 completed: Expanded property tests to 16 (was 9), added ROLZ, float32_split, prefix, dedup, range_pack, SSR determinism, DAG serialization
-- All tests passing: 19 regression tests, 16 property tests, 220+ total tests
+- Phase 1.1 completed: Golden vector test suite with 13 .cpac fixtures covering backends, edge cases, and data patterns (15 validation tests)
+- Phase 1.6 completed: Enhanced all 5 fuzz harnesses (roundtrip, frame_decode, transform_decode, archive_decode, cas_roundtrip)
+- All tests passing: 19 regression + 16 property + 15 golden vector = 50 core tests, 250+ total including unit tests
