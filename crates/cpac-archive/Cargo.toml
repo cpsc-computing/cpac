@@ -1,0 +1,13 @@
+[package]
+name = "cpac-archive"
+description = "CPAC multi-file archive format (.cpar)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpac-types = { workspace = true }
+cpac-engine = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,24 @@
+[package]
+name = "cpac-cli"
+description = "CPAC command-line interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cpac"
+path = "src/main.rs"
+
+[dependencies]
+cpac-engine = { workspace = true }
+cpac-types = { workspace = true }
+cpac-ssr = { workspace = true }
+cpac-dag = { workspace = true }
+cpac-crypto = { workspace = true, features = ["pqc"] }
+cpac-streaming = { workspace = true }
+cpac-cas = { workspace = true }
+cpac-archive = { workspace = true }
+clap = { workspace = true }
+clap_complete = { workspace = true }
+toml = { workspace = true }
+serde = { workspace = true }

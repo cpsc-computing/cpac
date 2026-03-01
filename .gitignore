@@ -1,0 +1,40 @@
+# Build artifacts
+/target/
+fuzz/target/
+
+# Rust backup files
+**/*.rs.bk
+
+# Dependency lock (library — consumers pin their own)
+Cargo.lock
+
+# Working directories
+.work/
+
+# CPAC output files
+*.cpac
+*.cpar
+*.cpac-enc
+*.cpac-pqe
+*.cpac-sig
+*.cpac-pub
+*.cpac-sec
+
+# Criterion benchmark output
+target/criterion/
+
+# PGO profiles
+*.profraw
+*.profdata
+pgo-data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

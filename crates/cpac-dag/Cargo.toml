@@ -1,0 +1,15 @@
+[package]
+name = "cpac-dag"
+description = "DAG-based transform composition and profile system for CPAC"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpac-types = { workspace = true }
+cpac-transforms = { workspace = true }
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

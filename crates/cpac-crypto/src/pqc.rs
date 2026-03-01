@@ -1,0 +1,233 @@
+// Copyright (c) 2026 BitConcepts, LLC
+// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+//! Post-Quantum Cryptography — ML-KEM (FIPS 203) + ML-DSA (FIPS 204).
+//!
+//! Uses pure-Rust RustCrypto implementations. Feature-gated behind `pqc`.
+//!
+//! - ML-KEM-768: key encapsulation (quantum-safe key exchange)
+//! - ML-DSA-65: digital signatures (quantum-safe authentication)
+//! - SLH-DSA: deferred (signature crate version conflict with ml-dsa)
+
+use cpac_types::{CpacError, CpacResult};
+
+/// Supported post-quantum algorithms.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PqcAlgorithm {
+    /// ML-KEM-768 (FIPS 203) — key encapsulation.
+    MlKem768,
+    /// ML-DSA-65 (FIPS 204) — digital signatures.
+    MlDsa65,
+    /// SLH-DSA-SHA2-128s (FIPS 205) — hash-based signatures (deferred).
+    SlhDsaSha2128s,
+}
+
+/// A PQC key pair (serialized byte blobs).
+#[derive(Clone, Debug)]
+pub struct PqcKeyPair {
+    pub algorithm: PqcAlgorithm,
+    pub public_key: Vec<u8>,
+    pub secret_key: Vec<u8>,
+}
+
+/// Generate a PQC key pair.
+pub fn pqc_keygen(algo: PqcAlgorithm) -> CpacResult<PqcKeyPair> {
+    match algo {
+        PqcAlgorithm::MlKem768 => keygen_mlkem768(),
+        PqcAlgorithm::MlDsa65 => keygen_mldsa65(),
+        PqcAlgorithm::SlhDsaSha2128s => Err(CpacError::Encryption(
+            "SLH-DSA not yet available (signature crate version conflict)".into(),
+        )),
+    }
+}
+
+/// PQC key encapsulation (ML-KEM).
+///
+/// Returns `(ciphertext, shared_secret)`.
+pub fn pqc_encapsulate(public_key: &[u8], algo: PqcAlgorithm) -> CpacResult<(Vec<u8>, Vec<u8>)> {
+    match algo {
+        PqcAlgorithm::MlKem768 => encapsulate_mlkem768(public_key),
+        _ => Err(CpacError::Encryption(format!(
+            "{algo:?} does not support encapsulation"
+        ))),
+    }
+}
+
+/// PQC key decapsulation (ML-KEM).
+pub fn pqc_decapsulate(
+    ciphertext: &[u8],
+    secret_key: &[u8],
+    algo: PqcAlgorithm,
+) -> CpacResult<Vec<u8>> {
+    match algo {
+        PqcAlgorithm::MlKem768 => decapsulate_mlkem768(ciphertext, secret_key),
+        _ => Err(CpacError::Encryption(format!(
+            "{algo:?} does not support decapsulation"
+        ))),
+    }
+}
+
+/// PQC digital signature.
+pub fn pqc_sign(message: &[u8], secret_key: &[u8], algo: PqcAlgorithm) -> CpacResult<Vec<u8>> {
+    match algo {
+        PqcAlgorithm::MlDsa65 => sign_mldsa65(message, secret_key),
+        PqcAlgorithm::SlhDsaSha2128s => {
+            Err(CpacError::Encryption("SLH-DSA not yet available".into()))
+        }
+        _ => Err(CpacError::Encryption(format!(
+            "{algo:?} does not support signing"
+        ))),
+    }
+}
+
+/// PQC signature verification.
+pub fn pqc_verify(
+    message: &[u8],
+    signature: &[u8],
+    public_key: &[u8],
+    algo: PqcAlgorithm,
+) -> CpacResult<bool> {
+    match algo {
+        PqcAlgorithm::MlDsa65 => verify_mldsa65(message, signature, public_key),
+        PqcAlgorithm::SlhDsaSha2128s => {
+            Err(CpacError::Encryption("SLH-DSA not yet available".into()))
+        }
+        _ => Err(CpacError::Encryption(format!(
+            "{algo:?} does not support verification"
+        ))),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ML-KEM-768 implementation (FIPS 203)
+// ---------------------------------------------------------------------------
+
+fn keygen_mlkem768() -> CpacResult<PqcKeyPair> {
+    use ml_kem::{EncodedSizeUser, KemCore, MlKem768};
+    let mut rng = rand::thread_rng();
+    let (dk, ek) = MlKem768::generate(&mut rng);
+    Ok(PqcKeyPair {
+        algorithm: PqcAlgorithm::MlKem768,
+        public_key: ek.as_bytes().as_slice().to_vec(),
+        secret_key: dk.as_bytes().as_slice().to_vec(),
+    })
+}
+
+fn encapsulate_mlkem768(public_key: &[u8]) -> CpacResult<(Vec<u8>, Vec<u8>)> {
+    use ml_kem::{
+        kem::{Encapsulate, EncapsulationKey},
+        Encoded, EncodedSizeUser, MlKem768Params,
+    };
+    type Ek = EncapsulationKey<MlKem768Params>;
+    let ek_arr: Encoded<Ek> = public_key
+        .try_into()
+        .map_err(|_| CpacError::Encryption("invalid ML-KEM-768 public key length".into()))?;
+    let ek = Ek::from_bytes(&ek_arr);
+    let mut rng = rand::thread_rng();
+    let (ct, ss) = ek
+        .encapsulate(&mut rng)
+        .map_err(|_| CpacError::Encryption("ML-KEM-768 encapsulation failed".into()))?;
+    Ok((ct.as_slice().to_vec(), ss.as_slice().to_vec()))
+}
+
+fn decapsulate_mlkem768(ciphertext: &[u8], secret_key: &[u8]) -> CpacResult<Vec<u8>> {
+    use ml_kem::{
+        kem::{Decapsulate, DecapsulationKey},
+        Ciphertext, Encoded, EncodedSizeUser, MlKem768, MlKem768Params,
+    };
+    type Dk = DecapsulationKey<MlKem768Params>;
+    let dk_arr: Encoded<Dk> = secret_key
+        .try_into()
+        .map_err(|_| CpacError::Encryption("invalid ML-KEM-768 secret key length".into()))?;
+    let dk = Dk::from_bytes(&dk_arr);
+    let ct: Ciphertext<MlKem768> = ciphertext
+        .try_into()
+        .map_err(|_| CpacError::Encryption("invalid ML-KEM-768 ciphertext length".into()))?;
+    let ss = dk
+        .decapsulate(&ct)
+        .map_err(|_| CpacError::Encryption("ML-KEM-768 decapsulation failed".into()))?;
+    Ok(ss.as_slice().to_vec())
+}
+
+// ---------------------------------------------------------------------------
+// ML-DSA-65 implementation (FIPS 204)
+// ---------------------------------------------------------------------------
+
+fn keygen_mldsa65() -> CpacResult<PqcKeyPair> {
+    use ml_dsa::{KeyGen, MlDsa65};
+    let mut rng = rand::thread_rng();
+    let kp = MlDsa65::key_gen(&mut rng);
+    Ok(PqcKeyPair {
+        algorithm: PqcAlgorithm::MlDsa65,
+        public_key: kp.verifying_key().encode().as_slice().to_vec(),
+        secret_key: kp.signing_key().encode().as_slice().to_vec(),
+    })
+}
+
+fn sign_mldsa65(message: &[u8], secret_key: &[u8]) -> CpacResult<Vec<u8>> {
+    use ml_dsa::{EncodedSigningKey, MlDsa65, SigningKey};
+    let sk_arr: EncodedSigningKey<MlDsa65> = secret_key
+        .try_into()
+        .map_err(|_| CpacError::Encryption("invalid ML-DSA-65 signing key length".into()))?;
+    let sk = SigningKey::<MlDsa65>::decode(&sk_arr);
+    let sig = sk
+        .sign_deterministic(message, &[])
+        .map_err(|e| CpacError::Encryption(format!("ML-DSA-65 signing failed: {e}")))?;
+    Ok(sig.encode().as_slice().to_vec())
+}
+
+fn verify_mldsa65(message: &[u8], sig_bytes: &[u8], public_key: &[u8]) -> CpacResult<bool> {
+    use ml_dsa::{EncodedVerifyingKey, MlDsa65, Signature, VerifyingKey};
+    let vk_arr: EncodedVerifyingKey<MlDsa65> = public_key
+        .try_into()
+        .map_err(|_| CpacError::Encryption("invalid ML-DSA-65 verifying key length".into()))?;
+    let vk = VerifyingKey::<MlDsa65>::decode(&vk_arr);
+    let sig = Signature::<MlDsa65>::try_from(sig_bytes)
+        .map_err(|e| CpacError::Encryption(format!("invalid ML-DSA-65 signature: {e}")))?;
+    Ok(vk.verify_with_context(message, &[], &sig))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mlkem768_keygen_encap_decap_roundtrip() {
+        let kp = pqc_keygen(PqcAlgorithm::MlKem768).unwrap();
+        assert!(!kp.public_key.is_empty());
+        assert!(!kp.secret_key.is_empty());
+
+        let (ct, ss_sender) = pqc_encapsulate(&kp.public_key, PqcAlgorithm::MlKem768).unwrap();
+        let ss_receiver = pqc_decapsulate(&ct, &kp.secret_key, PqcAlgorithm::MlKem768).unwrap();
+        assert_eq!(ss_sender, ss_receiver, "shared secrets must match");
+        assert_eq!(ss_sender.len(), 32, "shared secret should be 32 bytes");
+    }
+
+    #[test]
+    fn mldsa65_keygen_sign_verify_roundtrip() {
+        let kp = pqc_keygen(PqcAlgorithm::MlDsa65).unwrap();
+        let message = b"CPAC post-quantum signature test";
+        let sig = pqc_sign(message, &kp.secret_key, PqcAlgorithm::MlDsa65).unwrap();
+        assert!(!sig.is_empty());
+        let valid = pqc_verify(message, &sig, &kp.public_key, PqcAlgorithm::MlDsa65).unwrap();
+        assert!(valid, "signature must verify");
+    }
+
+    #[test]
+    fn mldsa65_wrong_message_fails() {
+        let kp = pqc_keygen(PqcAlgorithm::MlDsa65).unwrap();
+        let sig = pqc_sign(b"original", &kp.secret_key, PqcAlgorithm::MlDsa65).unwrap();
+        let valid = pqc_verify(b"tampered", &sig, &kp.public_key, PqcAlgorithm::MlDsa65).unwrap();
+        assert!(!valid, "tampered message must not verify");
+    }
+
+    #[test]
+    fn slh_dsa_returns_error() {
+        assert!(pqc_keygen(PqcAlgorithm::SlhDsaSha2128s).is_err());
+        assert!(pqc_sign(b"msg", b"sk", PqcAlgorithm::SlhDsaSha2128s).is_err());
+    }
+
+    #[test]
+    fn kem_on_signature_algo_returns_error() {
+        assert!(pqc_encapsulate(b"pk", PqcAlgorithm::MlDsa65).is_err());
+    }
+}

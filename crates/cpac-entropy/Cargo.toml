@@ -1,0 +1,11 @@
+[package]
+name = "cpac-entropy"
+description = "Entropy coding backends for the CPAC engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpac-types = { workspace = true }
+zstd = { workspace = true }
+brotli = { workspace = true }

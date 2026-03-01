@@ -1,0 +1,9 @@
+[package]
+name = "cpac-frame"
+description = "CPAC wire format: frame encode/decode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpac-types = { workspace = true }

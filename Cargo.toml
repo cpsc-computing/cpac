@@ -1,0 +1,60 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cpac-types",
+    "crates/cpac-ssr",
+    "crates/cpac-transforms",
+    "crates/cpac-dag",
+    "crates/cpac-entropy",
+    "crates/cpac-frame",
+    "crates/cpac-engine",
+    "crates/cpac-cli", "crates/cpac-crypto", "crates/cpac-streaming", "crates/cpac-domains", "crates/cpac-cas", "crates/cpac-archive",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "LicenseRef-CPAC-Research-Evaluation-1.0"
+repository = "https://github.com/BitConcepts/cpac-engine-python"
+authors = ["BitConcepts, LLC"]
+
+[workspace.dependencies]
+# Shared across crates
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rmp-serde = "1"
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+zstd = "0.13"
+brotli = "7"
+criterion = { version = "0.5", features = ["html_reports"] }
+toml = "0.8"
+rayon = "1.10"
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+flate2 = "1"
+lzma-rs = "0.3"
+
+# Internal crates
+cpac-types = { path = "crates/cpac-types" }
+cpac-ssr = { path = "crates/cpac-ssr" }
+cpac-transforms = { path = "crates/cpac-transforms" }
+cpac-dag = { path = "crates/cpac-dag" }
+cpac-entropy = { path = "crates/cpac-entropy" }
+cpac-frame = { path = "crates/cpac-frame" }
+cpac-engine = { path = "crates/cpac-engine" }
+cpac-crypto = { path = "crates/cpac-crypto" }
+cpac-streaming = { path = "crates/cpac-streaming" }
+cpac-cas = { path = "crates/cpac-cas" }
+cpac-archive = { path = "crates/cpac-archive" }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[profile.release-small]
+inherits = "release"
+opt-level = "z"
+strip = "symbols"

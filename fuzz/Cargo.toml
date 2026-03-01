@@ -1,0 +1,46 @@
+[package]
+name = "cpac-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+cpac-engine = { path = "../crates/cpac-engine" }
+cpac-frame = { path = "../crates/cpac-frame" }
+cpac-transforms = { path = "../crates/cpac-transforms" }
+cpac-types = { path = "../crates/cpac-types" }
+cpac-cas = { path = "../crates/cpac-cas" }
+cpac-archive = { path = "../crates/cpac-archive" }
+
+# Prevent this from interfering with workspace builds.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_roundtrip"
+path = "fuzz_targets/fuzz_roundtrip.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_frame_decode"
+path = "fuzz_targets/fuzz_frame_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_transform_decode"
+path = "fuzz_targets/fuzz_transform_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_cas_roundtrip"
+path = "fuzz_targets/fuzz_cas_roundtrip.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_archive_decode"
+path = "fuzz_targets/fuzz_archive_decode.rs"
+doc = false

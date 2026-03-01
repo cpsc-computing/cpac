@@ -1,0 +1,80 @@
+CPAC Research & Evaluation License v1.0
+
+Copyright (c) 2026 BitConcepts, LLC. All rights reserved.
+
+DEFINITIONS
+
+"Software" means the CPAC compression engine source code, compiled
+binaries, documentation, wire format specifications, and all associated
+files distributed under this license.
+
+"Research Use" means use of the Software solely for non-commercial
+academic research, personal learning, or internal technical evaluation.
+
+"Commercial Use" means any use of the Software, in whole or in part,
+in a product, service, or process that is sold, licensed, offered as a
+service, or used to generate revenue, directly or indirectly.
+
+GRANT OF RIGHTS
+
+Subject to the terms of this License, BitConcepts, LLC grants you a
+non-exclusive, non-transferable, revocable, royalty-free license to:
+
+  1. Use, copy, and modify the Software for Research Use only.
+  2. Publish results, benchmarks, and analyses derived from Research Use,
+     provided that the Software is cited as:
+       "CPAC - Constraint-Projected Adaptive Compression, BitConcepts, LLC"
+  3. Redistribute unmodified copies of the Software for Research Use,
+     provided this License and copyright notice are retained in full.
+
+RESTRICTIONS
+
+  1. COMMERCIAL USE IS NOT PERMITTED without a separate commercial license
+     agreement with BitConcepts, LLC. Contact: licensing@bitconcepts.com
+  2. You may not sublicense, sell, rent, or lease the Software or any
+     derivative works.
+  3. You may not remove, alter, or obscure any copyright, trademark, or
+     attribution notices contained in the Software.
+  4. You may not use the Software to create a competing compression product
+     or service without prior written consent from BitConcepts, LLC.
+  5. Wire format specifications (CPAC, CPBL, CPHE, CPAR, TP, CS) are
+     proprietary. Interoperable implementations require a separate format
+     license.
+
+CONTRIBUTIONS
+
+If you submit contributions (pull requests, patches, issues) to the
+Software, you grant BitConcepts, LLC a perpetual, irrevocable, worldwide,
+royalty-free license to use, reproduce, modify, and distribute your
+contributions under any license, including this one and any future
+commercial license.
+
+PATENT RIGHTS
+
+This License does not grant any patent rights. BitConcepts, LLC reserves
+all patent rights related to the algorithms, methods, and wire formats
+implemented in the Software.
+
+DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+BITCONCEPTS, LLC BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT
+OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+TERMINATION
+
+This License is automatically terminated if you violate any of its terms.
+Upon termination, you must destroy all copies of the Software in your
+possession or control.
+
+GOVERNING LAW
+
+This License shall be governed by and construed in accordance with the
+laws of the State of Texas, United States of America, without regard to
+conflict of law principles.
+
+SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0

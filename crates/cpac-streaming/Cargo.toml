@@ -1,0 +1,15 @@
+[package]
+name = "cpac-streaming"
+description = "Block-based streaming I/O and parallel compression for CPAC"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpac-types = { workspace = true }
+cpac-engine = { workspace = true }
+rayon = "1"
+memmap2 = "0.9"
+
+[dev-dependencies]
+tempfile = "3"

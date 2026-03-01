@@ -1,0 +1,41 @@
+[package]
+name = "cpac-engine"
+description = "CPAC compression engine — top-level compress/decompress API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpac-types = { workspace = true }
+cpac-ssr = { workspace = true }
+cpac-entropy = { workspace = true }
+cpac-frame = { workspace = true }
+cpac-transforms = { workspace = true }
+cpac-dag = { workspace = true }
+rayon = { workspace = true }
+sysinfo = { workspace = true }
+flate2 = { workspace = true }
+lzma-rs = { workspace = true }
+zstd = { workspace = true }
+brotli = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = "3"
+proptest = "1"
+cpac-cas = { workspace = true }
+cpac-archive = { workspace = true }
+cpac-transforms = { workspace = true }
+cpac-types = { workspace = true }
+
+[[bench]]
+name = "compress"
+harness = false
+
+[[bench]]
+name = "simd"
+harness = false
+
+[[bench]]
+name = "dag"
+harness = false
