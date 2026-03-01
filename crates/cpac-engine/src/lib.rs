@@ -13,6 +13,7 @@ pub mod host;
 pub mod parallel;
 pub mod pool;
 
+pub use bench::{BaselineEngine, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary};
 pub use cpac_dag::{ProfileCache, TransformDAG, TransformRegistry};
 pub use cpac_types::{
     Backend, CompressConfig, CompressResult, CpacError, CpacResult, DecompressResult,

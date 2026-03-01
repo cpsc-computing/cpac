@@ -105,9 +105,18 @@ enum Commands {
     Benchmark {
         /// Input file to benchmark.
         input: PathBuf,
-        /// Number of iterations.
-        #[arg(short = 'n', long, default_value_t = 5)]
-        iterations: usize,
+        /// Number of iterations (overrides profile).
+        #[arg(short = 'n', long)]
+        iterations: Option<usize>,
+        /// Quick mode: 3 iterations, 2 baselines, <10s.
+        #[arg(long, conflicts_with_all = ["full", "iterations"])]
+        quick: bool,
+        /// Full mode: 50 iterations, 4 baselines, 20-60 min.
+        #[arg(long, conflicts_with_all = ["quick", "iterations"])]
+        full: bool,
+        /// Skip baseline engines (gzip, zstd, brotli, lzma).
+        #[arg(long)]
+        skip_baselines: bool,
     },
     /// Analyze file with Auto-CAS constraint inference.
     #[command(alias = "cas")]
@@ -568,36 +577,123 @@ fn cmd_list_backends() {
     println!("  brotli    Brotli compression (better for text)");
 }
 
-fn cmd_benchmark(input: PathBuf, iterations: usize) {
-    let data = read_input(&input);
-    let config = CompressConfig::default();
-    println!(
-        "Benchmarking {} ({}, {} iterations)",
-        input.display(),
-        format_size(data.len()),
-        iterations
-    );
+fn cmd_benchmark(
+    input: PathBuf,
+    iterations: Option<usize>,
+    quick: bool,
+    full: bool,
+    skip_baselines: bool,
+) {
+    use cpac_engine::{BaselineEngine, BenchProfile, BenchmarkRunner};
 
-    let mut times = Vec::with_capacity(iterations);
-    for _ in 0..iterations {
-        let start = std::time::Instant::now();
-        let _result = cpac_engine::compress(&data, &config);
-        times.push(start.elapsed());
+    // Determine profile
+    let profile = if quick {
+        BenchProfile::Quick
+    } else if full {
+        BenchProfile::Full
+    } else if iterations.is_some() {
+        // Custom iterations via -n flag: use balanced as base
+        BenchProfile::Balanced
+    } else {
+        // Default: balanced
+        BenchProfile::Balanced
+    };
+
+    let mut runner = BenchmarkRunner::new(profile);
+    if skip_baselines {
+        runner.skip_baselines = true;
     }
 
-    let total: f64 = times.iter().map(|t| t.as_secs_f64()).sum();
-    let avg = total / iterations as f64;
-    let throughput = data.len() as f64 / 1_048_576.0 / avg;
-    let min = times
-        .iter()
-        .map(|t| t.as_secs_f64())
-        .fold(f64::MAX, f64::min);
-    let max = times.iter().map(|t| t.as_secs_f64()).fold(0.0f64, f64::max);
+    // Override iterations if -n was provided
+    let actual_iterations = iterations.unwrap_or_else(|| profile.iterations());
+    runner.profile = match actual_iterations {
+        1 => BenchProfile::Quick,
+        n if n <= 5 => BenchProfile::Balanced,
+        _ => BenchProfile::Full,
+    };
 
-    println!("  Average:    {avg:.4}s");
-    println!("  Min:        {min:.4}s");
-    println!("  Max:        {max:.4}s");
-    println!("  Throughput: {throughput:.1} MB/s");
+    let mode_label = if quick {
+        "Quick"
+    } else if full {
+        "Full"
+    } else if iterations.is_some() {
+        "Custom"
+    } else {
+        "Balanced"
+    };
+
+    println!(
+        "CPAC Benchmark ({} mode, {} iterations)",
+        mode_label, actual_iterations
+    );
+    println!("File: {}\n", input.display());
+
+    // Benchmark CPAC backends
+    let mut all_results = Vec::new();
+    for &backend in &runner.backends {
+        match runner.bench_file(&input, backend) {
+            Ok(result) => {
+                println!(
+                    "  {:12}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  verified: {}",
+                    result.engine_label,
+                    result.ratio,
+                    result.compress_throughput_mbs,
+                    result.decompress_throughput_mbs,
+                    if result.lossless_verified { "✓" } else { "✗" }
+                );
+                all_results.push(result);
+            }
+            Err(e) => eprintln!("  {:12}  ERROR: {}", format!("{:?}", backend), e),
+        }
+    }
+
+    // Benchmark baselines (if not skipped)
+    if !runner.skip_baselines {
+        println!();
+        let baselines = if quick {
+            &[BaselineEngine::Gzip9, BaselineEngine::Zstd3][..]
+        } else {
+            BaselineEngine::all()
+        };
+        for &engine in baselines {
+            match runner.bench_baseline(&input, engine) {
+                Ok(result) => {
+                    println!(
+                        "  {:12}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  verified: {}",
+                        result.engine_label,
+                        result.ratio,
+                        result.compress_throughput_mbs,
+                        result.decompress_throughput_mbs,
+                        if result.lossless_verified { "✓" } else { "✗" }
+                    );
+                    all_results.push(result);
+                }
+                Err(e) => eprintln!("  {:12}  ERROR: {}", engine.label(), e),
+            }
+        }
+    }
+
+    // Summary
+    if !all_results.is_empty() {
+        println!();
+        let best_ratio = all_results
+            .iter()
+            .max_by(|a, b| a.ratio.partial_cmp(&b.ratio).unwrap())
+            .unwrap();
+        let best_speed = all_results
+            .iter()
+            .max_by(|a, b| {
+                a.compress_throughput_mbs
+                    .partial_cmp(&b.compress_throughput_mbs)
+                    .unwrap()
+            })
+            .unwrap();
+        println!("Best ratio:        {} ({:.2}x)", best_ratio.engine_label, best_ratio.ratio);
+        println!(
+            "Fastest compress:  {} ({:.1} MB/s)",
+            best_speed.engine_label, best_speed.compress_throughput_mbs
+        );
+    }
 }
 
 fn cmd_auto_cas(input: PathBuf, compress: bool) {
@@ -1057,7 +1153,13 @@ fn main() {
         Commands::Info { input, host } => cmd_info(input, host),
         Commands::ListProfiles => cmd_list_profiles(),
         Commands::ListBackends => cmd_list_backends(),
-        Commands::Benchmark { input, iterations } => cmd_benchmark(input, iterations),
+        Commands::Benchmark {
+            input,
+            iterations,
+            quick,
+            full,
+            skip_baselines,
+        } => cmd_benchmark(input, iterations, quick, full, skip_baselines),
         Commands::AutoCas { input, compress } => cmd_auto_cas(input, compress),
         Commands::Encrypt {
             input,
