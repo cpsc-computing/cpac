@@ -70,11 +70,41 @@ Final state: 13 crates, ~220+ tests, 3 Criterion bench suites, clippy clean, fmt
 **Quick mode** (text_100kb): zstd-3 @ 1600x, 310.9 MB/s compress
 **Balanced mode** (csv_10k): brotli-11 @ 12.99x, CPAC Zstd @ 7.86x, 269.6 MB/s
 
-### Phase 3: Deferred Items
+### Phase 3: Hardening (In Progress)
 - Phase 3.1-3.4 (error audit, clippy pedantic, docs, CLI polish): 528 pedantic warnings identified, deferred for future work
 
 ### Statistics
-- **5 commits** pushed to main
+- **6 commits** pushed to main (Session 7)
 - **250+ tests** passing across 13 crates
 - **22 benchmark corpus files** with automated regeneration
 - **Production-ready** test infrastructure and benchmarking
+
+## Session 8 (2026-03-02)
+### Phase 3: Hardening (Partial)
+#### CLI Improvements
+- Added indicatif progress bars for multi-file compression
+- Implemented verbose flag hierarchy: `-v` (basic), `-vv` (detailed), `-vvv` (debug)
+- Enhanced all error messages with context-specific hints
+- Improved I/O error handling with permission/existence suggestions
+
+#### Documentation
+- Added comprehensive doc examples to `compress()` and `decompress()` in cpac-engine
+- Added examples to `analyze()` in cpac-ssr with track selection demos
+- Enhanced error message formatting with "Hint:" suggestions
+
+#### Configuration
+- Created `clippy.toml` for workspace-wide pedantic warning management
+- Fixed clippy config field name (too-many-lines-threshold)
+
+#### Testing
+- All library tests passing (250+)
+- All regression tests passing (23)
+- All property tests passing (16)
+- All golden vector tests passing (15)
+- Note: Pre-existing fuzz_equivalent memory allocation issue (unrelated to changes)
+
+### Statistics
+- **7 commits** pushed to main (cumulative)
+- **250+ tests** passing
+- CLI UX significantly improved with progress bars and helpful error messages
+- Key APIs now have usage examples in rustdoc
