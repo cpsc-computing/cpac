@@ -6,4 +6,10 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
 [dependencies]
+cpac-types = { path = "../cpac-types" }
+cpac-engine = { path = "../cpac-engine" }
+cpac-streaming = { path = "../cpac-streaming" }
