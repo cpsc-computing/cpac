@@ -6,6 +6,7 @@
 //! (optionally in parallel via rayon), and reassembles on decompression.
 
 pub mod mmap;
+pub mod stream;
 
 use cpac_types::{CompressConfig, CompressResult, CpacError, CpacResult, DecompressResult};
 use rayon::prelude::*;

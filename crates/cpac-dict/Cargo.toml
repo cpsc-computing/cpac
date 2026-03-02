@@ -1,0 +1,13 @@
+[package]
+name = "cpac-dict"
+description = "Dictionary training and management for CPAC"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+cpac-types = { workspace = true }
+zstd = { workspace = true }
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
