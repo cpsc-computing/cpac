@@ -7,6 +7,7 @@ mod config;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use cpac_types::{Backend, CompressConfig, ResourceConfig};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::process;
@@ -48,9 +49,9 @@ enum Commands {
         /// Recursively compress all files in a directory.
         #[arg(short, long)]
         recursive: bool,
-        /// Verbose output.
-        #[arg(short, long)]
-        verbose: bool,
+        /// Verbose output (-v = basic, -vv = detailed, -vvv = debug).
+        #[arg(short, long, action = clap::ArgAction::Count)]
+        verbose: u8,
         /// Worker threads (0 = auto: physical cores).
         #[arg(short = 'T', long, default_value_t = 0)]
         threads: usize,
@@ -75,9 +76,9 @@ enum Commands {
         /// Keep compressed file after decompression.
         #[arg(short, long, default_value_t = true)]
         keep: bool,
-        /// Verbose output.
-        #[arg(short, long)]
-        verbose: bool,
+        /// Verbose output (-v = basic, -vv = detailed, -vvv = debug).
+        #[arg(short, long, action = clap::ArgAction::Count)]
+        verbose: u8,
         /// Worker threads (0 = auto: physical cores).
         #[arg(short = 'T', long, default_value_t = 0)]
         threads: usize,
@@ -266,13 +267,19 @@ fn read_input(path: &PathBuf) -> Vec<u8> {
     if path.to_str() == Some("-") {
         let mut buf = Vec::new();
         io::stdin().read_to_end(&mut buf).unwrap_or_else(|e| {
-            eprintln!("Error reading stdin: {e}");
+            eprintln!("Error reading from stdin: {e}");
+            eprintln!("Hint: Check that stdin is properly piped or redirected.");
             process::exit(1);
         });
         buf
     } else {
         std::fs::read(path).unwrap_or_else(|e| {
-            eprintln!("Error reading {}: {e}", path.display());
+            eprintln!("Error reading file '{}': {e}", path.display());
+            if e.kind() == std::io::ErrorKind::NotFound {
+                eprintln!("Hint: Verify the file path and ensure the file exists.");
+            } else if e.kind() == std::io::ErrorKind::PermissionDenied {
+                eprintln!("Hint: Check file permissions or run with appropriate privileges.");
+            }
             process::exit(1);
         })
     }
@@ -282,19 +289,26 @@ fn read_input(path: &PathBuf) -> Vec<u8> {
 fn write_output(path: &PathBuf, data: &[u8], force: bool) {
     if path.to_str() == Some("-") {
         io::stdout().write_all(data).unwrap_or_else(|e| {
-            eprintln!("Error writing stdout: {e}");
+            eprintln!("Error writing to stdout: {e}");
+            eprintln!("Hint: Check that stdout is not closed or redirected incorrectly.");
             process::exit(1);
         });
     } else {
         if !force && path.exists() {
             eprintln!(
-                "Error: {} already exists (use --force to overwrite)",
+                "Error: Output file '{}' already exists",
                 path.display()
             );
+            eprintln!("Hint: Use --force (-f) to overwrite, or specify a different output path with --output.");
             process::exit(1);
         }
         std::fs::write(path, data).unwrap_or_else(|e| {
-            eprintln!("Error writing {}: {e}", path.display());
+            eprintln!("Error writing to file '{}': {e}", path.display());
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                eprintln!("Hint: Check directory permissions or file ownership.");
+            } else if e.kind() == std::io::ErrorKind::NotFound {
+                eprintln!("Hint: Ensure the parent directory exists.");
+            }
             process::exit(1);
         });
     }
@@ -352,7 +366,7 @@ fn cmd_compress(
     force: bool,
     _keep: bool,
     recursive: bool,
-    verbose: bool,
+    verbose: u8,
     threads: usize,
     max_memory: usize,
     mmap: bool,
@@ -367,6 +381,20 @@ fn cmd_compress(
 
     let resources = build_resources(threads, max_memory);
     let files = collect_files(&input, recursive);
+
+    // Setup progress bar for multiple files
+    let progress_bar = if files.len() > 1 && verbose == 0 {
+        let pb = ProgressBar::new(files.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("[{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                .unwrap()
+                .progress_chars("█▓░"),
+        );
+        Some(pb)
+    } else {
+        None
+    };
 
     for file_path in &files {
         let config = CompressConfig {
@@ -401,8 +429,10 @@ fn cmd_compress(
         let result = match result {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("Compression error ({}): {e}", file_path.display());
+                eprintln!("Compression failed for '{}': {e}", file_path.display());
+                eprintln!("Hint: Check input file format and try different backends with --backend.");
                 if files.len() > 1 {
+                    eprintln!("       Continuing with remaining files...\n");
                     continue;
                 }
                 process::exit(1);
@@ -423,7 +453,13 @@ fn cmd_compress(
 
         write_output(&out_path, &result.data, force);
 
-        if verbose {
+        if let Some(ref pb) = progress_bar {
+            pb.set_message(format!("{}", file_path.file_name().unwrap_or_default().to_string_lossy()));
+            pb.inc(1);
+        }
+
+        if verbose >= 2 {
+            // -vv = detailed output
             let ratio = if result.compressed_size > 0 {
                 result.original_size as f64 / result.compressed_size as f64
             } else {
@@ -441,10 +477,17 @@ fn cmd_compress(
             println!("Ratio:      {ratio:.2}x ({savings:.1}% saved)");
             println!("Track:      {:?}", result.track);
             println!("Backend:    {:?}", result.backend);
+            if verbose >= 3 {
+                // -vvv = debug info
+                println!("Threads:    {}", resources.max_threads);
+                println!("Memory:     {} MB", resources.max_memory_mb);
+                println!("MMap:       {}", use_mmap);
+            }
             if files.len() > 1 {
                 println!();
             }
-        } else {
+        } else if verbose == 1 || progress_bar.is_none() {
+            // -v = basic output (or no progress bar)
             let ratio = if result.compressed_size > 0 {
                 result.original_size as f64 / result.compressed_size as f64
             } else {
@@ -457,6 +500,10 @@ fn cmd_compress(
             );
         }
     }
+
+    if let Some(pb) = progress_bar {
+        pb.finish_with_message("Done");
+    }
 }
 
 fn cmd_decompress(
@@ -464,7 +511,7 @@ fn cmd_decompress(
     output: Option<PathBuf>,
     force: bool,
     _keep: bool,
-    verbose: bool,
+    verbose: u8,
     threads: usize,
     mmap: bool,
 ) {
@@ -485,7 +532,9 @@ fn cmd_decompress(
     let result = match result {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("Decompression error: {e}");
+            eprintln!("Decompression failed for '{}': {e}", input.display());
+            eprintln!("Hint: Ensure the file is a valid CPAC archive and not corrupted.");
+            eprintln!("      Use 'cpac info {}' to inspect the file.", input.display());
             process::exit(1);
         }
     };
@@ -503,7 +552,8 @@ fn cmd_decompress(
 
     write_output(&out_path, &result.data, force);
 
-    if verbose {
+    if verbose >= 2 {
+        // -vv = detailed output
         let input_size = if input.to_str() != Some("-") {
             input.metadata().map(|m| m.len() as usize).unwrap_or(0)
         } else {
@@ -513,7 +563,15 @@ fn cmd_decompress(
         println!("Output:      {}", out_path.display());
         println!("Compressed:  {}", format_size(input_size));
         println!("Original:    {}", format_size(result.data.len()));
+        if verbose >= 3 {
+            // -vvv = debug info
+            let resources = build_resources(threads, 0);
+            println!("Threads:     {}", resources.max_threads);
+            println!("MMap:        {}", use_mmap);
+            println!("Block-level: {}", cpac_engine::is_cpbl(&read_input(&input)));
+        }
     } else {
+        // Default or -v: basic output
         println!(
             "{} -> {} [{}]",
             input.display(),

@@ -30,9 +30,49 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Compress data using the CPAC pipeline.
 ///
-/// Pipeline: SSR → preprocess → entropy → frame.
-/// Uses profile-driven DAG when `config.profile` is set, otherwise
-/// falls back to the SSR-guided TP preprocess orchestrator.
+/// Performs adaptive compression with SSR analysis, optional preprocessing transforms,
+/// and entropy coding. The compressed data is wrapped in a self-describing frame format
+/// that can be decompressed with [`decompress`].
+///
+/// # Pipeline
+/// 1. SSR analysis → select backend + track
+/// 2. Preprocess (transforms) — SSR-guided or DAG profile
+/// 3. Entropy coding (Zstd/Brotli/Raw)
+/// 4. Frame encoding (self-describing wire format)
+///
+/// # Examples
+///
+/// Basic compression with auto-selected backend:
+/// ```
+/// use cpac_engine::{compress, CompressConfig};
+///
+/// let data = b"Hello, CPAC!";
+/// let config = CompressConfig::default();
+/// let result = compress(data, &config).unwrap();
+/// println!("Compressed {} bytes to {} bytes ({}x)",
+///          result.original_size, result.compressed_size, result.ratio());
+/// ```
+///
+/// Force a specific backend:
+/// ```
+/// use cpac_engine::{compress, CompressConfig, Backend};
+///
+/// let config = CompressConfig {
+///     backend: Some(Backend::Brotli),
+///     ..Default::default()
+/// };
+/// let result = compress(b"test data", &config).unwrap();
+/// assert_eq!(result.backend, Backend::Brotli);
+/// ```
+///
+/// # Errors
+///
+/// Returns [`CpacError::CompressFailed`] if the entropy backend fails.
+///
+/// # See Also
+///
+/// - [`decompress`] — decompress CPAC frames
+/// - [`compress_parallel`] — parallel block compression for large data
 #[must_use = "compression result is returned"]
 pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResult> {
     let original_size = data.len();
@@ -73,8 +113,40 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
 
 /// Decompress CPAC-framed data.
 ///
-/// Pipeline: decode frame → entropy decompress → unpreprocess.
-/// Supports both TP-frame preprocess and DAG-based decompression.
+/// Reconstructs the original data from a CPAC-compressed frame. Automatically
+/// detects the backend and transform pipeline from the frame header.
+///
+/// # Pipeline
+/// 1. Decode frame → extract header and payload
+/// 2. Entropy decompress → using backend from header
+/// 3. Unpreprocess → reverse transforms (TP-frame or DAG)
+///
+/// # Examples
+///
+/// Basic decompression:
+/// ```
+/// use cpac_engine::{compress, decompress, CompressConfig};
+///
+/// let original = b"Hello, CPAC!";
+/// let compressed = compress(original, &CompressConfig::default()).unwrap();
+/// let result = decompress(&compressed.data).unwrap();
+/// assert_eq!(result.data, original);
+/// ```
+///
+/// # Errors
+///
+/// Returns [`CpacError::InvalidFrame`] if the frame header is corrupted or has an
+/// unsupported version.
+///
+/// Returns [`CpacError::DecompressFailed`] if:
+/// - The entropy backend fails to decompress the payload
+/// - Transform reversal fails
+/// - Size verification fails (decompressed size ≠ expected size)
+///
+/// # See Also
+///
+/// - [`compress`] — compress data to CPAC format
+/// - [`decompress_parallel`] — parallel block decompression
 #[must_use = "decompression result is returned"]
 pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
     // 1. Decode frame

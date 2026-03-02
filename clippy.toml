@@ -1,0 +1,12 @@
+# Clippy configuration for CPAC
+# Allow some pedantic lints that are too noisy or not applicable
+
+# Casting warnings - we handle these carefully where needed
+# Allow precision loss in benchmarks and stats (acceptable trade-off)
+allow-mixed-uninlined-format-args = true
+
+# Documentation - we'll fix the critical ones
+# Allow missing errors/panics sections for now (will add to public APIs)
+
+# Allow some style preferences
+too-many-lines-threshold = 200

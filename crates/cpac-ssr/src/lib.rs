@@ -28,6 +28,26 @@ pub struct SSRResult {
 }
 
 /// Analyze data and produce an SSR result.
+///
+/// This function computes the Shannon entropy, ASCII ratio, and domain hints
+/// to determine the optimal compression track.
+///
+/// # Examples
+///
+/// ```
+/// use cpac_ssr::analyze;
+/// use cpac_types::Track;
+///
+/// // Low-entropy ASCII data selects Track 1
+/// let result = analyze(b"hello world hello world");
+/// assert_eq!(result.track, Track::Track1);
+/// assert!(result.ascii_ratio > 0.9);
+///
+/// // High-entropy data selects Track 2
+/// let random: Vec<u8> = (0..256).map(|i| i as u8).cycle().take(1024).collect();
+/// let result = analyze(&random);
+/// assert_eq!(result.track, Track::Track2);
+/// ```
 pub fn analyze(data: &[u8]) -> SSRResult {
     let data_size = data.len();
 
