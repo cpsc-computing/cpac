@@ -1,0 +1,10 @@
+id: calgary
+name: Calgary Corpus
+description: Calgary compression corpus (18 diverse files)
+download_url: http://corpus.canterbury.ac.nz/resources/calgary.tar.gz
+download_kind: http_targz
+target_subdir: calgary
+license: Public domain - freely available for research use
+citation: |
+  Bell, T.C., Cleary, J.G., and Witten, I.H., "Text Compression,"
+  Prentice Hall, Englewood Cliffs, NJ, 1990.

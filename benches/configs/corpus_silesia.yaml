@@ -1,0 +1,10 @@
+id: silesia
+name: Silesia Corpus
+description: Silesia compression corpus (diverse file types, ~200MB total)
+download_url: https://sun.aei.polsl.pl/~sdeor/corpus/silesia.zip
+download_kind: http_zip
+target_subdir: silesia
+license: Freely available for research - individual files may have varying copyright status
+citation: |
+  Silesian University of Technology, "Silesia Compression Corpus,"
+  Available at: https://sun.aei.polsl.pl/~sdeor/index.php?page=silesia

@@ -1,0 +1,45 @@
+id: database_dumps
+name: Database Dumps & Samples
+description: SQL dumps, JSON exports, sample database files
+target_subdir: cloud/database_dumps
+
+# Public sample database dumps and exports
+download_url:
+  # PostgreSQL sample databases
+  - https://github.com/morenoh149/postgresDBSamples/archive/refs/heads/master.zip
+  # MySQL sample databases (Sakila, World, etc.)
+  - https://github.com/datacharmer/test_db/archive/refs/heads/master.zip
+  # MongoDB sample datasets (JSON)
+  - https://github.com/neelabalan/mongodb-sample-dataset/archive/refs/heads/master.zip
+
+download_kind: http_zip_multi
+
+extract_paths:
+  - "**/*.sql"
+  - "**/*.json"
+  - "**/*.csv"
+  - "**/*.dump"
+  - "*.sql"
+  - "*.json"
+  - "*.csv"
+
+license: Mixed (MIT/CC-BY)
+citation: |
+  PostgreSQL samples: https://github.com/morenoh149/postgresDBSamples (MIT)
+  MySQL test_db: https://github.com/datacharmer/test_db (CC-BY-SA)
+  MongoDB samples: https://github.com/neelabalan/mongodb-sample-dataset (MIT)
+
+# Profile-based filtering
+profiles:
+  quick:
+    include: true
+  balanced:
+    include: true
+  full:
+    include: true
+
+note: |
+  Database dump corpus with SQL scripts, JSON exports, and CSV data files.
+  Contains PostgreSQL dumps, MySQL schemas, and MongoDB JSON collections.
+  Target: ~500MB-1GB uncompressed.
+  Included in all benchmark profiles (quick/balanced/full).

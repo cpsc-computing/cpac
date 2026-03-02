@@ -1,0 +1,15 @@
+id: enwik9
+name: Enwik9
+description: 1 GB Wikipedia XML snapshot (Large Text Compression Benchmark)
+download_url: http://mattmahoney.net/dc/enwik9.zip
+download_kind: http_zip
+target_subdir: enwik/enwik9
+license: |
+  CC BY-SA 3.0 (Wikipedia content license)
+  Freely available for research and benchmarking purposes
+  Also used in Hutter Prize competition
+citation: |
+  Matt Mahoney, "Large Text Compression Benchmark,"
+  Available at: http://mattmahoney.net/dc/text.html
+  Marcus Hutter, "The Hutter Prize for Lossless Compression of Human Knowledge,"
+  Available at: http://prize.hutter1.net

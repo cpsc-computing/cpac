@@ -1,0 +1,39 @@
+id: docker_layers
+name: Container Filesystems & Tarballs
+description: Filesystem tarballs, rootfs archives, and container-related data
+target_subdir: cloud/docker_layers
+
+# Using Alpine Linux mini root filesystem and similar tar archives
+# These represent typical container layer content
+download_url:
+  # Alpine Linux mini root filesystem (various versions for diversity)
+  - https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-minirootfs-3.19.0-x86_64.tar.gz
+  - https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/x86_64/alpine-minirootfs-3.18.4-x86_64.tar.gz
+  - https://dl-cdn.alpinelinux.org/alpine/v3.17/releases/x86_64/alpine-minirootfs-3.17.5-x86_64.tar.gz
+  - https://dl-cdn.alpinelinux.org/alpine/v3.16/releases/x86_64/alpine-minirootfs-3.16.7-x86_64.tar.gz
+
+download_kind: http_targz
+
+extract_paths:
+  - "*"
+  - "*/*"
+  - "**/*"
+
+license: MIT
+citation: |
+  Alpine Linux: https://alpinelinux.org/ (MIT)
+
+# Profile-based filtering
+profiles:
+  quick:
+    include: true
+  balanced:
+    include: true
+  full:
+    include: true
+  
+note: |
+  Container filesystem corpus using Alpine Linux minirootfs tar archives.
+  These contain typical container layer data: binaries, libraries, configs, scripts.
+  Represents real container layer content. Target: ~500MB-1GB uncompressed.
+  Included in all benchmark profiles (quick/balanced/full).

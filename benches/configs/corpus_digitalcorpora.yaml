@@ -1,0 +1,42 @@
+id: digitalcorpora
+name: Digital Corpora (Govdocs1)
+description: Real government documents from Digital Corpora project (diverse subset)
+download_url:
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/000.zip
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/001.zip
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/002.zip
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/003.zip
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/004.zip
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/005.zip
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/006.zip
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/007.zip
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/008.zip
+  - https://digitalcorpora.s3.amazonaws.com/corpora/files/govdocs1/zipfiles/009.zip
+download_kind: http_zip_multi
+target_subdir: digitalcorpora
+extract_paths:
+  - "*/*.*"
+
+# Default sampling (used if no profile specified)
+max_files: 500
+file_selection: size_distributed
+
+# Profile-specific sampling
+profile:
+  quick_benchmark:
+    max_files: 500
+    file_selection: size_distributed
+  balanced_benchmark:
+    max_files: 2000
+    file_selection: size_distributed
+  full_benchmark:
+    max_files: 5000
+    file_selection: size_distributed
+
+note: Downloads 10 archives (~10,000 files total) and extracts mixed document types (PDF, DOC, XLS, PPT, HTML, etc.)
+license: Freely redistributable for research purposes
+citation: |
+  Garfinkel, Farrell, Roussev and Dinolt, "Bringing Science to Digital Forensics
+  with Standardized Forensic Corpora," DFRWS 2009, Montreal, Canada.
+  Available at: https://digitalcorpora.org
+

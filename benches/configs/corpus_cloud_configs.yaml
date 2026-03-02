@@ -1,0 +1,49 @@
+id: cloud_configs
+name: Cloud Infrastructure Configs
+description: Kubernetes manifests, CloudFormation templates, Terraform configs
+target_subdir: cloud/configs
+
+# Multiple GitHub repos with cloud configuration files
+download_url:
+  - https://github.com/kubernetes/examples/archive/refs/heads/master.zip
+  - https://github.com/awslabs/aws-cloudformation-templates/archive/refs/heads/master.zip
+  - https://github.com/terraform-aws-modules/terraform-aws-vpc/archive/refs/heads/master.zip
+  - https://github.com/terraform-aws-modules/terraform-aws-eks/archive/refs/heads/master.zip
+  - https://github.com/terraform-aws-modules/terraform-aws-rds/archive/refs/heads/master.zip
+
+download_kind: http_zip_multi
+
+# Extract only JSON/YAML config files from archives
+extract_paths:
+  - "*.json"
+  - "*.yaml"
+  - "*.yml"
+  - "*.tf"
+  - "*/*.json"
+  - "*/*.yaml"
+  - "*/*.yml"
+  - "*/*.tf"
+  - "**/*.json"
+  - "**/*.yaml"
+  - "**/*.yml"
+  - "**/*.tf"
+
+license: Mixed (Apache 2.0/MIT-0)
+citation: |
+  Kubernetes examples: https://github.com/kubernetes/examples (Apache 2.0)
+  AWS CloudFormation: https://github.com/awslabs/aws-cloudformation-templates (MIT-0)
+  Terraform AWS modules: https://github.com/terraform-aws-modules (Apache 2.0)
+
+# Profile-based filtering
+profiles:
+  quick:
+    include: true
+  balanced:
+    include: true
+  full:
+    include: true
+
+note: |
+  Cloud infrastructure configuration corpus covering Kubernetes manifests,
+  CloudFormation templates, and Terraform HCL/JSON configs. Target: ~200-500MB uncompressed.
+  Included in all benchmark profiles (quick/balanced/full).

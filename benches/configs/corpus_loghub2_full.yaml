@@ -1,0 +1,34 @@
+id: loghub2_full
+name: Loghub-2.0 Full Collection
+description: Complete Loghub-2.0 dataset with full logs (not just 2k samples)
+download_url: https://zenodo.org/api/records/8275861/files-archive
+download_kind: http_zip_nested
+target_subdir: logs/loghub-2.0/full
+extract_paths:
+  - "*.zip"
+note: Downloads full Loghub archive containing nested ZIP files for each log category (HDFS, Apache, etc.)
+
+license:
+  name: Loghub Research License
+  url: https://github.com/logpai/loghub
+  text: |
+    The datasets are freely available for research or academic work, subject to 
+    the following condition: For any usage or distribution of the loghub datasets,
+    please refer to the loghub repository URL (https://github.com/logpai/loghub)
+    and cite the following loghub paper where applicable.
+    
+    The above license notice shall be included in all copies of the datasets.
+
+citation:
+  text: |
+    Jieming Zhu, Shilin He, Pinjia He, Jinyang Liu, Michael R. Lyu. 
+    Loghub: A Large Collection of System Log Datasets for AI-driven Log Analytics. 
+    In ISSRE, 2023.
+  bibtex: |
+    @inproceedings{zhu2023loghub,
+      title={Loghub: A Large Collection of System Log Datasets for AI-driven Log Analytics},
+      author={Zhu, Jieming and He, Shilin and He, Pinjia and Liu, Jinyang and Lyu, Michael R.},
+      booktitle={2023 IEEE 34th International Symposium on Software Reliability Engineering (ISSRE)},
+      year={2023},
+      organization={IEEE}
+    }

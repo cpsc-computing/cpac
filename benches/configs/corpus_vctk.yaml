@@ -1,0 +1,47 @@
+# VCTK Corpus: English Multi-speaker Corpus for CSTR Voice Cloning Toolkit
+# URL: https://datashare.ed.ac.uk/handle/10283/3443
+
+id: vctk
+name: "VCTK Corpus"
+description: "English multi-speaker speech corpus (110 speakers)"
+
+download_url: "https://datashare.ed.ac.uk/bitstream/handle/10283/3443/VCTK-Corpus-0.92.zip?sequence=2&isAllowed=y"
+download_kind: "http_zip"
+target_subdir: "audio/vctk"
+
+# Extract FLAC audio files only (no txt transcripts)
+extract_paths:
+  - "wav48_silence_trimmed/*/*.flac"
+
+# License and citation
+license: |
+  This corpus is licensed under the Open Data Commons Attribution License (ODC-By) v1.0.
+  
+  Full license text: https://datashare.ed.ac.uk/bitstream/handle/10283/3443/license_text.txt
+
+citation: |
+  VCTK Corpus: English Multi-speaker Corpus for CSTR Voice Cloning Toolkit (version 0.92)
+  https://datashare.ed.ac.uk/handle/10283/3443
+  
+  If you use this corpus, please cite:
+  Yamagishi, Junichi; Veaux, Christophe; MacDonald, Kirsten. (2019).
+  CSTR VCTK Corpus: English Multi-speaker Corpus for CSTR Voice Cloning Toolkit (version 0.92),
+  [sound]. University of Edinburgh. The Centre for Speech Technology Research (CSTR).
+  https://doi.org/10.7488/ds/2645.
+
+# Default sampling (used if no profile specified)
+max_files: 200
+file_selection: size_distributed
+
+# Profile-specific sampling - ~88,000 FLAC files total (~11GB)
+profile:
+  quick_benchmark:
+    max_files: 200
+    file_selection: size_distributed
+  balanced_benchmark:
+    max_files: 1000
+    file_selection: size_distributed
+  full_benchmark:
+    max_files: 3000
+    file_selection: size_distributed
+
