@@ -5,6 +5,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+download = ["dep:reqwest", "dep:tar", "dep:zip"]
+
 [dependencies]
 cpac-types = { workspace = true }
 cpac-ssr = { workspace = true }
@@ -12,8 +16,14 @@ cpac-entropy = { workspace = true }
 cpac-frame = { workspace = true }
 cpac-transforms = { workspace = true }
 cpac-dag = { workspace = true }
-rayon = { workspace = true }
 sysinfo = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+indicatif = { workspace = true }
+reqwest = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
 flate2 = { workspace = true }
 lzma-rs = { workspace = true }
 zstd = { workspace = true }

@@ -9,6 +9,7 @@
 //! 4. Frame encoding (self-describing wire format)
 
 pub mod bench;
+pub mod corpus;
 pub mod host;
 pub mod parallel;
 pub mod pool;
