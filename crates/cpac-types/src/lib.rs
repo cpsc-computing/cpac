@@ -97,6 +97,7 @@ pub enum TypeTag {
 
 impl CpacType {
     /// Get the type tag for this value.
+    #[must_use]
     pub fn tag(&self) -> TypeTag {
         match self {
             CpacType::Serial(_) => TypeTag::Serial,
@@ -126,6 +127,10 @@ pub enum Backend {
 
 impl Backend {
     /// Decode backend from its wire ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CpacError::UnsupportedBackend`] if the ID is not in the range 0-2.
     pub fn from_id(id: u8) -> CpacResult<Self> {
         match id {
             0 => Ok(Backend::Raw),
@@ -138,6 +143,7 @@ impl Backend {
     }
 
     /// Wire ID for this backend.
+    #[must_use]
     pub fn id(self) -> u8 {
         self as u8
     }
@@ -205,6 +211,7 @@ impl ResourceConfig {
     /// `available_parallelism` (logical cores) as a portable fallback.
     /// Callers that have access to host detection should prefer
     /// [`cpac_engine::auto_resource_config`] which uses *physical* cores.
+    #[must_use]
     pub fn effective_threads(&self) -> usize {
         if self.max_threads == 0 {
             std::thread::available_parallelism()
@@ -220,6 +227,7 @@ impl ResourceConfig {
     /// When `max_memory_mb == 0` returns a conservative 1024 MB
     /// (callers with host detection should use
     /// [`cpac_engine::auto_resource_config`] for a smarter default).
+    #[must_use]
     pub fn effective_memory_mb(&self) -> usize {
         if self.max_memory_mb == 0 {
             1024 // 1 GB fallback when no host info available
@@ -259,6 +267,7 @@ pub struct CompressResult {
 
 impl CompressResult {
     /// Compression ratio (original / compressed).
+    #[must_use]
     pub fn ratio(&self) -> f64 {
         if self.compressed_size == 0 {
             return 0.0;
