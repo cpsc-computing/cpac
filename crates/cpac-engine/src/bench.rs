@@ -155,7 +155,7 @@ impl Default for BenchmarkRunner {
     fn default() -> Self {
         Self {
             profile: BenchProfile::Balanced,
-            backends: vec![Backend::Zstd, Backend::Brotli, Backend::Raw],
+            backends: vec![Backend::Zstd, Backend::Brotli, Backend::Gzip, Backend::Lzma, Backend::Raw],
             skip_baselines: false,
         }
     }
@@ -570,8 +570,8 @@ mod tests {
         let dir = create_temp_corpus();
         let runner = BenchmarkRunner::new(BenchProfile::Quick);
         let results = runner.bench_directory(dir.path(), None);
-        // 2 files × (3 CPAC backends + 4 baselines) = 14 results
-        assert_eq!(results.len(), 14);
+        // 2 files × (5 CPAC backends + 4 baselines) = 18 results
+        assert_eq!(results.len(), 18);
     }
 
     #[test]
@@ -580,8 +580,8 @@ mod tests {
         let mut runner = BenchmarkRunner::new(BenchProfile::Quick);
         runner.skip_baselines = true;
         let results = runner.bench_directory(dir.path(), None);
-        // 2 files × 3 CPAC backends = 6
-        assert_eq!(results.len(), 6);
+        // 2 files × 5 CPAC backends = 10
+        assert_eq!(results.len(), 10);
     }
 
     #[test]
@@ -608,6 +608,6 @@ mod tests {
         let csv = generate_csv_export(&results);
         assert!(csv.starts_with("file,engine,"));
         let lines: Vec<&str> = csv.lines().collect();
-        assert_eq!(lines.len(), 7); // header + 6 data rows
+        assert_eq!(lines.len(), 11); // header + 10 data rows
     }
 }

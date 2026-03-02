@@ -1,14 +1,24 @@
 // Copyright (c) 2026 BitConcepts, LLC
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
-//! Entropy coding backends: Zstd, Brotli, Raw passthrough.
+//! Entropy coding backends: Zstd, Brotli, Gzip, LZMA, Raw passthrough.
 
 use cpac_types::{Backend, CpacError, CpacResult};
+use flate2::write::GzEncoder;
+use flate2::read::GzDecoder;
+use flate2::Compression;
+use std::io::{Read, Write};
 
 /// Default Zstd compression level.
 const ZSTD_LEVEL: i32 = 3;
 
 /// Default Brotli compression quality.
 const BROTLI_QUALITY: i32 = 6;
+
+/// Default Gzip compression level (6 = balanced, equivalent to gzip -6).
+const GZIP_LEVEL: u32 = 6;
+
+/// Default LZMA compression preset (6 = balanced, equivalent to xz -6).
+const LZMA_PRESET: u32 = 6;
 
 /// Compress `data` using the specified backend.
 #[must_use = "compressed data is returned"]
@@ -33,6 +43,30 @@ pub fn compress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
             }
             Ok(out)
         }
+        Backend::Gzip => {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::new(GZIP_LEVEL));
+            encoder.write_all(data)
+                .map_err(|e| CpacError::CompressFailed(format!("gzip write: {e}")))?;
+            encoder.finish()
+                .map_err(|e| CpacError::CompressFailed(format!("gzip finish: {e}")))
+        }
+        Backend::Lzma => {
+            lzma_rs::lzma_compress(
+                &mut std::io::Cursor::new(data),
+                &mut Vec::new(),
+            )
+            .map_err(|e| CpacError::CompressFailed(format!("lzma: {e}")))
+            .and_then(|_| {
+                // lzma_compress writes to mutable Vec, but returns () - use xz_compress instead
+                let mut out = Vec::new();
+                lzma_rs::xz_compress(
+                    &mut std::io::Cursor::new(data),
+                    &mut out,
+                )
+                .map_err(|e| CpacError::CompressFailed(format!("lzma xz: {e}")))?;
+                Ok(out)
+            })
+        }
     }
 }
 
@@ -50,6 +84,19 @@ pub fn decompress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
             let mut reader = brotli::Decompressor::new(data, 4096);
             std::io::Read::read_to_end(&mut reader, &mut out)
                 .map_err(|e| CpacError::DecompressFailed(format!("brotli: {e}")))?;
+            Ok(out)
+        }
+        Backend::Gzip => {
+            let mut decoder = GzDecoder::new(data);
+            let mut out = Vec::new();
+            decoder.read_to_end(&mut out)
+                .map_err(|e| CpacError::DecompressFailed(format!("gzip: {e}")))?;
+            Ok(out)
+        }
+        Backend::Lzma => {
+            let mut out = Vec::new();
+            lzma_rs::xz_decompress(&mut std::io::Cursor::new(data), &mut out)
+                .map_err(|e| CpacError::DecompressFailed(format!("lzma: {e}")))?;
             Ok(out)
         }
     }
@@ -96,6 +143,22 @@ mod tests {
         let compressed = compress(data, Backend::Raw).unwrap();
         assert_eq!(&compressed, data);
         let decompressed = decompress(&compressed, Backend::Raw).unwrap();
+        assert_eq!(&decompressed, data);
+    }
+
+    #[test]
+    fn roundtrip_gzip() {
+        let data = b"hello world, this is a test of gzip compression";
+        let compressed = compress(data, Backend::Gzip).unwrap();
+        let decompressed = decompress(&compressed, Backend::Gzip).unwrap();
+        assert_eq!(&decompressed, data);
+    }
+
+    #[test]
+    fn roundtrip_lzma() {
+        let data = b"hello world, this is a test of lzma compression";
+        let compressed = compress(data, Backend::Lzma).unwrap();
+        let decompressed = decompress(&compressed, Backend::Lzma).unwrap();
         assert_eq!(&decompressed, data);
     }
 

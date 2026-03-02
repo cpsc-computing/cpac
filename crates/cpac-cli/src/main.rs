@@ -37,7 +37,7 @@ enum Commands {
         /// Output file path (default: input + .cpac; use - for stdout).
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// Entropy backend: raw, zstd, brotli.
+        /// Entropy backend: raw, zstd, brotli, gzip, lzma.
         #[arg(short, long)]
         backend: Option<String>,
         /// Overwrite existing output file.
@@ -244,8 +244,10 @@ fn parse_backend(s: &str) -> Result<Backend, String> {
         "raw" => Ok(Backend::Raw),
         "zstd" => Ok(Backend::Zstd),
         "brotli" => Ok(Backend::Brotli),
+        "gzip" | "gz" => Ok(Backend::Gzip),
+        "lzma" | "xz" => Ok(Backend::Lzma),
         other => Err(format!(
-            "unknown backend: {other} (available: raw, zstd, brotli)"
+            "unknown backend: {other} (available: raw, zstd, brotli, gzip, lzma)"
         )),
     }
 }
@@ -633,6 +635,8 @@ fn cmd_list_backends() {
     println!("  raw       No compression (passthrough)");
     println!("  zstd      Zstandard compression (default for most data)");
     println!("  brotli    Brotli compression (better for text)");
+    println!("  gzip      Gzip/Deflate (RFC 1952, wide compatibility)");
+    println!("  lzma      LZMA/xz compression (maximum ratio, slow)");
 }
 
 fn cmd_benchmark(

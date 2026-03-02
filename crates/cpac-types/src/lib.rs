@@ -123,6 +123,10 @@ pub enum Backend {
     Zstd = 1,
     /// Brotli compression.
     Brotli = 2,
+    /// Gzip/Deflate compression (RFC 1952).
+    Gzip = 3,
+    /// LZMA compression (7z/xz).
+    Lzma = 4,
 }
 
 impl Backend {
@@ -130,12 +134,14 @@ impl Backend {
     ///
     /// # Errors
     ///
-    /// Returns [`CpacError::UnsupportedBackend`] if the ID is not in the range 0-2.
+    /// Returns [`CpacError::UnsupportedBackend`] if the ID is not in the range 0-4.
     pub fn from_id(id: u8) -> CpacResult<Self> {
         match id {
             0 => Ok(Backend::Raw),
             1 => Ok(Backend::Zstd),
             2 => Ok(Backend::Brotli),
+            3 => Ok(Backend::Gzip),
+            4 => Ok(Backend::Lzma),
             _ => Err(CpacError::UnsupportedBackend(format!(
                 "unknown backend id: {id}"
             ))),

@@ -9,3 +9,5 @@ license.workspace = true
 cpac-types = { workspace = true }
 zstd = { workspace = true }
 brotli = { workspace = true }
+flate2 = { workspace = true }
+lzma-rs = { workspace = true }

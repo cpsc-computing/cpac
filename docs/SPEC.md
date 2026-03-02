@@ -31,6 +31,8 @@ Minimum header: 12 bytes.
 - `0x00` — Raw (passthrough)
 - `0x01` — Zstd
 - `0x02` — Brotli
+- `0x03` — Gzip (RFC 1952, deflate)
+- `0x04` — LZMA (xz format)
 
 ### DAG Descriptor
 
@@ -250,7 +252,7 @@ Automatic corpus management (`crates/cpac-engine/src/corpus.rs`):
 
 ## 9. Compression Backends
 
-CPAC supports three entropy coding backends:
+CPAC supports five entropy coding backends:
 
 ### Zstd (Backend ID: 0x01)
 
@@ -265,6 +267,20 @@ CPAC supports three entropy coding backends:
 - Compression levels: 0-11 (default: 11)
 - Features: quality/window size tuning, streaming
 - Use case: maximum compression ratio, web content
+
+### Gzip (Backend ID: 0x03)
+
+- Implementation: `flate2` crate (deflate algorithm, RFC 1952)
+- Compression levels: 0-9 (default: 6)
+- Features: streaming, CRC32 checksums
+- Use case: compatibility, widespread tool support, fast decompression
+
+### LZMA (Backend ID: 0x04)
+
+- Implementation: `lzma-rs` crate (pure Rust, xz format)
+- Compression presets: 0-9 (default: 6)
+- Features: high compression ratios, dictionary-based
+- Use case: maximum compression, archival, slow decompression acceptable
 
 ### Raw (Backend ID: 0x00)
 

@@ -16,7 +16,7 @@ drop-in CLI for gzip/zstd/brotli workflows. Written in Rust.
 - **Block-parallel** — rayon-based parallel compress/decompress (CPBL wire format)
 - **Memory-mapped I/O** — auto-mmap for files > 64 MB, manual `--mmap` flag
 - **Streaming** — block-based streaming with progress callbacks and adaptive block sizing
-- **3 entropy backends** — Zstd, Brotli, Raw (passthrough)
+- **5 entropy backends** — Zstd, Brotli, Gzip, LZMA, Raw (passthrough)
 - **Encryption** — ChaCha20-Poly1305, AES-256-GCM, Argon2 KDF
 - **Post-quantum crypto** — ML-KEM-768 + X25519 hybrid encryption (CPHE), ML-DSA-65 signatures
 - **Archives** — multi-file `.cpar` format with per-entry compression
@@ -128,7 +128,7 @@ cpac-types          Shared types, CpacError, ResourceConfig
 cpac-ssr            Structural Summary Record analysis
 cpac-transforms     11 encoding transforms + SIMD kernels
 cpac-dag            DAG composition, profiles, auto-select
-cpac-entropy        Zstd / Brotli / Raw backends
+cpac-entropy        Zstd / Brotli / Gzip / LZMA / Raw backends
 cpac-frame          Wire format encode/decode (CP frame)
 cpac-engine         Top-level API, host detection, parallel, benchmarks
 cpac-cli            Command-line interface (clap)
