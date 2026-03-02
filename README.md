@@ -23,9 +23,14 @@ drop-in CLI for gzip/zstd/brotli workflows. Written in Rust.
 - **Domain handlers** — CSV, JSON, XML, YAML, log file specializations
 - **CAS analysis** — constraint inference (range, enum, constant, monotonic, functional dependency)
 - **Benchmarking** — built-in benchmark suite with baselines (gzip-9, zstd-3, brotli-11, lzma-6),
-  lossless verification, memory tracking, Criterion microbenchmarks
+  lossless verification, memory tracking, Criterion microbenchmarks, **industry-standard corpora**
+  (Canterbury, Silesia, Calgary), automated batch runner with CSV/Markdown reports
+- **Corpus management** — YAML-driven corpus configs, automatic HTTP/ZIP/TAR.GZ downloads,
+  progress bars, 18+ curated benchmark datasets
 - **Host detection** — CPU, cores, RAM, SIMD tier detection with safe auto-defaults
 - **Cross-platform** — Windows (primary), Linux, macOS; x86_64 and aarch64
+- **289+ tests** — comprehensive regression suite, golden vectors, property-based tests,
+  determinism validation, transform-specific tests
 
 ## AI Agent Workflow
 
@@ -44,7 +49,7 @@ If you're an AI agent opening this repository for the first time:
 # Build
 cargo build --workspace
 
-# Run tests (~220+)
+# Run tests (289+)
 cargo test --workspace
 
 # Install the CLI
@@ -162,17 +167,37 @@ cargo build --profile release-small
 
 ## Benchmarks
 
+### Industry-Standard Corpora
+
+CPAC is validated against published compression benchmarks:
+
 ```bash
-# Criterion microbenchmarks
+# Run automated benchmark suite
+pwsh scripts/run-benchmarks.ps1 -Mode quick      # ~2 min, 5 files
+pwsh scripts/run-benchmarks.ps1 -Mode balanced   # ~10 min, 13 files
+pwsh scripts/run-benchmarks.ps1 -Mode full       # ~2-4 hours, all files
+
+# Single file benchmark
+cpac benchmark .work/benchdata/canterbury/alice29.txt --quick
+cpac benchmark .work/benchdata/silesia/xml
+```
+
+**Results** (see [BENCHMARKING.md](BENCHMARKING.md) for full report):
+- Canterbury alice29.txt: **2.93x** (CPAC Brotli) vs 2.80x (gzip-9) — **+4.6%**
+- Canterbury kennedy.xls: **9.21x** (CPAC Zstd) vs 4.92x (gzip-9) — **+87%**
+- Silesia XML: **12.42x** (brotli-11 max), **6.62x** (CPAC Brotli @ 25 MB/s)
+- Beats gzip-9 on **5/5 Canterbury files**
+
+### Criterion Microbenchmarks
+
+```bash
+# Full Criterion suite
 cargo bench -p cpac-engine
 
 # Individual bench suites
 cargo bench -p cpac-engine --bench compress    # pipeline + backends
 cargo bench -p cpac-engine --bench simd        # SIMD vs scalar
 cargo bench -p cpac-engine --bench dag         # DAG compile + execute
-
-# Built-in CLI benchmark with baselines
-cpac benchmark myfile.txt -n 20
 ```
 
 ## Requirements
@@ -186,8 +211,10 @@ cpac benchmark myfile.txt -n 20
 - `AGENTS.md` — AI agent onboarding guide
 - `WARP.md` — Warp IDE project rules
 - `LEDGER.md` — Development session ledger
+- `BENCHMARKING.md` — Industry benchmark results and guide
 - `docs/SPEC.md` — Wire format specification
 - `docs/ARCHITECTURE.md` — System architecture
+- `docs/SESSION_8_REPORT.md` — Latest session comprehensive report
 - `CONTRIBUTING.md` — Contribution guidelines
 - `SECURITY.md` — Security policy
 
