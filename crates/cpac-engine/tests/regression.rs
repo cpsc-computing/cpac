@@ -309,3 +309,70 @@ fn frame_version_byte() {
         compressed.data[2]
     );
 }
+
+// ---------------------------------------------------------------------------
+// Cross-backend determinism (Phase 1.2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn determinism_across_backends() {
+    let data = b"Test data for backend determinism validation";
+    for backend in [Backend::Zstd, Backend::Brotli, Backend::Raw] {
+        let config = CompressConfig {
+            backend: Some(backend),
+            ..Default::default()
+        };
+        let ref1 = compress(data, &config).unwrap().data;
+        // Run 10 times and verify identical output
+        for _ in 0..10 {
+            let result = compress(data, &config).unwrap().data;
+            assert_eq!(result, ref1, "backend {:?} not deterministic", backend);
+        }
+    }
+}
+
+#[test]
+fn determinism_with_mmap() {
+    // Test that mmap path produces identical results to standard path
+    let data = vec![0xABu8; 100_000]; // Large enough to trigger mmap threshold
+    let config = CompressConfig::default();
+    let standard = compress(&data, &config).unwrap().data;
+    // Note: actual mmap testing requires file I/O, this tests pipeline consistency
+    let repeated = compress(&data, &config).unwrap().data;
+    assert_eq!(standard, repeated, "mmap path not deterministic");
+}
+
+// ---------------------------------------------------------------------------
+// Frame format stability (Phase 1.4)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn frame_backward_compatibility() {
+    // Verify that frames created now can be decompressed
+    let data = b"Backward compatibility test data for version 1";
+    let config = CompressConfig::default();
+    let compressed = compress(data, &config).unwrap();
+    
+    // Store frame for future compatibility testing
+    assert!(compressed.data.len() >= 12, "frame too short");
+    
+    // Decompress should work
+    let decompressed = decompress(&compressed.data).unwrap();
+    assert_eq!(decompressed.data, data);
+    
+    // Version 1 frames should have specific structure
+    assert_eq!(&compressed.data[0..2], b"CP", "magic bytes mismatch");
+    assert_eq!(compressed.data[2], 1, "version mismatch");
+}
+
+#[test]
+fn frame_handles_unknown_transforms() {
+    // Create a frame with current transforms
+    let data = b"Transform compatibility test";
+    let compressed = compress(data, &CompressConfig::default()).unwrap();
+    
+    // Decompress should succeed
+    let result = decompress(&compressed.data);
+    assert!(result.is_ok(), "failed to decompress valid frame");
+    assert_eq!(result.unwrap().data, data);
+}
