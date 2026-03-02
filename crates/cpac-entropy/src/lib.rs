@@ -26,10 +26,28 @@ const GZIP_SIZE_THRESHOLD: usize = 1_048_576;
 /// Compress `data` using the specified backend.
 #[must_use = "compressed data is returned"]
 pub fn compress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
+    compress_with_dict(data, backend, None)
+}
+
+/// Compress `data` using the specified backend with optional dictionary.
+#[must_use = "compressed data is returned"]
+pub fn compress_with_dict(data: &[u8], backend: Backend, dict: Option<&[u8]>) -> CpacResult<Vec<u8>> {
     match backend {
         Backend::Raw => Ok(data.to_vec()),
-        Backend::Zstd => zstd::bulk::compress(data, ZSTD_LEVEL)
-            .map_err(|e| CpacError::CompressFailed(format!("zstd: {e}"))),
+        Backend::Zstd => {
+            if let Some(dict_data) = dict {
+                // Use dictionary compression via stream API
+                let mut encoder = zstd::stream::Encoder::with_dictionary(Vec::new(), ZSTD_LEVEL, dict_data)
+                    .map_err(|e| CpacError::CompressFailed(format!("zstd encoder: {e}")))?;
+                encoder.write_all(data)
+                    .map_err(|e| CpacError::CompressFailed(format!("zstd write: {e}")))?;
+                encoder.finish()
+                    .map_err(|e| CpacError::CompressFailed(format!("zstd finish: {e}")))
+            } else {
+                zstd::bulk::compress(data, ZSTD_LEVEL)
+                    .map_err(|e| CpacError::CompressFailed(format!("zstd: {e}")))
+            }
+        }
         Backend::Brotli => {
             let mut out = Vec::new();
             {
@@ -74,11 +92,27 @@ pub fn compress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
 /// Decompress `data` using the specified backend.
 #[must_use = "decompressed data is returned"]
 pub fn decompress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
+    decompress_with_dict(data, backend, None)
+}
+
+/// Decompress `data` using the specified backend with optional dictionary.
+#[must_use = "decompressed data is returned"]
+pub fn decompress_with_dict(data: &[u8], backend: Backend, dict: Option<&[u8]>) -> CpacResult<Vec<u8>> {
     match backend {
         Backend::Raw => Ok(data.to_vec()),
         Backend::Zstd => {
-            zstd::bulk::decompress(data, 64 * 1024 * 1024) // 64 MB upper bound
-                .map_err(|e| CpacError::DecompressFailed(format!("zstd: {e}")))
+            if let Some(dict_data) = dict {
+                // Use dictionary decompression via stream API
+                let mut decoder = zstd::stream::Decoder::with_dictionary(data, dict_data)
+                    .map_err(|e| CpacError::DecompressFailed(format!("zstd decoder: {e}")))?;
+                let mut out = Vec::new();
+                decoder.read_to_end(&mut out)
+                    .map_err(|e| CpacError::DecompressFailed(format!("zstd read: {e}")))?;
+                Ok(out)
+            } else {
+                zstd::bulk::decompress(data, 64 * 1024 * 1024) // 64 MB upper bound
+                    .map_err(|e| CpacError::DecompressFailed(format!("zstd: {e}")))
+            }
         }
         Backend::Brotli => {
             let mut out = Vec::new();

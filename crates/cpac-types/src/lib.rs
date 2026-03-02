@@ -254,6 +254,8 @@ pub struct CompressConfig {
     pub filename: Option<String>,
     /// Resource limits (threads, memory, GPU).
     pub resources: Option<ResourceConfig>,
+    /// Optional pre-trained dictionary (raw zstd dict format).
+    pub dictionary: Option<Vec<u8>>,
     /// Internal: disable parallel compression (prevents recursive parallel calls).
     #[doc(hidden)]
     pub disable_parallel: bool,

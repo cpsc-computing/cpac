@@ -165,6 +165,7 @@ impl From<CpacCompressConfig> for CompressConfig {
             force_track: None,
             filename: None,
             resources,
+            dictionary: None,
             disable_parallel: false,
         }
     }

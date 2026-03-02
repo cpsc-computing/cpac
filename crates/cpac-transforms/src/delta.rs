@@ -122,7 +122,8 @@ impl TransformNode for DeltaTransform {
     fn encode(&self, input: CpacType, _ctx: &TransformContext) -> CpacResult<(CpacType, Vec<u8>)> {
         match input {
             CpacType::Serial(data) => {
-                let encoded = delta_encode(&data);
+                // Use SIMD-accelerated path when available
+                let encoded = crate::simd::delta_encode_fast(&data);
                 Ok((CpacType::Serial(encoded), Vec::new()))
             }
             CpacType::IntColumn {

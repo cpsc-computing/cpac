@@ -115,8 +115,12 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         data.to_vec()
     };
 
-    // 5. Entropy coding
-    let compressed_payload = cpac_entropy::compress(&preprocessed, backend)?;
+    // 5. Entropy coding (with optional dictionary for Zstd)
+    let compressed_payload = if backend == Backend::Zstd && config.dictionary.is_some() {
+        cpac_entropy::compress_with_dict(&preprocessed, backend, config.dictionary.as_deref())?  
+    } else {
+        cpac_entropy::compress(&preprocessed, backend)?
+    };
 
     // 5. Frame encoding (empty DAG descriptor — preprocess metadata embedded in TP frame)
     let frame = cpac_frame::encode_frame(&compressed_payload, backend, original_size, &[]);
