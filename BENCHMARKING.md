@@ -108,7 +108,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | gzip-9 | zstd-3 | brotli-11 | Best |
 |------|-----------|-------------|-----------|--------|--------|-----------|------|
-| alice29.txt | 2.67x @ 14 MB/s | 2.97x @ 8 MB/s | **2.80x @ 9 MB/s** | **2.80x @ 22 MB/s** | 2.73x @ 185 MB/s | **3.27x @ 1 MB/s** | **brotli-11** |
+| alice29.txt | 2.67x @ 14 MB/s | 2.97x @ 8 MB/s | **2.80x @ 9 MB/s** | **2.80x @ 22 MB/s** | 2.73x @ 185 MB/s | **3.27x @ 1 MB/s** | **Baseline brotli-11** |
 | asyoulik.txt | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | kennedy.xls | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | lcet10.txt | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
@@ -123,7 +123,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | gzip-9 | zstd-3 | brotli-11 | Best |
 |------|-----------|-------------|-----------|--------|--------|-----------|------|
-| paper1 | 2.72x @ 16 MB/s | 2.93x @ 6 MB/s | **2.87x @ 12 MB/s** | **2.87x @ 39 MB/s** | 2.73x @ 137 MB/s | **3.44x @ 1 MB/s** | **brotli-11** |
+| paper1 | 2.72x @ 16 MB/s | 2.93x @ 6 MB/s | **2.87x @ 12 MB/s** | **2.87x @ 39 MB/s** | 2.73x @ 137 MB/s | **3.44x @ 1 MB/s** | **Baseline brotli-11** |
 
 **Key Findings:**
 - ✅ **CPAC Gzip = gzip-9 parity** on paper1 (2.87x exact match)
@@ -134,7 +134,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | gzip-9 | zstd-3 | brotli-11 | Best |
 |------|-----------|-------------|-----------|--------|--------|-----------|------|
-| dickens (10 MB) | TBD | TBD | TBD | 2.64x @ 20 MB/s | 2.77x @ 256 MB/s | **3.57x @ 1 MB/s** | **brotli-11** |
+| dickens (10 MB) | TBD | TBD | TBD | 2.64x @ 20 MB/s | 2.77x @ 256 MB/s | **3.57x @ 1 MB/s** | **Baseline brotli-11** |
 | mozilla (51 MB) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | xml (5 MB) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
@@ -156,7 +156,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | gzip-9 | zstd-3 | brotli-11 | Best |
 |------|-----------|-------------|-----------|--------|--------|-----------|------|
-| Linux_2k.log (0.20 MB) | 11.53x @ 59 MB/s | 12.12x @ 24 MB/s | **11.91x @ 45 MB/s** | 14.52x @ 85 MB/s | 14.39x @ 497 MB/s | **20.92x @ 1 MB/s** | **brotli-11** |
+| Linux_2k.log (0.20 MB) | 11.53x @ 59 MB/s | 12.12x @ 24 MB/s | **11.91x @ 45 MB/s** | 14.52x @ 85 MB/s | 14.39x @ 497 MB/s | **20.92x @ 1 MB/s** | **Baseline brotli-11** |
 
 **Key Findings:**
 - ✅ **brotli-11 exceptional** on system logs (20.92x ratio)
@@ -167,7 +167,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | gzip-9 | zstd-3 | brotli-11 | Best |
 |------|-----------|-------------|-----------|--------|--------|-----------|------|
-| Apache_2k.log (0.16 MB) | 15.02x @ 68 MB/s | 15.55x @ 26 MB/s | **15.43x @ 58 MB/s** | 18.44x @ 95 MB/s | 15.91x @ 470 MB/s | **25.07x @ 1 MB/s** | **brotli-11 🏆** |
+| Apache_2k.log (0.16 MB) | 15.02x @ 68 MB/s | 15.55x @ 26 MB/s | **15.43x @ 58 MB/s** | 18.44x @ 95 MB/s | 15.91x @ 470 MB/s | **25.07x @ 1 MB/s** | **Baseline brotli-11 🏆** |
 
 **Key Findings:**
 - ✅ **brotli-11 wins** with 25.07x (highest ratio across all corpora) 🏆
@@ -178,7 +178,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | gzip-9 | zstd-3 | brotli-11 | Best |
 |------|-----------|-------------|-----------|--------|--------|-----------|------|
-| HDFS_2k.log (0.27 MB) | 4.11x @ 26 MB/s | 4.48x @ 11 MB/s | **4.32x @ 7 MB/s** | 5.26x @ 56 MB/s | 5.29x @ 329 MB/s | **6.97x @ 1 MB/s** | **brotli-11** |
+| HDFS_2k.log (0.27 MB) | 4.11x @ 26 MB/s | 4.48x @ 11 MB/s | **4.32x @ 7 MB/s** | 5.26x @ 56 MB/s | 5.29x @ 329 MB/s | **6.97x @ 1 MB/s** | **Baseline brotli-11** |
 
 **Key Findings:**
 - ✅ **Moderate compression** on HDFS logs (4-7x range)
@@ -189,7 +189,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | gzip-9 | zstd-3 | brotli-11 | Best |
 |------|-----------|-------------|-----------|--------|--------|-----------|------|
-| OpenStack_2k.log (0.57 MB) | 9.27x @ 49 MB/s | 10.47x @ 25 MB/s | **9.76x @ 17 MB/s** | 11.0x @ 136 MB/s | **11.59x @ 709 MB/s** | 15.17x @ 1 MB/s | **brotli-11** (ratio), **zstd-3** (speed) |
+| OpenStack_2k.log (0.57 MB) | 9.27x @ 49 MB/s | 10.47x @ 25 MB/s | **9.76x @ 17 MB/s** | 11.0x @ 136 MB/s | **11.59x @ 709 MB/s** | 15.17x @ 1 MB/s | **Baseline brotli-11** (ratio), **Baseline zstd-3** (speed) |
 
 **Key Findings:**
 - ✅ **zstd-3 fastest overall** (709 MB/s at 11.59x) - best production speed
