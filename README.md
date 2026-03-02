@@ -200,6 +200,30 @@ cargo bench -p cpac-engine --bench simd        # SIMD vs scalar
 cargo bench -p cpac-engine --bench dag         # DAG compile + execute
 ```
 
+## Planned Features
+
+### Near-term (Phase 4+)
+
+- **GPU acceleration** — CUDA/ROCm kernels for transforms and entropy coding
+- **Dictionary training** — Zstd dictionary generation and management
+- **Streaming API** — incremental compress/decompress with bounded memory
+- **Networked compression** — client/server mode with delta sync
+- **Additional transforms** — BWT, MTF, context modeling, LZ77 variants
+- **ARM SVE/SVE2** — scalable vector extensions for aarch64
+- **WASM target** — browser-based compression with SIMD.js fallback
+- **C/C++ FFI** — drop-in replacement library for zlib/lz4/zstd
+- **Python bindings** — PyO3-based cpac-py package
+
+### Long-term
+
+- **Approximate compression** — lossy modes for numerical data
+- **Neural codec integration** — learned compression for specific domains
+- **Distributed compression** — map/reduce across cluster
+- **Hardware offload** — FPGA/ASIC integration for high-throughput
+- **Format versioning** — backward-compatible wire format evolution
+
+See [LEDGER.md](LEDGER.md) for session-by-session development progress.
+
 ## Requirements
 
 - **Rust** 1.75+ stable (tested on 1.93)
@@ -223,4 +247,4 @@ cargo bench -p cpac-engine --bench dag         # DAG compile + execute
 CPAC Research & Evaluation License v1.0 — Copyright (c) 2026 BitConcepts, LLC.
 
 See [LICENSE](LICENSE) for full terms. Commercial licensing available —
-contact licensing@bitconcepts.com.
+contact info@bitconcepts.tech.
