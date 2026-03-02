@@ -63,12 +63,15 @@ pub fn compress_parallel(
         .build()
         .map_err(|e| CpacError::CompressFailed(format!("rayon pool: {e}")))?;
 
-    // Compress blocks in parallel
+    // Compress blocks in parallel with disable_parallel flag to prevent recursion
+    let mut block_config = config.clone();
+    block_config.disable_parallel = true;
+    
     let compressed_blocks: Vec<CpacResult<Vec<u8>>> = pool.install(|| {
         blocks
             .par_iter()
             .map(|block| {
-                let result = crate::compress(block, config)?;
+                let result = crate::compress(block, &block_config)?;
                 Ok(result.data)
             })
             .collect()

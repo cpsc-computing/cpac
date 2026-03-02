@@ -8,8 +8,22 @@ fuzz/target/
 # Dependency lock (library — consumers pin their own)
 Cargo.lock
 
-# Working directories
+# Working directories (all temporary/generated files must go here)
 .work/
+
+# Benchmark files (should be in .work/benchmarks/)
+bench-corpus/
+bench-results*.csv
+bench-results*.md
+LINKEDIN_BENCHMARK_REPORT.md
+OPTIMIZATION_RECOMMENDATIONS.md
+
+# Build artifacts that shouldn't escape target/
+*.o
+*.rlib
+*.so
+*.dll
+*.dylib
 
 # CPAC output files
 *.cpac

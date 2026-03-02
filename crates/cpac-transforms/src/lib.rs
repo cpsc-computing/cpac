@@ -9,10 +9,12 @@
 //! The preprocessed output uses a self-describing `TP` frame so the
 //! decompressor can reverse transforms automatically.
 
+pub mod bwt;
 pub mod dedup;
 pub mod delta;
 pub mod field_lz;
 pub mod float_split;
+pub mod mtf;
 pub mod parse_int;
 pub mod prefix;
 pub mod range_pack;

@@ -125,3 +125,67 @@ IDs must match. See `docs/SPEC.md`.
 - **Parallel threshold**: 256 KiB minimum before engaging block-parallel
 - **Mmap threshold**: 64 MiB minimum for auto memory-mapping
 - **Block size**: 1 MiB default for parallel and streaming
+
+## File Organization Rules
+
+### Repository Root Policy
+
+**CRITICAL**: The repository root must stay clean. Only the following are permitted:
+
+- **Build configuration**: `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `clippy.toml`
+- **Documentation**: `README.md`, `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `AGENTS.md`, `WARP.md`, `LEDGER.md`, `BENCHMARKING.md`
+- **Setup scripts**: `setup.sh`, `setup.ps1`, `env.sh`, `env.ps1`, `pgo-build.sh`, `pgo-build.ps1`
+- **Directories**: `crates/`, `docs/`, `fuzz/`, `python/`, `scripts/`, `target/`, `.work/`
+- **Hidden files**: `.git/`, `.gitignore`, `.github/`
+
+### Temporary/Generated Files → `.work/`
+
+All temporary, cache, and generated files **MUST** go into `.work/` subdirectories:
+
+- **Benchmarks**: `.work/benchmarks/` — corpus files, results CSVs/Markdown, analysis reports
+- **Cache**: `.work/cache/` — downloaded datasets, precompiled profiles, temp build artifacts
+- **Temp**: `.work/temp/` — scratch files, logs, intermediate data
+
+**Prohibited in root**:
+- `bench-corpus/`, `bench-results*`, `*_REPORT.md`, `*_RECOMMENDATIONS.md`
+- Build artifacts: `*.o`, `*.rlib`, `*.so`, `*.dll`, `*.dylib`
+- Compressed test files: `*.cpac`, `*.cpar`
+- Log files, PGO profiles (except in `pgo-data/` if needed)
+
+The `.gitignore` enforces these rules. Agents must never create files in the root that are not explicitly permitted above.
+
+### Documentation Structure
+
+#### CPAC Repository (`cpac/docs/`)
+
+Implementation-specific documentation for the Rust engine:
+
+- `ARCHITECTURE.md` — crate structure, pipeline flow, internal APIs
+- `SPEC.md` — wire format specification (CP/CS/TP/CPBL frames)
+- `cpac-overview.md` — high-level technical explainer
+- Session reports and development logs → `.work/temp/` (not committed)
+
+#### CPSC Core Repository (`cpsc-core/docs/`)
+
+Normative specifications and legal documentation:
+
+- `specification/` — CPSC formal spec, mathematical foundations
+- `patents/` — patent-related documentation
+- `public/` — public-facing technical materials
+- `GLOSSARY.md`, `LEGAL-FAQ.md`, `LEDGER.md`
+
+**Rule**: Implementation details belong in `cpac/docs/`. Normative/legal/specification content belongs in `cpsc-core/docs/`.
+
+### Code Generation and Scripts
+
+- Benchmark runner: use `cpac-cli bench` or `cpac-engine/src/bench.rs` API
+- Results output: always to `.work/benchmarks/`, never root
+- CI/CD scripts: in `.github/workflows/` or `scripts/`
+- Build scripts: `build.rs` in crate roots, NOT repo root
+
+### Enforcement
+
+1. Agents **must check** `.gitignore` before creating files in root
+2. Any file not matching the permitted list → move to `.work/` appropriate subfolder
+3. Periodic cleanup: `git status --ignored` to find violations
+4. PRs that add root clutter will be rejected

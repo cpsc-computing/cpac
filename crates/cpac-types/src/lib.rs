@@ -254,6 +254,9 @@ pub struct CompressConfig {
     pub filename: Option<String>,
     /// Resource limits (threads, memory, GPU).
     pub resources: Option<ResourceConfig>,
+    /// Internal: disable parallel compression (prevents recursive parallel calls).
+    #[doc(hidden)]
+    pub disable_parallel: bool,
 }
 
 /// Result of compression.

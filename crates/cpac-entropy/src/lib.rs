@@ -14,8 +14,14 @@ const ZSTD_LEVEL: i32 = 3;
 /// Default Brotli compression quality (8 = high quality, competitive with brotli-11).
 const BROTLI_QUALITY: i32 = 8;
 
-/// Default Gzip compression level (9 = best, competitive with gzip-9).
-const GZIP_LEVEL: u32 = 9;
+/// Default Gzip compression level for small files (9 = best).
+const GZIP_LEVEL_SMALL: u32 = 9;
+
+/// Gzip compression level for large files (6 = balanced speed/ratio).
+const GZIP_LEVEL_LARGE: u32 = 6;
+
+/// Threshold for adaptive Gzip level selection (1MB).
+const GZIP_SIZE_THRESHOLD: usize = 1_048_576;
 
 /// Compress `data` using the specified backend.
 #[must_use = "compressed data is returned"]
@@ -41,7 +47,13 @@ pub fn compress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
             Ok(out)
         }
         Backend::Gzip => {
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::new(GZIP_LEVEL));
+            // Adaptive level: fast compression for large files, best for small
+            let level = if data.len() >= GZIP_SIZE_THRESHOLD {
+                GZIP_LEVEL_LARGE
+            } else {
+                GZIP_LEVEL_SMALL
+            };
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::new(level));
             encoder.write_all(data)
                 .map_err(|e| CpacError::CompressFailed(format!("gzip write: {e}")))?;
             encoder.finish()
@@ -91,19 +103,41 @@ pub fn decompress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
     }
 }
 
-/// Auto-select backend based on entropy level.
+/// Auto-select backend based on entropy level, data size, and type.
 ///
-/// - entropy < 1.0 → Raw (already very low entropy, compression won't help much)
-/// - entropy < 6.0 → Zstd (good general-purpose)
-/// - entropy >= 6.0 → Brotli (better on high-entropy structured data)
+/// Refined selection for better performance across diverse workloads:
+/// - Very low entropy → Raw (compression won't help)
+/// - Large files + medium entropy → Zstd (speed matters)
+/// - Medium files + high entropy → Brotli (ratio matters)
+/// - Small files + high entropy → Brotli (ratio critical)
 pub fn auto_select_backend(entropy: f64) -> Backend {
+    auto_select_backend_with_size(entropy, 0)
+}
+
+/// Auto-select backend with size awareness.
+pub fn auto_select_backend_with_size(entropy: f64, data_size: usize) -> Backend {
+    // Raw for essentially incompressible data
     if entropy < 1.0 {
-        Backend::Raw
-    } else if entropy < 6.0 {
-        Backend::Zstd
-    } else {
-        Backend::Brotli
+        return Backend::Raw;
     }
+    
+    // For very large files (>10MB), prioritize speed with Zstd
+    if data_size > 10_000_000 && entropy < 7.0 {
+        return Backend::Zstd;
+    }
+    
+    // For high-entropy data, Brotli usually wins on ratio
+    if entropy >= 6.5 {
+        return Backend::Brotli;
+    }
+    
+    // For medium files with medium entropy, Zstd is balanced
+    if entropy < 6.5 {
+        return Backend::Zstd;
+    }
+    
+    // Default to Brotli for everything else
+    Backend::Brotli
 }
 
 #[cfg(test)]

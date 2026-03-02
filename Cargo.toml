@@ -8,7 +8,7 @@ members = [
     "crates/cpac-entropy",
     "crates/cpac-frame",
     "crates/cpac-engine",
-    "crates/cpac-cli", "crates/cpac-crypto", "crates/cpac-streaming", "crates/cpac-domains", "crates/cpac-cas", "crates/cpac-archive", "crates/cpac-dict",
+    "crates/cpac-cli", "crates/cpac-crypto", "crates/cpac-streaming", "crates/cpac-domains", "crates/cpac-cas", "crates/cpac-archive", "crates/cpac-dict", "python/cpac-py", "crates/cpac-ffi",
 ]
 
 [workspace.package]

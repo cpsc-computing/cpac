@@ -81,16 +81,25 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // 1. SSR analysis
     let ssr = cpac_ssr::analyze(data);
 
-    // 2. Select backend
+    // 2. Select backend with size awareness
     let backend = config
         .backend
-        .unwrap_or_else(|| cpac_entropy::auto_select_backend(ssr.entropy_estimate));
+        .unwrap_or_else(|| cpac_entropy::auto_select_backend_with_size(ssr.entropy_estimate, original_size));
 
-    // 3. Adaptive preprocessing
+    // 3. Check if we should use parallel compression for large files
+    // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel)
+    const PARALLEL_THRESHOLD: usize = 1_048_576; // 1MB
+    if !config.disable_parallel && original_size >= PARALLEL_THRESHOLD && backend != Backend::Raw {
+        // Use default 1MB block size and auto-detect thread count
+        let num_threads = rayon::current_num_threads();
+        return compress_parallel(data, config, DEFAULT_BLOCK_SIZE, num_threads);
+    }
+
+    // 4. Adaptive preprocessing
     // Skip preprocessing for:
     // - Raw backend (passthrough mode)
-    // - Very small files (< 1KB) where overhead exceeds benefit
-    const PREPROCESS_THRESHOLD: usize = 1024;
+    // - Small files (< 4KB) where overhead exceeds benefit
+    const PREPROCESS_THRESHOLD: usize = 4096;
     let should_preprocess = backend != Backend::Raw && original_size >= PREPROCESS_THRESHOLD;
     
     let preprocessed = if should_preprocess {
@@ -106,7 +115,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         data.to_vec()
     };
 
-    // 4. Entropy coding
+    // 5. Entropy coding
     let compressed_payload = cpac_entropy::compress(&preprocessed, backend)?;
 
     // 5. Frame encoding (empty DAG descriptor — preprocess metadata embedded in TP frame)
