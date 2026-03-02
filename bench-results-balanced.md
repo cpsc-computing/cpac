@@ -1,0 +1,93 @@
+# CPAC Benchmark Report: balanced-bench
+
+- **Total original**: 56632896 bytes
+- **Total compressed**: 18581938 bytes
+- **Overall ratio**: 3.05x
+- **Mean compress throughput**: 216.1 MB/s
+- **Mean decompress throughput**: 2242.3 MB/s
+- **Lossless verified**: YES
+- **Peak memory (est.)**: 125.7 MB
+
+## Per-file results
+
+- `bench-corpus\data.json` [Zstd]: 96.93x ratio, 109.6/123.8 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\data.json` [Brotli]: 106.79x ratio, 48.8/121.5 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\data.json` [Gzip]: 101.95x ratio, 65.4/117.5 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\data.json` [Lzma]: 38.05x ratio, 114.1/127.1 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\data.json` [Raw]: 1.00x ratio, 822.3/30042.6 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\data.json` [gzip-9]: 89.49x ratio, 191.7/791.3 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\data.json` [zstd-3]: 169.37x ratio, 165.1/972.3 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\data.json` [brotli-11]: 185.31x ratio, 12.7/426.5 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\data.json` [lzma-6]: 1.92x ratio, 51.2/40.4 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\example.rs` [Zstd]: 67.48x ratio, 237.2/632.3 MB/s (c/d), 0.0 MB mem, lossless=true
+- `bench-corpus\example.rs` [Brotli]: 71.32x ratio, 35.2/671.3 MB/s (c/d), 0.0 MB mem, lossless=true
+- `bench-corpus\example.rs` [Gzip]: 47.91x ratio, 82.4/1355.2 MB/s (c/d), 0.0 MB mem, lossless=true
+- `bench-corpus\example.rs` [Lzma]: 0.99x ratio, 282.8/2426.6 MB/s (c/d), 0.0 MB mem, lossless=true
+- `bench-corpus\example.rs` [Raw]: 1.00x ratio, 927.9/32706.3 MB/s (c/d), 0.0 MB mem, lossless=true
+- `bench-corpus\example.rs` [gzip-9]: 50.21x ratio, 92.3/677.6 MB/s (c/d), 0.0 MB mem, lossless=true
+- `bench-corpus\example.rs` [zstd-3]: 72.55x ratio, 62.6/515.2 MB/s (c/d), 0.0 MB mem, lossless=true
+- `bench-corpus\example.rs` [brotli-11]: 78.94x ratio, 8.1/711.1 MB/s (c/d), 0.0 MB mem, lossless=true
+- `bench-corpus\example.rs` [lzma-6]: 1.96x ratio, 41.4/39.1 MB/s (c/d), 0.0 MB mem, lossless=true
+- `bench-corpus\large-code.rs` [Zstd]: 537.19x ratio, 103.1/117.9 MB/s (c/d), 0.5 MB mem, lossless=true
+- `bench-corpus\large-code.rs` [Brotli]: 573.96x ratio, 81.3/105.4 MB/s (c/d), 0.5 MB mem, lossless=true
+- `bench-corpus\large-code.rs` [Gzip]: 543.94x ratio, 88.1/100.7 MB/s (c/d), 0.5 MB mem, lossless=true
+- `bench-corpus\large-code.rs` [Lzma]: 49.69x ratio, 97.7/102.1 MB/s (c/d), 0.5 MB mem, lossless=true
+- `bench-corpus\large-code.rs` [Raw]: 1.00x ratio, 617.9/2387.3 MB/s (c/d), 0.7 MB mem, lossless=true
+- `bench-corpus\large-code.rs` [gzip-9]: 162.81x ratio, 550.8/1461.7 MB/s (c/d), 0.5 MB mem, lossless=true
+- `bench-corpus\large-code.rs` [zstd-3]: 807.46x ratio, 896.4/1201.0 MB/s (c/d), 0.5 MB mem, lossless=true
+- `bench-corpus\large-code.rs` [brotli-11]: 973.79x ratio, 20.8/672.8 MB/s (c/d), 0.5 MB mem, lossless=true
+- `bench-corpus\large-code.rs` [lzma-6]: 1.92x ratio, 41.7/35.2 MB/s (c/d), 0.6 MB mem, lossless=true
+- `bench-corpus\large-data.json` [Zstd]: 15.40x ratio, 45.7/120.1 MB/s (c/d), 1.4 MB mem, lossless=true
+- `bench-corpus\large-data.json` [Brotli]: 18.88x ratio, 29.1/111.6 MB/s (c/d), 1.4 MB mem, lossless=true
+- `bench-corpus\large-data.json` [Gzip]: 14.61x ratio, 25.1/119.9 MB/s (c/d), 1.4 MB mem, lossless=true
+- `bench-corpus\large-data.json` [Lzma]: 3.85x ratio, 53.5/118.4 MB/s (c/d), 1.5 MB mem, lossless=true
+- `bench-corpus\large-data.json` [Raw]: 1.00x ratio, 727.2/2666.0 MB/s (c/d), 2.0 MB mem, lossless=true
+- `bench-corpus\large-data.json` [gzip-9]: 10.32x ratio, 44.5/916.6 MB/s (c/d), 1.4 MB mem, lossless=true
+- `bench-corpus\large-data.json` [zstd-3]: 15.34x ratio, 587.8/871.6 MB/s (c/d), 1.4 MB mem, lossless=true
+- `bench-corpus\large-data.json` [brotli-11]: 21.62x ratio, 0.9/794.8 MB/s (c/d), 1.4 MB mem, lossless=true
+- `bench-corpus\large-data.json` [lzma-6]: 1.90x ratio, 55.1/44.0 MB/s (c/d), 1.7 MB mem, lossless=true
+- `bench-corpus\large-metrics.csv` [Zstd]: 3.12x ratio, 206.0/698.5 MB/s (c/d), 3.3 MB mem, lossless=true
+- `bench-corpus\large-metrics.csv` [Brotli]: 3.39x ratio, 14.5/366.0 MB/s (c/d), 3.3 MB mem, lossless=true
+- `bench-corpus\large-metrics.csv` [Gzip]: 3.29x ratio, 13.1/373.7 MB/s (c/d), 3.3 MB mem, lossless=true
+- `bench-corpus\large-metrics.csv` [Lzma]: 1.00x ratio, 770.5/1207.1 MB/s (c/d), 4.3 MB mem, lossless=true
+- `bench-corpus\large-metrics.csv` [Raw]: 1.00x ratio, 898.7/2600.8 MB/s (c/d), 4.3 MB mem, lossless=true
+- `bench-corpus\large-metrics.csv` [gzip-9]: 3.29x ratio, 13.5/342.8 MB/s (c/d), 3.3 MB mem, lossless=true
+- `bench-corpus\large-metrics.csv` [zstd-3]: 3.12x ratio, 250.6/542.5 MB/s (c/d), 3.3 MB mem, lossless=true
+- `bench-corpus\large-metrics.csv` [brotli-11]: 4.20x ratio, 0.8/298.9 MB/s (c/d), 3.2 MB mem, lossless=true
+- `bench-corpus\large-metrics.csv` [lzma-6]: 2.07x ratio, 53.5/38.4 MB/s (c/d), 3.5 MB mem, lossless=true
+- `bench-corpus\large-server.log` [Zstd]: 6.85x ratio, 33.4/106.7 MB/s (c/d), 7.5 MB mem, lossless=true
+- `bench-corpus\large-server.log` [Brotli]: 7.50x ratio, 16.7/98.1 MB/s (c/d), 7.4 MB mem, lossless=true
+- `bench-corpus\large-server.log` [Gzip]: 6.90x ratio, 11.6/100.3 MB/s (c/d), 7.5 MB mem, lossless=true
+- `bench-corpus\large-server.log` [Lzma]: 2.56x ratio, 37.7/114.0 MB/s (c/d), 8.3 MB mem, lossless=true
+- `bench-corpus\large-server.log` [Raw]: 1.00x ratio, 865.9/3350.6 MB/s (c/d), 10.5 MB mem, lossless=true
+- `bench-corpus\large-server.log` [gzip-9]: 8.00x ratio, 38.3/874.2 MB/s (c/d), 7.4 MB mem, lossless=true
+- `bench-corpus\large-server.log` [zstd-3]: 7.29x ratio, 600.5/969.8 MB/s (c/d), 7.4 MB mem, lossless=true
+- `bench-corpus\large-server.log` [brotli-11]: 11.13x ratio, 0.8/681.4 MB/s (c/d), 7.3 MB mem, lossless=true
+- `bench-corpus\large-server.log` [lzma-6]: 1.88x ratio, 55.1/43.7 MB/s (c/d), 8.8 MB mem, lossless=true
+- `bench-corpus\metrics.csv` [Zstd]: 13.97x ratio, 240.0/997.0 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\metrics.csv` [Brotli]: 14.16x ratio, 12.9/523.8 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\metrics.csv` [Gzip]: 7.09x ratio, 45.2/858.6 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\metrics.csv` [Lzma]: 1.00x ratio, 583.2/3119.8 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\metrics.csv` [Raw]: 1.00x ratio, 1048.1/25328.2 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\metrics.csv` [gzip-9]: 7.11x ratio, 42.0/594.3 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\metrics.csv` [zstd-3]: 14.04x ratio, 147.0/686.8 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\metrics.csv` [brotli-11]: 15.76x ratio, 1.3/480.7 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\metrics.csv` [lzma-6]: 2.27x ratio, 66.9/53.3 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\server.log` [Zstd]: 35.93x ratio, 65.6/137.3 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\server.log` [Brotli]: 42.38x ratio, 27.1/128.3 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\server.log` [Gzip]: 26.94x ratio, 49.8/129.0 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\server.log` [Lzma]: 4.91x ratio, 69.6/133.3 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\server.log` [Raw]: 1.00x ratio, 918.1/5853.3 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\server.log` [gzip-9]: 16.04x ratio, 176.7/1063.4 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\server.log` [zstd-3]: 31.45x ratio, 226.8/1032.4 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\server.log` [brotli-11]: 41.55x ratio, 1.1/545.7 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\server.log` [lzma-6]: 1.96x ratio, 56.6/49.9 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\text-repeated.txt` [Zstd]: 569.65x ratio, 332.0/1345.4 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\text-repeated.txt` [Brotli]: 642.89x ratio, 143.0/573.3 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\text-repeated.txt` [Gzip]: 199.12x ratio, 217.5/2768.9 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\text-repeated.txt` [Lzma]: 1.00x ratio, 481.7/4194.0 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\text-repeated.txt` [Raw]: 1.00x ratio, 615.5/30655.2 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\text-repeated.txt` [gzip-9]: 210.29x ratio, 298.0/1493.7 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\text-repeated.txt` [zstd-3]: 681.85x ratio, 236.6/986.6 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\text-repeated.txt` [brotli-11]: 714.32x ratio, 21.9/583.9 MB/s (c/d), 0.1 MB mem, lossless=true
+- `bench-corpus\text-repeated.txt` [lzma-6]: 2.01x ratio, 82.6/59.8 MB/s (c/d), 0.1 MB mem, lossless=true

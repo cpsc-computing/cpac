@@ -1,0 +1,651 @@
+// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}// Example Rust code
+fn fibonacci(n: u32) -> u64 {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fibonacci(n - 1) + fibonacci(n - 2),
+    }
+}
+
+pub fn main() {
+    for i in 0..20 {
+        println!("fib({}) = {}", i, fibonacci(i));
+    }
+}

@@ -86,14 +86,25 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         .backend
         .unwrap_or_else(|| cpac_entropy::auto_select_backend(ssr.entropy_estimate));
 
-    // 3. Preprocess (transforms)
-    let transform_ctx = cpac_transforms::TransformContext {
-        entropy_estimate: ssr.entropy_estimate,
-        ascii_ratio: ssr.ascii_ratio,
-        data_size: ssr.data_size,
+    // 3. Adaptive preprocessing
+    // Skip preprocessing for:
+    // - Raw backend (passthrough mode)
+    // - Very small files (< 1KB) where overhead exceeds benefit
+    const PREPROCESS_THRESHOLD: usize = 1024;
+    let should_preprocess = backend != Backend::Raw && original_size >= PREPROCESS_THRESHOLD;
+    
+    let preprocessed = if should_preprocess {
+        let transform_ctx = cpac_transforms::TransformContext {
+            entropy_estimate: ssr.entropy_estimate,
+            ascii_ratio: ssr.ascii_ratio,
+            data_size: ssr.data_size,
+        };
+        // Use SSR-guided TP preprocess (generic profile / default)
+        let (preprocessed, _transform_meta) = cpac_transforms::preprocess(data, &transform_ctx);
+        preprocessed
+    } else {
+        data.to_vec()
     };
-    // Use SSR-guided TP preprocess (generic profile / default)
-    let (preprocessed, _transform_meta) = cpac_transforms::preprocess(data, &transform_ctx);
 
     // 4. Entropy coding
     let compressed_payload = cpac_entropy::compress(&preprocessed, backend)?;

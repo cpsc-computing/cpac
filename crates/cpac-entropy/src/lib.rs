@@ -8,17 +8,14 @@ use flate2::read::GzDecoder;
 use flate2::Compression;
 use std::io::{Read, Write};
 
-/// Default Zstd compression level.
+/// Default Zstd compression level (3 = fast, good for general use).
 const ZSTD_LEVEL: i32 = 3;
 
-/// Default Brotli compression quality.
-const BROTLI_QUALITY: i32 = 6;
+/// Default Brotli compression quality (8 = high quality, competitive with brotli-11).
+const BROTLI_QUALITY: i32 = 8;
 
-/// Default Gzip compression level (6 = balanced, equivalent to gzip -6).
-const GZIP_LEVEL: u32 = 6;
-
-/// Default LZMA compression preset (6 = balanced, equivalent to xz -6).
-const LZMA_PRESET: u32 = 6;
+/// Default Gzip compression level (9 = best, competitive with gzip-9).
+const GZIP_LEVEL: u32 = 9;
 
 /// Compress `data` using the specified backend.
 #[must_use = "compressed data is returned"]
@@ -51,21 +48,13 @@ pub fn compress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
                 .map_err(|e| CpacError::CompressFailed(format!("gzip finish: {e}")))
         }
         Backend::Lzma => {
-            lzma_rs::lzma_compress(
+            let mut out = Vec::new();
+            lzma_rs::xz_compress(
                 &mut std::io::Cursor::new(data),
-                &mut Vec::new(),
+                &mut out,
             )
-            .map_err(|e| CpacError::CompressFailed(format!("lzma: {e}")))
-            .and_then(|_| {
-                // lzma_compress writes to mutable Vec, but returns () - use xz_compress instead
-                let mut out = Vec::new();
-                lzma_rs::xz_compress(
-                    &mut std::io::Cursor::new(data),
-                    &mut out,
-                )
-                .map_err(|e| CpacError::CompressFailed(format!("lzma xz: {e}")))?;
-                Ok(out)
-            })
+            .map_err(|e| CpacError::CompressFailed(format!("lzma: {e}")))?;
+            Ok(out)
         }
     }
 }
