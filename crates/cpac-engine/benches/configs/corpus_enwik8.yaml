@@ -1,0 +1,12 @@
+id: enwik8
+name: Enwik8
+description: 100 MB Wikipedia XML snapshot (Large Text Compression Benchmark)
+download_url: http://mattmahoney.net/dc/enwik8.zip
+download_kind: http_zip
+target_subdir: enwik/enwik8
+license: |
+  CC BY-SA 3.0 (Wikipedia content license)
+  Freely available for research and benchmarking purposes
+citation: |
+  Matt Mahoney, "Large Text Compression Benchmark,"
+  Available at: http://mattmahoney.net/dc/text.html

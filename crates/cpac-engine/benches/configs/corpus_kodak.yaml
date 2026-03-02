@@ -1,0 +1,12 @@
+id: kodak
+name: Kodak Images
+description: Kodak Lossless True Color Image Suite (24 PNG photographs)
+download_url: https://github.com/MohamedBakrAli/Kodak-Lossless-True-Color-Image-Suite/archive/refs/heads/master.zip
+download_kind: http_zip
+target_subdir: images/kodak
+extract_paths:
+  - Kodak-Lossless-True-Color-Image-Suite-master/PhotoCD_PCD0992/*.png
+license: Released by Eastman Kodak Company for unrestricted usage
+citation: |
+  Rich Franzen, "Kodak Lossless True Color Image Suite (PhotoCD PCD0992),"
+  Available at: http://r0k.us/graphics/kodak/

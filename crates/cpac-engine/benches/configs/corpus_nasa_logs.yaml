@@ -1,0 +1,13 @@
+id: nasa_logs
+name: NASA HTTP Logs
+description: NASA HTTP access logs (Jul95 and Aug95, ~200MB total)
+download_url: 
+  - ftp://ita.ee.lbl.gov/traces/NASA_access_log_Jul95.gz
+  - ftp://ita.ee.lbl.gov/traces/NASA_access_log_Aug95.gz
+download_kind: http_gzip_multi
+target_subdir: logs/nasa
+license: Public domain - freely available for research
+citation: |
+  NASA HTTP Server Logs, Internet Traffic Archive,
+  Lawrence Berkeley National Laboratory,
+  Available at: ftp://ita.ee.lbl.gov/traces/

@@ -1,0 +1,14 @@
+# CPAC Benchmark System Settings
+# Global configuration for corpus management and benchmarking
+
+# Corpus storage locations (relative to project root or absolute paths)
+benchdata_root: .work/benchdata
+benchdata_cache: .work/benchdata_cache
+
+# Benchmark runner settings
+max_files_per_corpus: 10000  # Default file limit per corpus (high limit for comprehensive testing)
+max_file_size_mb: 2048       # Skip files larger than this (in MB) - allows up to 2GB files
+
+# Auto-download settings
+auto_download_missing: true  # Automatically download missing corpora before benchmarking
+download_timeout_seconds: 300  # Timeout for individual downloads

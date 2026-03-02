@@ -1,0 +1,40 @@
+id: json_apis
+name: Cloud JSON Data
+description: Large structured JSON datasets and API responses
+target_subdir: cloud/json_apis
+
+# Public JSON datasets from GitHub repositories
+download_url:
+  # OpenAPI specifications (large JSON schemas)
+  - https://github.com/APIs-guru/openapi-directory/archive/refs/heads/main.zip
+  # AWS CloudFormation templates (JSON format)
+  - https://github.com/awslabs/aws-cloudformation-templates/archive/refs/heads/master.zip
+  # Azure QuickStart templates (JSON)
+  - https://github.com/Azure/azure-quickstart-templates/archive/refs/heads/master.zip
+
+download_kind: http_zip_multi
+
+extract_paths:
+  - "**/*.json"
+  - "*.json"
+  - "*/*.json"
+
+license: Mixed (MIT/Apache 2.0)
+citation: |
+  OpenAPI Directory: https://github.com/APIs-guru/openapi-directory (MIT)
+  AWS CloudFormation: https://github.com/awslabs/aws-cloudformation-templates (MIT-0)
+  Azure Templates: https://github.com/Azure/azure-quickstart-templates (MIT)
+
+# Profile-based filtering
+profiles:
+  quick:
+    include: true
+  balanced:
+    include: true
+  full:
+    include: true
+
+note: |
+  JSON corpus with OpenAPI specs, CloudFormation templates, and Azure templates.
+  Contains large nested JSON structures typical of cloud APIs. Target: ~500MB-1GB uncompressed.
+  Included in all benchmark profiles (quick/balanced/full).

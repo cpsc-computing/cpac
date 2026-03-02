@@ -1,0 +1,46 @@
+# MUSAN: Music, Speech, and Noise Corpus
+# URL: https://www.openslr.org/17/
+
+id: musan
+name: "MUSAN Audio Corpus"
+description: "Music, Speech, and Noise corpus - large sample for comprehensive audio testing"
+
+download_url: "https://openslr.trmal.net/resources/17/musan.tar.gz"
+download_kind: "http_targz"
+target_subdir: "audio/musan"
+
+# Extract specific subdirectories
+extract_paths:
+  - "musan/music/*/*.wav"
+  - "musan/speech/*/*.wav"
+  - "musan/noise/*/*.wav"
+
+# License and citation
+license: |
+  Free to use for research purposes.
+  
+citation: |
+  @misc{musan2015,
+    author = {David Snyder and Guoguo Chen and Daniel Povey},
+    title = {{MUSAN}: {A} {M}usic, {S}peech, and {N}oise {C}orpus},
+    year = {2015},
+    eprint = {1510.08484},
+    note = {arXiv:1510.08484v1}
+  }
+
+# Default sampling (used if no profile specified)
+max_files: 200
+file_selection: size_distributed
+
+# Profile-specific sampling - ~2,000 WAV files total (~10GB)
+profile:
+  quick_benchmark:
+    max_files: 200
+    file_selection: size_distributed
+  balanced_benchmark:
+    max_files: 800
+    file_selection: size_distributed
+  full_benchmark:
+    max_files: 1500
+    file_selection: size_distributed
+

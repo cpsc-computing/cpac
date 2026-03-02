@@ -1,0 +1,55 @@
+id: loghub2_2k
+name: Loghub-2.0 2k Collection
+description: Loghub-2.0 2k log collection - 16 diverse system logs (PostgreSQL unavailable)
+download_url:
+  # System logs
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/Linux/Linux_2k.log
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/Mac/Mac_2k.log
+  # Web server logs
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/Apache/Apache_2k.log
+  # Cloud/OpenStack logs
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/OpenStack/OpenStack_2k.log
+  # Big Data framework logs
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/HDFS/HDFS_2k.log
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/Hadoop/Hadoop_2k.log
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/Spark/Spark_2k.log
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/Zookeeper/Zookeeper_2k.log
+  # Supercomputer logs
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/BGL/BGL_2k.log
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/Thunderbird/Thunderbird_2k.log
+  # Application logs
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/HealthApp/HealthApp_2k.log
+  # Security logs
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/OpenSSH/OpenSSH_2k.log
+  # Proxies (PostgreSQL_2k.log unavailable - 404)
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/Proxifier/Proxifier_2k.log
+  # HPC logs
+  - https://raw.githubusercontent.com/logpai/loghub-2.0/master/2k_dataset/HPC/HPC_2k.log
+download_kind: http_file_multi
+target_subdir: logs/loghub-2.0/2k
+note: 16-source log collection covering system, web, big data, supercomputer, security, and application logs (PostgreSQL unavailable)
+
+license:
+  name: Loghub Research License
+  url: https://github.com/logpai/loghub
+  text: |
+    The datasets are freely available for research or academic work, subject to 
+    the following condition: For any usage or distribution of the loghub datasets,
+    please refer to the loghub repository URL (https://github.com/logpai/loghub)
+    and cite the following loghub paper where applicable.
+    
+    The above license notice shall be included in all copies of the datasets.
+
+citation:
+  text: |
+    Jieming Zhu, Shilin He, Pinjia He, Jinyang Liu, Michael R. Lyu. 
+    Loghub: A Large Collection of System Log Datasets for AI-driven Log Analytics. 
+    In ISSRE, 2023.
+  bibtex: |
+    @inproceedings{zhu2023loghub,
+      title={Loghub: A Large Collection of System Log Datasets for AI-driven Log Analytics},
+      author={Zhu, Jieming and He, Shilin and He, Pinjia and Liu, Jinyang and Lyu, Michael R.},
+      booktitle={2023 IEEE 34th International Symposium on Software Reliability Engineering (ISSRE)},
+      year={2023},
+      organization={IEEE}
+    }

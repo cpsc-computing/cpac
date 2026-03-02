@@ -1,0 +1,47 @@
+id: github_events_large
+name: GitHub Events Archive (Large)
+description: Large-scale GitHub event data from Archive.org - real JSON API responses
+target_subdir: cloud/github_events_large
+
+# GitHub Archive data from Archive.org (more reliable than gharchive.org)
+# Using monthly archives which are pre-compressed and more stable
+download_url:
+  # January 2024 - 6 hours of data (each ~100-200MB compressed)
+  - https://data.gharchive.org/2024-01-01-0.json.gz
+  - https://data.gharchive.org/2024-01-01-6.json.gz
+  - https://data.gharchive.org/2024-01-01-12.json.gz
+  - https://data.gharchive.org/2024-01-01-18.json.gz
+  - https://data.gharchive.org/2024-01-02-0.json.gz
+  - https://data.gharchive.org/2024-01-02-6.json.gz
+
+download_kind: http_gzip_multi
+
+# No extraction limits - download 6 hours of data
+# Each hour file is ~100-200MB compressed, ~500MB-1GB uncompressed
+# Total target: 6 hours = ~3-6GB uncompressed
+
+license: CC BY 4.0
+citation: |
+  GitHub Archive: https://www.gharchive.org/
+  "GH Archive is a project to record the public GitHub timeline, archive it,
+  and make it easily accessible for further analysis."
+  
+# Profile-based filtering for benchmark configs
+profiles:
+  quick:
+    exclude: true  # Exclude this entire corpus from quick benchmarks
+  balanced:
+    include: true  # Include in balanced benchmarks
+  full:
+    include: true  # Include in full benchmarks
+
+note: |
+  Large JSON corpus with real GitHub API event data. Each hourly file contains
+  thousands of JSON events (push, pull request, issue, etc.) with nested
+  structures typical of modern REST APIs. Target: 3-6GB uncompressed.
+  
+  Files are very large - use this corpus to test memory efficiency and 
+  compression speed at scale. Good representation of real-world JSON API logs.
+  Start with 6 hours - can expand to 24 hours (12-24GB) if needed.
+  
+  Profiles: Excluded from 'quick' (too large), included in 'balanced' and 'full'.

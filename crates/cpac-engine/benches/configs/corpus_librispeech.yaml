@@ -1,0 +1,51 @@
+# LibriSpeech ASR corpus
+# URL: https://www.openslr.org/12
+
+id: librispeech
+name: "LibriSpeech ASR Corpus"
+description: "Large-scale corpus of read English speech (train-clean-100 subset)"
+
+download_url: "https://openslr.trmal.net/resources/12/train-clean-100.tar.gz"
+download_kind: "http_targz"
+target_subdir: "audio/librispeech"
+
+# Extract FLAC audio files only (no txt transcripts)
+extract_paths:
+  - "LibriSpeech/train-clean-100/*/*/*.flac"
+
+# License and citation
+license: |
+  Creative Commons Attribution 4.0 International (CC BY 4.0)
+  https://creativecommons.org/licenses/by/4.0/
+
+citation: |
+  @inproceedings{panayotov2015librispeech,
+    title={Librispeech: an ASR corpus based on public domain audio books},
+    author={Panayotov, Vassil and Chen, Guoguo and Povey, Daniel and Khudanpur, Sanjeev},
+    booktitle={2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)},
+    pages={5206--5210},
+    year={2015},
+    organization={IEEE}
+  }
+  
+  V. Panayotov, G. Chen, D. Povey and S. Khudanpur,
+  "Librispeech: An ASR corpus based on public domain audio books,"
+  2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP),
+  South Brisbane, QLD, Australia, 2015, pp. 5206-5210.
+
+# Default sampling (used if no profile specified)
+max_files: 200
+file_selection: size_distributed
+
+# Profile-specific sampling - ~28,000 FLAC files total (~6GB)
+profile:
+  quick_benchmark:
+    max_files: 200
+    file_selection: size_distributed
+  balanced_benchmark:
+    max_files: 1000
+    file_selection: size_distributed
+  full_benchmark:
+    max_files: 3000
+    file_selection: size_distributed
+
