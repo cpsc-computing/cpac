@@ -167,6 +167,7 @@ impl From<CpacCompressConfig> for CompressConfig {
             resources,
             dictionary: None,
             disable_parallel: false,
+            enable_msn: false, // FFI defaults to MSN disabled
         }
     }
 }

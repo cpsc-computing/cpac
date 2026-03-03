@@ -86,8 +86,8 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         // min_confidence = 0.5 for auto-detection
         match cpac_msn::extract(data, None, 0.5) {
             Ok(result) if result.applied => {
-                // MSN succeeded - use residual as input to rest of pipeline
-                let metadata = serde_json::to_vec(&result)
+                // MSN succeeded - use residual as input, store metadata (without residual)
+                let metadata = serde_json::to_vec(&result.metadata())
                     .map_err(|e| CpacError::CompressFailed(format!("MSN metadata serialize: {}", e)))?;
                 (result.residual, metadata)
             }
@@ -238,8 +238,9 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
 
     // 4. MSN reconstruction (if metadata present in CP2 frame)
     if !header.msn_metadata.is_empty() {
-        let msn_result: cpac_msn::MsnResult = serde_json::from_slice(&header.msn_metadata)
+        let msn_metadata: cpac_msn::MsnMetadata = serde_json::from_slice(&header.msn_metadata)
             .map_err(|e| CpacError::DecompressFailed(format!("MSN metadata deserialize: {}", e)))?;
+        let msn_result = msn_metadata.with_residual(result);
         result = cpac_msn::reconstruct(&msn_result)?;
     }
 

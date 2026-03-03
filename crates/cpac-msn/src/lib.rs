@@ -29,6 +29,19 @@ pub struct MsnResult {
     pub confidence: f64,
 }
 
+/// Lightweight MSN metadata for frame storage (excludes residual).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct MsnMetadata {
+    /// Extracted semantic fields
+    pub fields: std::collections::HashMap<String, serde_json::Value>,
+    /// Whether MSN was actually applied
+    pub applied: bool,
+    /// Domain ID used (if applied)
+    pub domain_id: Option<String>,
+    /// Detection confidence
+    pub confidence: f64,
+}
+
 impl MsnResult {
     /// Create a passthrough result (MSN not applied).
     pub fn passthrough(data: &[u8]) -> Self {
@@ -38,6 +51,29 @@ impl MsnResult {
             applied: false,
             domain_id: None,
             confidence: 0.0,
+        }
+    }
+
+    /// Extract metadata for frame storage (without residual).
+    pub fn metadata(&self) -> MsnMetadata {
+        MsnMetadata {
+            fields: self.fields.clone(),
+            applied: self.applied,
+            domain_id: self.domain_id.clone(),
+            confidence: self.confidence,
+        }
+    }
+}
+
+impl MsnMetadata {
+    /// Convert to MsnResult by adding residual.
+    pub fn with_residual(self, residual: Vec<u8>) -> MsnResult {
+        MsnResult {
+            fields: self.fields,
+            residual,
+            applied: self.applied,
+            domain_id: self.domain_id,
+            confidence: self.confidence,
         }
     }
 }
