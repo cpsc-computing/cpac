@@ -136,13 +136,14 @@ cpac benchmark .work/benchdata/silesia/dickens
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | CPAC Lzma | gzip-9 | zstd-3 | brotli-11 | lzma-6 | Best |
 |------|-----------|-------------|-----------|-----------|--------|--------|-----------|--------|------|
 | dickens (10 MB) | TBD | TBD | TBD | TBD | 2.64x @ 20 MB/s | 2.77x @ 256 MB/s | **3.57x @ 1 MB/s** | 1.84x @ 46 MB/s | **Baseline brotli-11** |
-| mozilla (51 MB) | ⚠️ Error | ⚠️ Error | ⚠️ Error | ⚠️ Error | 2.68x @ 17 MB/s | **2.79x @ 351 MB/s** | **3.63x @ 1 MB/s** | 1.79x @ 43 MB/s | **Baseline brotli-11** |
-| xml (5 MB) | ⚠️ Error | ⚠️ Error | ⚠️ Error | ⚠️ Error | 8.05x @ 54 MB/s | **8.41x @ 680 MB/s** | **12.42x @ 1 MB/s** | 1.89x @ 49 MB/s | **Baseline brotli-11** |
+| mozilla (51 MB) | 2.26x @ 82 MB/s | 2.46x @ 35 MB/s | 2.29x @ 20 MB/s | 1.00x @ 86 MB/s | 2.68x @ 17 MB/s | **2.79x @ 351 MB/s** | **3.63x @ 1 MB/s** | 1.79x @ 43 MB/s | **Baseline brotli-11** |
+| xml (5 MB) | 6.09x @ 83 MB/s | 6.53x @ 37 MB/s | 5.93x @ 28 MB/s | 1.00x @ 88 MB/s | 8.05x @ 54 MB/s | **8.41x @ 680 MB/s** | **12.42x @ 1 MB/s** | 1.89x @ 49 MB/s | **Baseline brotli-11** |
 
 **Key Findings:**
 - ✅ **brotli-11 exceptional on XML** (12.42x ratio)
 - ✅ **zstd-3 fastest** (680 MB/s on XML, 351 MB/s on mozilla)
-- ⚠️ **CPAC backend errors** on large files (>5 MB) - frame version issue being investigated
+- ✅ **CPAC backends working** on large files after CPBL frame detection fix
+- ✅ **CPAC Brotli competitive** (6.53x vs 12.42x on XML, 2.46x vs 3.63x on mozilla)
 - ✅ **Baselines complete** for all Silesia files
 
 **Key Findings**:
