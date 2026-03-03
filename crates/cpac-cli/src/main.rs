@@ -61,6 +61,11 @@ enum Commands {
         /// Use memory-mapped I/O (auto for files > 64 MB, force with flag).
         #[arg(long)]
         mmap: bool,
+        /// Enable Multi-Scale Normalization (MSN) for domain-specific semantic extraction.
+        /// Extracts repeated structure from JSON, CSV, XML, logs, etc. for higher ratios.
+        /// Default: disabled.
+        #[arg(long)]
+        enable_msn: bool,
     },
     /// Decompress a file (or stdin with -).
     #[command(alias = "d", alias = "x")]
@@ -369,6 +374,7 @@ fn cmd_compress(
     threads: usize,
     max_memory: usize,
     mmap: bool,
+    enable_msn: bool,
 ) {
     let backend = backend.map(|b| match parse_backend(&b) {
         Ok(v) => v,
@@ -399,6 +405,7 @@ fn cmd_compress(
         let config = CompressConfig {
             backend,
             resources: Some(resources.clone()),
+            enable_msn,
             ..Default::default()
         };
 
@@ -1208,8 +1215,9 @@ fn main() {
             threads,
             max_memory,
             mmap,
+            enable_msn,
         } => cmd_compress(
-            input, output, backend, force, keep, recursive, verbose, threads, max_memory, mmap,
+            input, output, backend, force, keep, recursive, verbose, threads, max_memory, mmap, enable_msn,
         ),
         Commands::Decompress {
             input,

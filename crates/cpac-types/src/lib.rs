@@ -256,6 +256,10 @@ pub struct CompressConfig {
     pub resources: Option<ResourceConfig>,
     /// Optional pre-trained dictionary (raw zstd dict format).
     pub dictionary: Option<Vec<u8>>,
+    /// Enable Multi-Scale Normalization (MSN) for domain-specific semantic extraction.
+    /// When enabled, extracts repeated structure from JSON, CSV, XML, logs, etc.
+    /// Default: false.
+    pub enable_msn: bool,
     /// Internal: disable parallel compression (prevents recursive parallel calls).
     #[doc(hidden)]
     pub disable_parallel: bool,
