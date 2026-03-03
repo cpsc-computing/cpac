@@ -5,7 +5,8 @@
 //! Compares the `*_fast` (auto-dispatched) SIMD path against the plain
 //! scalar implementations for delta and zigzag at several data sizes.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 // ── data generators ─────────────────────────────────────────────────────
 
