@@ -9,17 +9,8 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion, Benchmark
 fn json_extraction(c: &mut Criterion) {
     let mut group = c.benchmark_group("json");
     
-    // Repetitive JSON data
-    let json_data = r#"{"name":"Alice","age":30,"city":"NYC"}
-{"name":"Bob","age":25,"city":"LA"}
-{"name":"Charlie","age":35,"city":"SF"}
-{"name":"Diana","age":28,"city":"NYC"}
-{"name":"Eve","age":32,"city":"LA"}
-{"name":"Frank","age":29,"city":"NYC"}
-{"name":"Grace","age":31,"city":"SF"}
-{"name":"Henry","age":27,"city":"LA"}
-{"name":"Iris","age":33,"city":"NYC"}
-{"name":"Jack","age":26,"city":"SF"}"#;
+    // Single JSON object (not JSONL)
+    let json_data = r#"{"items":[{"name":"Alice","age":30},{"name":"Bob","age":25},{"name":"Charlie","age":35}]}"#;
     
     group.bench_function("extract", |b| {
         b.iter(|| {
@@ -30,6 +21,35 @@ fn json_extraction(c: &mut Criterion) {
     
     let domain = JsonDomain;
     let result = domain.extract(json_data.as_bytes()).unwrap();
+    
+    group.bench_function("reconstruct", |b| {
+        b.iter(|| {
+            black_box(domain.reconstruct(black_box(&result)).unwrap());
+        });
+    });
+    
+    group.finish();
+}
+
+fn jsonlog_extraction(c: &mut Criterion) {
+    let mut group = c.benchmark_group("jsonlog");
+    
+    // JSONL data (newline-delimited JSON)
+    let jsonl_data = r#"{"name":"Alice","age":30,"city":"NYC"}
+{"name":"Bob","age":25,"city":"LA"}
+{"name":"Charlie","age":35,"city":"SF"}
+{"name":"Diana","age":28,"city":"NYC"}
+{"name":"Eve","age":32,"city":"LA"}"#;
+    
+    group.bench_function("extract", |b| {
+        b.iter(|| {
+            let domain = JsonLogDomain;
+            black_box(domain.extract(black_box(jsonl_data.as_bytes())).unwrap());
+        });
+    });
+    
+    let domain = JsonLogDomain;
+    let result = domain.extract(jsonl_data.as_bytes()).unwrap();
     
     group.bench_function("reconstruct", |b| {
         b.iter(|| {
@@ -73,13 +93,13 @@ fn xml_extraction(c: &mut Criterion) {
 fn msn_auto_detect(c: &mut Criterion) {
     let mut group = c.benchmark_group("auto_detect");
     
-    let json_data = r#"{"name":"Alice","age":30}
+    let jsonl_data = r#"{"name":"Alice","age":30}
 {"name":"Bob","age":25}
 {"name":"Charlie","age":35}"#;
     
-    group.bench_function("json", |b| {
+    group.bench_function("jsonl", |b| {
         b.iter(|| {
-            black_box(extract(black_box(json_data.as_bytes()), None, 0.5).unwrap());
+            black_box(extract(black_box(jsonl_data.as_bytes()), None, 0.5).unwrap());
         });
     });
     
@@ -89,18 +109,18 @@ fn msn_auto_detect(c: &mut Criterion) {
 fn compression_ratios(c: &mut Criterion) {
     let mut group = c.benchmark_group("compression_ratios");
     
-    // JSON data
-    let json_data = r#"{"name":"Alice","age":30,"city":"NYC","status":"active","role":"admin"}
+    // JSONL data
+    let jsonl_data = r#"{"name":"Alice","age":30,"city":"NYC","status":"active","role":"admin"}
 {"name":"Bob","age":25,"city":"LA","status":"active","role":"user"}
 {"name":"Charlie","age":35,"city":"SF","status":"inactive","role":"admin"}
 {"name":"Diana","age":28,"city":"NYC","status":"active","role":"user"}
 {"name":"Eve","age":32,"city":"LA","status":"active","role":"admin"}"#;
     
-    group.bench_function("json_ratio", |b| {
+    group.bench_function("jsonl_ratio", |b| {
         b.iter(|| {
-            let domain = JsonDomain;
-            let result = domain.extract(json_data.as_bytes()).unwrap();
-            let orig_size = json_data.len();
+            let domain = JsonLogDomain;
+            let result = domain.extract(jsonl_data.as_bytes()).unwrap();
+            let orig_size = jsonl_data.len();
             let compressed_size = result.residual.len();
             black_box((orig_size, compressed_size));
         });
@@ -109,5 +129,5 @@ fn compression_ratios(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, json_extraction, csv_extraction, xml_extraction, msn_auto_detect, compression_ratios);
+criterion_group!(benches, json_extraction, jsonlog_extraction, csv_extraction, xml_extraction, msn_auto_detect, compression_ratios);
 criterion_main!(benches);
