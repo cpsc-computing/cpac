@@ -7,7 +7,7 @@ pub mod logs;
 pub mod passthrough;
 pub mod text;
 
-pub use binary::MsgPackDomain;
+pub use binary::{CborDomain, MsgPackDomain, ProtobufDomain};
 pub use logs::{ApacheDomain, JsonLogDomain, SyslogDomain};
 pub use passthrough::PassthroughDomain;
 pub use text::{CsvDomain, JsonDomain, XmlDomain};

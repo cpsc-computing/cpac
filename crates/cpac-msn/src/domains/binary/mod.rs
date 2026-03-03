@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! Binary format domain handlers.
 
+pub mod cbor;
 pub mod msgpack;
+pub mod protobuf;
 
+pub use cbor::CborDomain;
 pub use msgpack::MsgPackDomain;
+pub use protobuf::ProtobufDomain;
