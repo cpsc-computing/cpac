@@ -104,12 +104,18 @@ impl Domain for XmlDomain {
         }
 
         // Compact XML by replacing tag names
+        // IMPORTANT: Replace in reverse order by tag length to avoid partial matches
+        let mut tag_vec: Vec<(&String, &u32)> = tag_map.iter().collect();
+        tag_vec.sort_by(|a, b| b.0.len().cmp(&a.0.len())); // Longest tags first
+        
         let mut compacted = text.to_string();
-        for (tag, idx) in &tag_map {
+        for (tag, idx) in tag_vec {
             let placeholder = format!("@T{}", idx);
+            // Use word boundaries to avoid partial replacements
             compacted = compacted.replace(&format!("<{}", tag), &format!("<{}", placeholder));
             compacted = compacted.replace(&format!("</{}", tag), &format!("</{}", placeholder));
             compacted = compacted.replace(&format!("<{} ", tag), &format!("<{} ", placeholder));
+            compacted = compacted.replace(&format!("<{}>", tag), &format!("<{}>", placeholder));
         }
 
         let mut fields = HashMap::new();
@@ -140,8 +146,13 @@ impl Domain for XmlDomain {
             .to_string();
 
         // Expand placeholders back to original tags
-        for (idx, tag) in tags.iter().enumerate() {
+        // CRITICAL: Replace in REVERSE order (highest index first) to avoid placeholder interference
+        // E.g., if we have @T1 and @T10, replacing @T1 first would corrupt @T10 → @Ttag0
+        for (idx, tag) in tags.iter().enumerate().rev() {
             let placeholder = format!("@T{}", idx);
+            // Replace all forms of the tag
+            reconstructed = reconstructed.replace(&format!("<{} ", placeholder), &format!("<{} ", tag));
+            reconstructed = reconstructed.replace(&format!("<{}>", placeholder), &format!("<{}>", tag));
             reconstructed = reconstructed.replace(&format!("<{}", placeholder), &format!("<{}", tag));
             reconstructed = reconstructed.replace(&format!("</{}", placeholder), &format!("</{}", tag));
         }

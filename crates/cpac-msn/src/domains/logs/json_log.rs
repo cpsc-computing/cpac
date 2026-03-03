@@ -86,10 +86,13 @@ impl Domain for JsonLogDomain {
             }
         }
 
+        let has_trailing_newline = text.ends_with('\n');
+
         let mut fields = HashMap::new();
         fields.insert("keys".to_string(), Value::Array(
             repeated_keys.iter().map(|(k, _)| Value::String(k.clone())).collect()
         ));
+        fields.insert("trailing_newline".to_string(), Value::Bool(has_trailing_newline));
 
         Ok(ExtractionResult {
             fields,
@@ -112,6 +115,10 @@ impl Domain for JsonLogDomain {
         let text = std::str::from_utf8(&result.residual)
             .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {}", e)))?;
 
+        let has_trailing_newline = result.fields.get("trailing_newline")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
         let mut reconstructed_lines = Vec::new();
         for line in text.lines() {
             if let Ok(value) = serde_json::from_str::<Value>(line) {
@@ -126,7 +133,12 @@ impl Domain for JsonLogDomain {
             }
         }
 
-        Ok(reconstructed_lines.join("\n").into_bytes())
+        let mut reconstructed = reconstructed_lines.join("\n");
+        if has_trailing_newline {
+            reconstructed.push('\n');
+        }
+
+        Ok(reconstructed.into_bytes())
     }
 }
 

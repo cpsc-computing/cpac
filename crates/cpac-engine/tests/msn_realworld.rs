@@ -60,9 +60,11 @@ fn json_api_responses() {
     println!("  Without MSN: {} bytes ({:.2}x)", result_no_msn.compressed_size, result_no_msn.ratio());
     println!("  With MSN: {} bytes ({:.2}x)", result_msn.compressed_size, result_msn.ratio());
     
-    // Verify decompression
+    // Verify decompression (JSON may reorder keys, so compare semantically)
     let decompressed = decompress(&result_msn.data).unwrap();
-    assert_eq!(decompressed.data, json_data.as_bytes());
+    let orig_json: serde_json::Value = serde_json::from_slice(json_data.as_bytes()).unwrap();
+    let decompressed_json: serde_json::Value = serde_json::from_slice(&decompressed.data).unwrap();
+    assert_eq!(decompressed_json, orig_json, "JSON should match semantically");
 }
 
 /// Test MSN on CSV data export.
