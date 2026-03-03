@@ -83,8 +83,8 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
 
     // 2. MSN (Multi-Scale Normalization) - Track 1 only, if enabled
     let (msn_data, msn_metadata) = if config.enable_msn && ssr.track == Track::Track1 {
-        // min_confidence = 0.5 for auto-detection
-        match cpac_msn::extract(data, None, 0.5) {
+        // Use confidence threshold from config
+        match cpac_msn::extract(data, None, config.msn_confidence) {
             Ok(result) if result.applied => {
                 // MSN succeeded - use residual as input, store metadata (without residual)
                 let metadata = serde_json::to_vec(&result.metadata())

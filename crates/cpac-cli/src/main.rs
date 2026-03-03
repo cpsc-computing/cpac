@@ -66,6 +66,15 @@ enum Commands {
         /// Default: disabled.
         #[arg(long)]
         enable_msn: bool,
+        /// MSN minimum confidence threshold (0.0-1.0). Higher = more selective.
+        /// Default: 0.5.
+        #[arg(long, default_value_t = 0.5, requires = "enable_msn")]
+        msn_confidence: f64,
+        /// Force specific MSN domain (overrides auto-detect).
+        /// Format: category.type (e.g., text.json, log.apache).
+        /// Use "cpac list-domains" to see available domains.
+        #[arg(long, requires = "enable_msn")]
+        msn_domain: Option<String>,
     },
     /// Decompress a file (or stdin with -).
     #[command(alias = "d", alias = "x")]
@@ -106,6 +115,9 @@ enum Commands {
     /// List available backends.
     #[command(alias = "lb")]
     ListBackends,
+    /// List available MSN domains.
+    #[command(alias = "ld")]
+    ListDomains,
     /// Benchmark compression on a file.
     #[command(alias = "bench")]
     Benchmark {
@@ -375,6 +387,8 @@ fn cmd_compress(
     max_memory: usize,
     mmap: bool,
     enable_msn: bool,
+    msn_confidence: f64,
+    msn_domain: Option<String>,
 ) {
     let backend = backend.map(|b| match parse_backend(&b) {
         Ok(v) => v,
@@ -406,6 +420,8 @@ fn cmd_compress(
             backend,
             resources: Some(resources.clone()),
             enable_msn,
+            msn_confidence,
+            msn_domain: msn_domain.clone(),
             ..Default::default()
         };
 
@@ -649,6 +665,29 @@ fn cmd_list_backends() {
     println!("  brotli    Brotli compression (better for text)");
     println!("  gzip      Gzip/Deflate (RFC 1952, wide compatibility)");
     println!("  lzma      LZMA/xz compression (maximum ratio, slow)");
+}
+
+fn cmd_list_domains() {
+    use cpac_msn::global_registry;
+    
+    println!("Available MSN domains:");
+    println!("  Domain ID           Description");
+    println!("  ------------------  ------------");
+    
+    let registry = global_registry();
+    let mut domain_ids = registry.list_domains();
+    domain_ids.sort();
+    
+    for domain_id in domain_ids {
+        if let Some(domain) = registry.get(&domain_id) {
+            let info = domain.info();
+            println!("  {:<18}  {}", info.id, info.name);
+        }
+    }
+    
+    println!();
+    println!("Use --msn-domain=<id> to force a specific domain.");
+    println!("Default: auto-detect based on content.");
 }
 
 fn cmd_benchmark(
@@ -1216,8 +1255,11 @@ fn main() {
             max_memory,
             mmap,
             enable_msn,
+            msn_confidence,
+            msn_domain,
         } => cmd_compress(
-            input, output, backend, force, keep, recursive, verbose, threads, max_memory, mmap, enable_msn,
+            input, output, backend, force, keep, recursive, verbose, threads, max_memory, mmap, 
+            enable_msn, msn_confidence, msn_domain,
         ),
         Commands::Decompress {
             input,
@@ -1231,6 +1273,7 @@ fn main() {
         Commands::Info { input, host } => cmd_info(input, host),
         Commands::ListProfiles => cmd_list_profiles(),
         Commands::ListBackends => cmd_list_backends(),
+        Commands::ListDomains => cmd_list_domains(),
         Commands::Benchmark {
             input,
             iterations,

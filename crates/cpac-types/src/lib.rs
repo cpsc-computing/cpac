@@ -244,7 +244,7 @@ impl ResourceConfig {
 }
 
 /// Configuration for compression.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct CompressConfig {
     /// Force a specific backend (None = auto-select via SSR).
     pub backend: Option<Backend>,
@@ -260,9 +260,33 @@ pub struct CompressConfig {
     /// When enabled, extracts repeated structure from JSON, CSV, XML, logs, etc.
     /// Default: false.
     pub enable_msn: bool,
+    /// MSN minimum confidence threshold for auto-detection (0.0-1.0).
+    /// Higher values require more certainty before applying MSN.
+    /// Default: 0.5.
+    pub msn_confidence: f64,
+    /// Force a specific MSN domain (overrides auto-detection).
+    /// Format: "category.type" (e.g., "text.json", "log.apache").
+    /// None = auto-detect based on content.
+    pub msn_domain: Option<String>,
     /// Internal: disable parallel compression (prevents recursive parallel calls).
     #[doc(hidden)]
     pub disable_parallel: bool,
+}
+
+impl Default for CompressConfig {
+    fn default() -> Self {
+        Self {
+            backend: None,
+            force_track: None,
+            filename: None,
+            resources: None,
+            dictionary: None,
+            enable_msn: false,
+            msn_confidence: 0.5,
+            msn_domain: None,
+            disable_parallel: false,
+        }
+    }
 }
 
 /// Result of compression.
