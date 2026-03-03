@@ -8,7 +8,8 @@
 use cpac_engine::{ProfileCache, TransformDAG, TransformRegistry};
 use cpac_transforms::TransformContext;
 use cpac_types::CpacType;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 // ── data generators ─────────────────────────────────────────────────────
 
