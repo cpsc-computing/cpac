@@ -3,7 +3,8 @@
 //! Criterion microbenchmarks: transforms, entropy backends, full pipeline.
 
 use cpac_engine::{compress, decompress, Backend, CompressConfig};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 // ── data generators ─────────────────────────────────────────────────────
 
