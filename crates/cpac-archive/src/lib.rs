@@ -122,6 +122,14 @@ fn parse_entries(data: &[u8]) -> CpacResult<Vec<(ArchiveEntry, usize)>> {
         return Err(CpacError::InvalidFrame("unsupported CPAR version".into()));
     }
     let n = u32::from_le_bytes([data[6], data[7], data[8], data[9]]) as usize;
+    // Sanity check: prevent OOM from malicious/corrupted input
+    const MAX_ENTRIES: usize = 1_000_000;
+    if n > MAX_ENTRIES {
+        return Err(CpacError::InvalidFrame(format!(
+            "archive claims {} entries (max {})",
+            n, MAX_ENTRIES
+        )));
+    }
     let mut off = 10usize;
     let mut entries = Vec::with_capacity(n);
     for _ in 0..n {

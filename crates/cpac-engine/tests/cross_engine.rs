@@ -36,12 +36,16 @@ fn fixture_hello_txt() {
 #[test]
 fn fixture_zeros_bin() {
     let data = read_fixture("zeros.bin");
-    let config = CompressConfig::default();
+    // Force Zstd to test compression (auto-select would pick Raw for low entropy)
+    let config = CompressConfig {
+        backend: Some(cpac_engine::Backend::Zstd),
+        ..Default::default()
+    };
     let compressed = compress(&data, &config).unwrap();
     let decompressed = decompress(&compressed.data).unwrap();
     assert_eq!(decompressed.data, data);
-    // All zeros should compress very well
-    assert!(compressed.ratio() > 10.0);
+    // All zeros should compress extremely well with forced backend
+    assert!(compressed.ratio() > 10.0, "ratio {} should be > 10.0 for zeros", compressed.ratio());
 }
 
 #[test]
