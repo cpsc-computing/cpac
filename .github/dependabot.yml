@@ -1,0 +1,79 @@
+version: 2
+updates:
+  # Cargo dependencies
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "cpsc-computing/maintainers"
+    labels:
+      - "dependencies"
+      - "rust"
+    commit-message:
+      prefix: "cargo"
+      include: "scope"
+    groups:
+      # Group all patch updates together
+      patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+      # Group security updates separately
+      security-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+      # Group major updates by category
+      compression:
+        patterns:
+          - "zstd*"
+          - "brotli*"
+          - "flate2"
+          - "lzma-rs"
+      crypto:
+        patterns:
+          - "aes*"
+          - "chacha*"
+          - "argon2"
+          - "blake2"
+          - "sha*"
+          - "ed25519*"
+          - "x25519*"
+          - "ml-kem"
+          - "ml-dsa"
+      serialization:
+        patterns:
+          - "serde*"
+          - "rmp*"
+          - "toml*"
+      cli:
+        patterns:
+          - "clap*"
+          - "indicatif"
+      testing:
+        patterns:
+          - "criterion"
+          - "proptest"
+          - "rusty-fork"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
