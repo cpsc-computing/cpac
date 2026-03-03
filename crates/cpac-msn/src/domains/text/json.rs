@@ -134,6 +134,7 @@ impl Domain for JsonDomain {
         }
 
         // Build field map for repeated names (appearing 2+ times)
+        // Sort alphabetically for stable, deterministic indices across compression/decompression
         let mut field_map: HashMap<String, u32> = HashMap::new();
         let mut repeated_fields: Vec<String> = field_counts
             .iter()
@@ -159,6 +160,49 @@ impl Domain for JsonDomain {
 
         Ok(ExtractionResult {
             fields,
+            residual,
+            metadata: HashMap::new(),
+            domain_id: "text.json".to_string(),
+        })
+    }
+
+    fn extract_with_fields(
+        &self,
+        data: &[u8],
+        fields: &HashMap<String, serde_json::Value>,
+    ) -> CpacResult<ExtractionResult> {
+        // Parse JSON
+        let value: Value = serde_json::from_slice(data)
+            .map_err(|e| CpacError::CompressFailed(format!("JSON parse error: {}", e)))?;
+
+        // Extract field_names from provided fields
+        let field_names_value = fields.get("field_names")
+            .ok_or_else(|| CpacError::CompressFailed("Missing field_names in metadata".into()))?;
+        
+        let field_names: Vec<String> = if let Value::Array(arr) = field_names_value {
+            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+        } else {
+            return Err(CpacError::CompressFailed("Invalid field_names format".into()));
+        };
+
+        // Build field map from provided field names (same indices as detection phase)
+        let mut field_map: HashMap<String, u32> = HashMap::new();
+        for (idx, name) in field_names.iter().enumerate() {
+            field_map.insert(name.clone(), idx as u32);
+        }
+
+        // Compact JSON with consistent field indices
+        let compacted = Self::compact_json(&value, &field_map);
+        let residual = serde_json::to_vec(&compacted)
+            .map_err(|e| CpacError::CompressFailed(format!("JSON serialize error: {}", e)))?;
+
+        // Return same fields structure as detection phase
+        let mut result_fields = HashMap::new();
+        result_fields.insert("field_names".to_string(), field_names_value.clone());
+        result_fields.insert("original_size".to_string(), Value::Number(data.len().into()));
+
+        Ok(ExtractionResult {
+            fields: result_fields,
             residual,
             metadata: HashMap::new(),
             domain_id: "text.json".to_string(),

@@ -20,6 +20,44 @@ const STREAM_MAGIC: &[u8; 2] = b"CS";
 /// Streaming frame version.
 const STREAM_VERSION: u8 = 1;
 
+/// Flags bit 0: MSN metadata present (1) or absent (0)
+const FLAG_MSN_ENABLED: u16 = 1 << 0;
+
+/// Default MSN detection buffer size: 64 KB.
+const DEFAULT_MSN_DETECTION_BUFFER: usize = 64 * 1024;
+
+/// MSN configuration for streaming compression.
+#[derive(Clone, Debug)]
+pub struct MsnConfig {
+    /// Enable MSN for streaming
+    pub enable: bool,
+    /// Minimum confidence threshold (0.0-1.0)
+    pub confidence_threshold: f64,
+    /// Buffer size for initial domain detection
+    pub detection_buffer_size: usize,
+}
+
+impl Default for MsnConfig {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            confidence_threshold: 0.7,
+            detection_buffer_size: DEFAULT_MSN_DETECTION_BUFFER,
+        }
+    }
+}
+
+impl MsnConfig {
+    /// Create disabled MSN config.
+    pub fn disabled() -> Self {
+        Self {
+            enable: false,
+            confidence_threshold: 0.0,
+            detection_buffer_size: 0,
+        }
+    }
+}
+
 /// Compress data in blocks, optionally in parallel.
 ///
 /// Returns a streaming frame containing all compressed blocks.
@@ -56,16 +94,21 @@ pub fn compress_streaming(
     }
 
     // Build streaming frame:
-    // [CS][version][num_blocks:4 LE][original_size:8 LE][block_size:4 LE]
-    // [per block: compressed_len:4 LE + data]
+    // [CS][version][flags:2 LE][num_blocks:4 LE][original_size:8 LE][block_size:4 LE]
+    // [msn_len:2 LE][msn_metadata][per block: compressed_len:4 LE + data]
     let total_payload: usize = frame_blocks.iter().map(|b| 4 + b.len()).sum();
-    let header_size = 2 + 1 + 4 + 8 + 4;
+    let flags: u16 = 0; // No MSN for now
+    let msn_metadata: Vec<u8> = Vec::new();
+    let header_size = 2 + 1 + 2 + 4 + 8 + 4 + 2 + msn_metadata.len();
     let mut frame = Vec::with_capacity(header_size + total_payload);
     frame.extend_from_slice(STREAM_MAGIC);
     frame.push(STREAM_VERSION);
+    frame.extend_from_slice(&flags.to_le_bytes());
     frame.extend_from_slice(&(num_blocks as u32).to_le_bytes());
     frame.extend_from_slice(&(data.len() as u64).to_le_bytes());
     frame.extend_from_slice(&(block_sz as u32).to_le_bytes());
+    frame.extend_from_slice(&(msn_metadata.len() as u16).to_le_bytes());
+    frame.extend_from_slice(&msn_metadata);
     for block in &frame_blocks {
         frame.extend_from_slice(&(block.len() as u32).to_le_bytes());
         frame.extend_from_slice(block);
@@ -83,7 +126,8 @@ pub fn compress_streaming(
 
 /// Decompress a streaming frame, optionally in parallel.
 pub fn decompress_streaming(data: &[u8], parallel: bool) -> CpacResult<DecompressResult> {
-    if data.len() < 19 || &data[0..2] != STREAM_MAGIC {
+    // Min header: CS(2) + version(1) + flags(2) + num_blocks(4) + orig_size(8) + block_size(4) + msn_len(2) = 23
+    if data.len() < 23 || &data[0..2] != STREAM_MAGIC {
         return Err(CpacError::InvalidFrame("not a streaming frame".into()));
     }
     if data[2] != STREAM_VERSION {
@@ -92,14 +136,28 @@ pub fn decompress_streaming(data: &[u8], parallel: bool) -> CpacResult<Decompres
         ));
     }
 
-    let num_blocks = u32::from_le_bytes([data[3], data[4], data[5], data[6]]) as usize;
+    let flags = u16::from_le_bytes([data[3], data[4]]);
+    let num_blocks = u32::from_le_bytes([data[5], data[6], data[7], data[8]]) as usize;
     let original_size = u64::from_le_bytes([
-        data[7], data[8], data[9], data[10], data[11], data[12], data[13], data[14],
+        data[9], data[10], data[11], data[12], data[13], data[14], data[15], data[16],
     ]) as usize;
-    let _block_size = u32::from_le_bytes([data[15], data[16], data[17], data[18]]) as usize;
+    let _block_size = u32::from_le_bytes([data[17], data[18], data[19], data[20]]) as usize;
+    let msn_len = u16::from_le_bytes([data[21], data[22]]) as usize;
+
+    // Parse optional MSN metadata
+    let _msn_metadata: Option<cpac_msn::MsnMetadata> = if flags & FLAG_MSN_ENABLED != 0 {
+        if data.len() < 23 + msn_len {
+            return Err(CpacError::InvalidFrame("truncated MSN metadata".into()));
+        }
+        let msn_bytes = &data[23..23 + msn_len];
+        Some(serde_json::from_slice(msn_bytes)
+            .map_err(|e| CpacError::InvalidFrame(format!("MSN deserialize: {}", e)))?)
+    } else {
+        None
+    };
 
     // Parse block offsets
-    let mut offset = 19;
+    let mut offset = 23 + msn_len;
     let mut block_data: Vec<&[u8]> = Vec::with_capacity(num_blocks);
     for _ in 0..num_blocks {
         if offset + 4 > data.len() {
@@ -152,7 +210,7 @@ pub fn decompress_streaming(data: &[u8], parallel: bool) -> CpacResult<Decompres
 
 /// Check if data is a streaming frame.
 pub fn is_streaming_frame(data: &[u8]) -> bool {
-    data.len() >= 3 && &data[0..2] == STREAM_MAGIC && data[2] == STREAM_VERSION
+    data.len() >= 23 && &data[0..2] == STREAM_MAGIC && data[2] == STREAM_VERSION
 }
 
 // ---------------------------------------------------------------------------
@@ -228,13 +286,18 @@ pub fn compress_streaming_with_progress(
 
     // Build frame (same format as compress_streaming)
     let total_payload: usize = frame_blocks.iter().map(|b| 4 + b.len()).sum();
-    let header_size = 2 + 1 + 4 + 8 + 4;
+    let flags: u16 = 0; // No MSN for now
+    let msn_metadata: Vec<u8> = Vec::new();
+    let header_size = 2 + 1 + 2 + 4 + 8 + 4 + 2 + msn_metadata.len();
     let mut frame = Vec::with_capacity(header_size + total_payload);
     frame.extend_from_slice(STREAM_MAGIC);
     frame.push(STREAM_VERSION);
+    frame.extend_from_slice(&flags.to_le_bytes());
     frame.extend_from_slice(&(num_blocks as u32).to_le_bytes());
     frame.extend_from_slice(&(data.len() as u64).to_le_bytes());
     frame.extend_from_slice(&(block_sz as u32).to_le_bytes());
+    frame.extend_from_slice(&(msn_metadata.len() as u16).to_le_bytes());
+    frame.extend_from_slice(&msn_metadata);
     for block in &frame_blocks {
         frame.extend_from_slice(&(block.len() as u32).to_le_bytes());
         frame.extend_from_slice(block);

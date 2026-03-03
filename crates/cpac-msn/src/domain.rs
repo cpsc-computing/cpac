@@ -56,6 +56,23 @@ pub trait Domain: Send + Sync {
     /// Must be losslessly reversible via reconstruct().
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult>;
 
+    /// Extract semantic fields using pre-computed field mappings.
+    ///
+    /// This allows consistent field-to-index mappings across multiple
+    /// extractions (e.g., for streaming per-block compression).
+    /// The fields parameter contains domain-specific field mappings
+    /// from a previous extraction.
+    ///
+    /// Default implementation falls back to normal extract().
+    fn extract_with_fields(
+        &self,
+        data: &[u8],
+        _fields: &HashMap<String, serde_json::Value>,
+    ) -> CpacResult<ExtractionResult> {
+        // Default: ignore provided fields and do normal extraction
+        self.extract(data)
+    }
+
     /// Reconstruct original bytes from extraction result.
     ///
     /// Must produce byte-identical output to original input.

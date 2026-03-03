@@ -129,6 +129,46 @@ pub fn extract(
     }
 }
 
+/// Extract semantic fields using existing metadata for consistent field mappings.
+///
+/// This applies the field mappings from `metadata` to new `data`, ensuring
+/// consistent indices across multiple extractions (e.g., streaming per-block).
+///
+/// If metadata was not applied or domain not found, falls back to passthrough.
+pub fn extract_with_metadata(
+    data: &[u8],
+    metadata: &MsnMetadata,
+) -> CpacResult<MsnResult> {
+    if !metadata.applied {
+        // Metadata was passthrough, so just passthrough this data too
+        return Ok(MsnResult::passthrough(data));
+    }
+
+    let domain_id = metadata.domain_id.as_ref().ok_or_else(|| {
+        cpac_types::CpacError::CompressFailed("MSN metadata missing domain_id".into())
+    })?;
+
+    let registry = global_registry();
+    let domain = registry.get(domain_id).ok_or_else(|| {
+        cpac_types::CpacError::CompressFailed(format!("Domain not found: {}", domain_id))
+    })?;
+
+    // Use extract_with_fields to apply consistent field mappings
+    match domain.extract_with_fields(data, &metadata.fields) {
+        Ok(extraction) => Ok(MsnResult {
+            fields: extraction.fields,
+            residual: extraction.residual,
+            applied: true,
+            domain_id: Some(extraction.domain_id),
+            confidence: metadata.confidence,
+        }),
+        Err(_) => {
+            // Extraction failed, fall back to passthrough
+            Ok(MsnResult::passthrough(data))
+        }
+    }
+}
+
 /// Reconstruct original data from MSN result.
 pub fn reconstruct(result: &MsnResult) -> CpacResult<Vec<u8>> {
     if !result.applied {

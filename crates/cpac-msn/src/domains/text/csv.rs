@@ -88,6 +88,19 @@ impl Domain for CsvDomain {
         })
     }
 
+    fn extract_with_fields(
+        &self,
+        _data: &[u8],
+        _fields: &HashMap<String, serde_json::Value>,
+    ) -> CpacResult<ExtractionResult> {
+        // For streaming: CSV blocks after the first won't have headers
+        // Just pass through the data as-is rather than trying to extract non-existent headers
+        // The detection-phase metadata has the headers, and they'll be added during reconstruction
+        Err(CpacError::CompressFailed(
+            "CSV blocks without headers not supported for streaming".into()
+        ))
+    }
+
     fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
         let headers_value = result.fields.get("headers")
             .ok_or_else(|| CpacError::DecompressFailed("Missing headers".into()))?;

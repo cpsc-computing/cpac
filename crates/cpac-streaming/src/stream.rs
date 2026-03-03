@@ -18,6 +18,9 @@ const DEFAULT_STREAM_BLOCK: usize = 1 << 20;
 const STREAM_MAGIC: &[u8; 2] = b"CS";
 const STREAM_VERSION: u8 = 1;
 
+/// Flags bit 0: MSN metadata present
+const FLAG_MSN_ENABLED: u16 = 1 << 0;
+
 // ---------------------------------------------------------------------------
 // StreamingCompressor
 // ---------------------------------------------------------------------------
@@ -26,6 +29,7 @@ const STREAM_VERSION: u8 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompressorState {
     Init,
+    Detecting,  // MSN detection phase
     Processing,
     Finalized,
 }
@@ -50,6 +54,10 @@ pub struct StreamingCompressor {
     block_size: usize,
     max_buffer_size: usize,
     total_input: usize,
+    // MSN fields
+    msn_config: crate::MsnConfig,
+    msn_metadata: Option<cpac_msn::MsnMetadata>,
+    msn_detected: bool,
 }
 
 impl StreamingCompressor {
@@ -58,12 +66,13 @@ impl StreamingCompressor {
     /// # Errors
     /// Returns error if configuration is invalid.
     pub fn new(config: CompressConfig) -> CpacResult<Self> {
-        Self::with_options(config, DEFAULT_STREAM_BLOCK, DEFAULT_MAX_BUFFER)
+        Self::with_options(config, crate::MsnConfig::disabled(), DEFAULT_STREAM_BLOCK, DEFAULT_MAX_BUFFER)
     }
 
     /// Create compressor with custom block size and max buffer.
     pub fn with_options(
         config: CompressConfig,
+        msn_config: crate::MsnConfig,
         block_size: usize,
         max_buffer_size: usize,
     ) -> CpacResult<Self> {
@@ -80,7 +89,20 @@ impl StreamingCompressor {
             block_size,
             max_buffer_size,
             total_input: 0,
+            msn_config,
+            msn_metadata: None,
+            msn_detected: false,
         })
+    }
+
+    /// Create compressor with MSN support.
+    pub fn with_msn(
+        config: CompressConfig,
+        msn_config: crate::MsnConfig,
+        block_size: usize,
+        max_buffer_size: usize,
+    ) -> CpacResult<Self> {
+        Self::with_options(config, msn_config, block_size, max_buffer_size)
     }
 
     /// Write data to the compressor.
@@ -94,15 +116,31 @@ impl StreamingCompressor {
         if self.state == CompressorState::Finalized {
             return Err(CpacError::Other("compressor already finalized".into()));
         }
-        self.state = CompressorState::Processing;
 
         // Append to input buffer
         self.input_buffer.extend_from_slice(data);
         self.total_input += data.len();
 
+        // MSN detection phase: buffer until detection_buffer_size
+        if self.msn_config.enable && !self.msn_detected {
+            if self.input_buffer.len() >= self.msn_config.detection_buffer_size {
+                self.detect_msn()?;
+                self.state = CompressorState::Processing;
+            } else {
+                self.state = CompressorState::Detecting;
+                return Ok(data.len()); // Buffer more data
+            }
+        } else if self.state == CompressorState::Init {
+            self.state = CompressorState::Processing;
+        }
+
         // Compress full blocks
         while self.input_buffer.len() >= self.block_size {
-            self.compress_block()?;
+            if self.msn_metadata.is_some() {
+                self.compress_block_with_msn()?;
+            } else {
+                self.compress_block()?;
+            }
         }
 
         // Enforce memory limits (backpressure simulation)
@@ -122,11 +160,55 @@ impl StreamingCompressor {
         Ok(data.len())
     }
 
+    /// Detect MSN domain from buffered data.
+    fn detect_msn(&mut self) -> CpacResult<()> {
+        self.msn_detected = true;
+        let sample = if self.input_buffer.len() > self.msn_config.detection_buffer_size {
+            &self.input_buffer[..self.msn_config.detection_buffer_size]
+        } else {
+            &self.input_buffer
+        };
+        
+        match cpac_msn::extract(sample, None, self.msn_config.confidence_threshold) {
+            Ok(result) if result.applied => {
+                // Domain detected - store metadata (without residual)
+                self.msn_metadata = Some(result.metadata());
+            }
+            _ => {
+                // No domain detected or extraction failed - passthrough mode
+                self.msn_metadata = None;
+            }
+        }
+        Ok(())
+    }
+
     /// Compress one full block from the input buffer.
     fn compress_block(&mut self) -> CpacResult<()> {
         let block_data: Vec<u8> = self.input_buffer.drain(..self.block_size).collect();
         let result = cpac_engine::compress(&block_data, &self.config)?;
         self.compressed_blocks.push(result.data);
+        Ok(())
+    }
+
+    /// Compress one block with MSN extraction using consistent metadata.
+    fn compress_block_with_msn(&mut self) -> CpacResult<()> {
+        let block_data: Vec<u8> = self.input_buffer.drain(..self.block_size).collect();
+        
+        // Extract MSN using consistent metadata from detection phase
+        if let Some(ref metadata) = self.msn_metadata {
+            let msn_result = cpac_msn::extract_with_metadata(&block_data, metadata)?;
+            let residual = if msn_result.applied {
+                &msn_result.residual
+            } else {
+                &block_data
+            };
+            let result = cpac_engine::compress(residual, &self.config)?;
+            self.compressed_blocks.push(result.data);
+        } else {
+            // No metadata - compress raw
+            let result = cpac_engine::compress(&block_data, &self.config)?;
+            self.compressed_blocks.push(result.data);
+        }
         Ok(())
     }
 
@@ -136,9 +218,28 @@ impl StreamingCompressor {
     /// Returns error if compression fails.
     pub fn flush(&mut self) -> CpacResult<()> {
         if !self.input_buffer.is_empty() {
+            // If MSN not yet detected and enabled, detect now
+            if self.msn_config.enable && !self.msn_detected {
+                self.detect_msn()?;
+            }
+            
             let block_data = self.input_buffer.drain(..).collect::<Vec<u8>>();
-            let result = cpac_engine::compress(&block_data, &self.config)?;
-            self.compressed_blocks.push(result.data);
+            
+            // Extract and compress with consistent metadata
+            if let Some(ref metadata) = self.msn_metadata {
+                let msn_result = cpac_msn::extract_with_metadata(&block_data, metadata)?;
+                let residual = if msn_result.applied {
+                    &msn_result.residual
+                } else {
+                    &block_data
+                };
+                let result = cpac_engine::compress(residual, &self.config)?;
+                self.compressed_blocks.push(result.data);
+            } else {
+                // No metadata - compress raw
+                let result = cpac_engine::compress(&block_data, &self.config)?;
+                self.compressed_blocks.push(result.data);
+            }
         }
         Ok(())
     }
@@ -158,17 +259,30 @@ impl StreamingCompressor {
         self.flush()?;
         self.state = CompressorState::Finalized;
 
-        // Build streaming frame
+        // Serialize MSN metadata if present
+        let msn_bytes = if let Some(ref metadata) = self.msn_metadata {
+            serde_json::to_vec(metadata)
+                .map_err(|e| CpacError::Other(format!("MSN serialize: {}", e)))?
+        } else {
+            Vec::new()
+        };
+
+        // Build streaming frame with MSN support
+        // [CS][version][flags:2][num_blocks:4][orig_size:8][block_size:4][msn_len:2][msn_metadata][blocks...]
         let num_blocks = self.compressed_blocks.len();
         let total_payload: usize = self.compressed_blocks.iter().map(|b| 4 + b.len()).sum();
-        let header_size = 2 + 1 + 4 + 8 + 4;
+        let flags: u16 = if self.msn_metadata.is_some() { FLAG_MSN_ENABLED } else { 0 };
+        let header_size = 2 + 1 + 2 + 4 + 8 + 4 + 2 + msn_bytes.len();
         let mut frame = Vec::with_capacity(header_size + total_payload);
 
         frame.extend_from_slice(STREAM_MAGIC);
         frame.push(STREAM_VERSION);
+        frame.extend_from_slice(&flags.to_le_bytes());
         frame.extend_from_slice(&(num_blocks as u32).to_le_bytes());
         frame.extend_from_slice(&(self.total_input as u64).to_le_bytes());
         frame.extend_from_slice(&(self.block_size as u32).to_le_bytes());
+        frame.extend_from_slice(&(msn_bytes.len() as u16).to_le_bytes());
+        frame.extend_from_slice(&msn_bytes);
 
         for block in &self.compressed_blocks {
             frame.extend_from_slice(&(block.len() as u32).to_le_bytes());
@@ -184,6 +298,8 @@ impl StreamingCompressor {
         self.input_buffer.clear();
         self.compressed_blocks.clear();
         self.total_input = 0;
+        self.msn_metadata = None;
+        self.msn_detected = false;
     }
 }
 
@@ -232,6 +348,8 @@ pub struct StreamingDecompressor {
     blocks: Vec<Vec<u8>>, // Compressed block data
     #[allow(dead_code)]
     max_buffer_size: usize,
+    // MSN metadata from frame header
+    msn_metadata: Option<cpac_msn::MsnMetadata>,
 }
 
 impl StreamingDecompressor {
@@ -252,6 +370,7 @@ impl StreamingDecompressor {
             blocks_processed: 0,
             blocks: Vec::new(),
             max_buffer_size,
+            msn_metadata: None,
         })
     }
 
@@ -272,7 +391,8 @@ impl StreamingDecompressor {
         loop {
             match self.state {
                 DecompressorState::Init => {
-                    if self.input_buffer.len() < 19 {
+                    // New header format requires at least 23 bytes
+                    if self.input_buffer.len() < 23 {
                         return Ok(()); // Need more data
                     }
                     self.parse_header()?;
@@ -303,7 +423,16 @@ impl StreamingDecompressor {
                     let _len_bytes = self.input_buffer.drain(..4).collect::<Vec<u8>>();
                     let block_data = self.input_buffer.drain(..block_len).collect::<Vec<u8>>();
                     let result = cpac_engine::decompress(&block_data)?;
-                    self.output_buffer.extend_from_slice(&result.data);
+                    
+                    // Reconstruct original data from residual using MSN metadata
+                    let reconstructed = if let Some(ref metadata) = self.msn_metadata {
+                        let msn_result = metadata.clone().with_residual(result.data);
+                        cpac_msn::reconstruct(&msn_result)?
+                    } else {
+                        result.data
+                    };
+                    
+                    self.output_buffer.extend_from_slice(&reconstructed);
                     self.blocks_processed += 1;
                 }
                 DecompressorState::Done => return Ok(()),
@@ -319,29 +448,45 @@ impl StreamingDecompressor {
         if self.input_buffer[2] != STREAM_VERSION {
             return Err(CpacError::InvalidFrame("unsupported version".into()));
         }
+        
+        let flags = u16::from_le_bytes([self.input_buffer[3], self.input_buffer[4]]);
         self.num_blocks = u32::from_le_bytes([
-            self.input_buffer[3],
-            self.input_buffer[4],
             self.input_buffer[5],
             self.input_buffer[6],
-        ]) as usize;
-        self.original_size = u64::from_le_bytes([
             self.input_buffer[7],
             self.input_buffer[8],
+        ]) as usize;
+        self.original_size = u64::from_le_bytes([
             self.input_buffer[9],
             self.input_buffer[10],
             self.input_buffer[11],
             self.input_buffer[12],
             self.input_buffer[13],
             self.input_buffer[14],
-        ]) as usize;
-        self.block_size = u32::from_le_bytes([
             self.input_buffer[15],
             self.input_buffer[16],
+        ]) as usize;
+        self.block_size = u32::from_le_bytes([
             self.input_buffer[17],
             self.input_buffer[18],
+            self.input_buffer[19],
+            self.input_buffer[20],
         ]) as usize;
-        self.input_buffer.drain(..19);
+        let msn_len = u16::from_le_bytes([self.input_buffer[21], self.input_buffer[22]]) as usize;
+        
+        // Drain header bytes (23 bytes base)
+        self.input_buffer.drain(..23);
+        
+        // Parse MSN metadata if present
+        if flags & FLAG_MSN_ENABLED != 0 {
+            if self.input_buffer.len() < msn_len {
+                return Err(CpacError::InvalidFrame("truncated MSN metadata".into()));
+            }
+            let msn_bytes = self.input_buffer.drain(..msn_len).collect::<Vec<u8>>();
+            self.msn_metadata = Some(serde_json::from_slice(&msn_bytes)
+                .map_err(|e| CpacError::InvalidFrame(format!("MSN deserialize: {}", e)))?);
+        }
+        
         Ok(())
     }
 
@@ -367,6 +512,7 @@ impl StreamingDecompressor {
         self.block_size = 0;
         self.blocks_processed = 0;
         self.blocks.clear();
+        self.msn_metadata = None;
     }
 }
 
@@ -417,7 +563,8 @@ mod tests {
     #[test]
     fn streaming_incremental() {
         let config = CompressConfig::default();
-        let mut comp = StreamingCompressor::with_options(config, 512, 8 * 1024 * 1024).unwrap();
+        let msn_config = crate::MsnConfig::disabled();
+        let mut comp = StreamingCompressor::with_options(config, msn_config, 512, 8 * 1024 * 1024).unwrap();
         for _ in 0..10 {
             comp.write(&vec![0u8; 256]).unwrap();
         }
@@ -488,7 +635,8 @@ mod tests {
     #[test]
     fn invalid_block_size() {
         let config = CompressConfig::default();
-        let result = StreamingCompressor::with_options(config, 0, 1024);
+        let msn_config = crate::MsnConfig::disabled();
+        let result = StreamingCompressor::with_options(config, msn_config, 0, 1024);
         assert!(result.is_err());
     }
 }

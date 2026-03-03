@@ -102,6 +102,20 @@ impl Domain for JsonLogDomain {
         })
     }
 
+    fn extract_with_fields(
+        &self,
+        _data: &[u8],
+        _fields: &HashMap<String, Value>,
+    ) -> CpacResult<ExtractionResult> {
+        // TODO: JsonLogDomain is not safe for streaming with arbitrary block boundaries
+        // because blocks may split lines, causing corruption during reconstruction.
+        // For now, reject extraction to use passthrough.
+        // A proper fix requires buffering incomplete lines or using line-aligned blocks.
+        Err(CpacError::CompressFailed(
+            "JsonLogDomain not yet supported for streaming".into()
+        ))
+    }
+
     fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
         let keys_value = result.fields.get("keys")
             .ok_or_else(|| CpacError::DecompressFailed("Missing keys".into()))?;
