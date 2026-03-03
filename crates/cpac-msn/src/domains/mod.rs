@@ -10,4 +10,4 @@ pub mod text;
 pub use binary::{CborDomain, MsgPackDomain, ProtobufDomain};
 pub use logs::{ApacheDomain, JsonLogDomain, SyslogDomain};
 pub use passthrough::PassthroughDomain;
-pub use text::{CsvDomain, JsonDomain, XmlDomain};
+pub use text::{CsvDomain, JsonDomain, XmlDomain, YamlDomain};

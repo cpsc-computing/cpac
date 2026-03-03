@@ -90,6 +90,7 @@ static GLOBAL_REGISTRY: once_cell::sync::Lazy<DomainRegistry> =
         registry.register(Arc::new(crate::domains::JsonDomain));
         registry.register(Arc::new(crate::domains::CsvDomain));
         registry.register(Arc::new(crate::domains::XmlDomain));
+        registry.register(Arc::new(crate::domains::YamlDomain));
         registry.register(Arc::new(crate::domains::MsgPackDomain));
         registry.register(Arc::new(crate::domains::CborDomain));
         registry.register(Arc::new(crate::domains::ProtobufDomain));
