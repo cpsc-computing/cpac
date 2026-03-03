@@ -2,13 +2,13 @@
 
 **Version**: 0.1.0 (Rust Implementation)  
 **Date**: March 3, 2026  
-**Status**: SSR implemented, MSN planned for v0.2.0
+**Status**: SSR + MSN fully implemented, CP2 frame format available
 
 ## Executive Summary
 
 CPAC (Content-Preserving Adaptive Compression) is a multi-stage compression pipeline that combines:
 - **SSR (Structural Summary Record)**: Lightweight heuristic analysis for track selection
-- **MSN (Multi-Scale Normalization)**: Domain-specific semantic extraction (Python-only, planned for Rust)
+- **MSN (Multi-Scale Normalization)**: Domain-specific semantic extraction for structured data
 - **Generic Transforms**: Delta, zigzag, transpose, ROLZ
 - **Entropy Backends**: Zstd, Brotli, Gzip, Lzma, Raw
 
@@ -41,11 +41,15 @@ Input Data (bytes)
      │      │
      │      └──────────────────────────┐
      ▼                                 │
-┌─────────────────┐                   │
-│ Stage 1: MSN    │  ◄─ FUTURE (v0.2.0)
+┌─────────────────┐
+│ Stage 1: MSN    │  ◄─ Track 1 only (optional)
 │ Extraction      │     Domain-specific
 │ (cpac-msn)      │     semantic extraction
-│ PYTHON ONLY     │
+│                 │     • JSON/JSONL field names
+│                 │     • CSV headers
+│                 │     • XML tags
+│                 │     • Log patterns
+│                 │     • Binary format keys
 └────────┬────────┘
          │                             │
          ▼                             ▼
@@ -73,9 +77,9 @@ Input Data (bytes)
 ┌──────────────────────────────────────────┐
 │  Stage 4: Frame Encoding                 │
 │  (cpac-frame)                            │
-│  • CP format (current)                   │
+│  • CP format (v1, legacy)                │
+│  • CP2 format (v2, with MSN metadata)    │
 │  • CPBL format (parallel blocks)         │
-│  • CP2 format (future with MSN metadata) │
 └──────────────────┬───────────────────────┘
                    │
                    ▼
@@ -117,13 +121,12 @@ Track1 if viability >= 0.3, else Track2
 **Output**: Semantic fields + residual bytes
 
 ```rust
-// Proposed Rust design (not yet implemented)
 pub struct MsnResult {
-    pub fields: HashMap<String, Value>,  // Extracted semantic data
-    pub residual: Vec<u8>,                // Remaining bytes
-    pub applied: bool,                    // Was MSN actually used?
-    pub domain_id: Option<String>,        // "text.json", "text.csv", etc.
-    pub confidence: f64,                  // Detection confidence
+    pub fields: HashMap<String, serde_json::Value>,  // Extracted semantic data
+    pub residual: Vec<u8>,                            // Remaining bytes
+    pub applied: bool,                                // Was MSN actually used?
+    pub domain_id: Option<String>,                    // "text.json", "text.csv", etc.
+    pub confidence: f64,                              // Detection confidence
 }
 ```
 
@@ -138,25 +141,25 @@ No overlap, no conflict. SSR is the cheap filter, MSN is the expensive extractor
 
 ### ✅ Implemented in Rust
 - **cpac-ssr**: SSR analysis (entropy, ASCII ratio, domain hints)
+- **cpac-msn**: Multi-Scale Normalization with 10 domain handlers
+  - Text: JSON, CSV, XML
+  - Binary: MessagePack, CBOR, Protobuf
+  - Logs: Syslog, Apache, JSON Log
+  - Passthrough (Track 2)
 - **cpac-transforms**: Delta, zigzag, transpose, ROLZ
 - **cpac-entropy**: Zstd, Brotli, Gzip, Lzma, Raw backends
-- **cpac-frame**: CP and CPBL frame formats
-- **cpac-engine**: Main compression pipeline (without MSN)
-- **cpac-cli**: Command-line interface
-
-### ❌ Not Yet Implemented in Rust
-- **cpac-msn**: Multi-Scale Normalization (Python-only)
-- **Domain handlers**: JSON, CSV, XML, MessagePack, etc.
-- **CP2 frame format**: Frame format with MSN metadata
+- **cpac-frame**: CP (v1), CP2 (v2 with MSN), and CPBL frame formats
+- **cpac-engine**: Main compression pipeline with MSN integration
+- **cpac-cli**: Command-line interface with --enable-msn flag
 
 ## Crate Architecture
 
 ```
 cpac/
-├── crates/
-│   ├── cpac-types/          # Shared types, traits, errors
-│   ├── cpac-ssr/            # ✅ Structural Summary Record
-│   ├── cpac-msn/            # ❌ Multi-Scale Normalization (FUTURE)
+├─── crates/
+│   ├─── cpac-types/          # Shared types, traits, errors
+│   ├─── cpac-ssr/            # ✅ Structural Summary Record
+│   ├─── cpac-msn/            # ✅ Multi-Scale Normalization
 │   ├── cpac-transforms/     # ✅ Generic transforms (delta, zigzag, etc.)
 │   ├── cpac-entropy/        # ✅ Entropy backends (Zstd, Brotli, etc.)
 │   ├── cpac-frame/          # ✅ Frame encoding/decoding
@@ -199,23 +202,22 @@ Header contains:
 Used for parallel compression of large files (>1MB)
 ```
 
-### CP2 Format (Future with MSN)
+### CP2 Format (Version 2 with MSN)
 ```
-┌────────┬─────────┬────────────┬────────────┬─────────────┐
-│ Magic  │ Version │ Header     │ MSN Fields │ Residual    │
-│ "CPA2" │ 0x02    │ (variable) │ (optional) │ (variable)  │
-└────────┴─────────┴────────────┴────────────┴─────────────┘
+"CP" (2B) | version=2 (1B) | flags (2B) | backend_id (1B)
+| original_size (4B LE) | dag_descriptor_len (2B LE) | msn_metadata_len (2B LE)
+| dag_descriptor | msn_metadata | payload
+```
 
-Header contains:
-- Backend type
-- Original size
-- MSN applied flag
-- Domain ID (if MSN used)
-- MSN fields size
+Backward compatible with CP v1:
+- decode_frame() auto-detects version
+- v1 frames have empty msn_metadata
+- v2 frames include serialized MsnResult when MSN was applied
 
-MSN Fields (MessagePack):
-- Extracted semantic data
-- Domain metadata for reconstruction
+MSN Metadata (JSON):
+- Extracted semantic fields (HashMap<String, Value>)
+- Domain ID for reconstruction
+- Residual already in payload
 ```
 
 ## Performance Characteristics
@@ -242,26 +244,28 @@ MSN Fields (MessagePack):
 
 ## Roadmap
 
-### v0.1.0 (Current)
-- ✅ Complete Rust implementation without MSN
+### v0.1.0 (March 3, 2026)
+- ✅ Complete Rust implementation with MSN
 - ✅ SSR track selection
+- ✅ MSN with 10 domain handlers (JSON, CSV, XML, logs, binary)
+- ✅ CP2 frame format with MSN metadata
 - ✅ Generic transforms
 - ✅ 5 entropy backends
 - ✅ Parallel compression (CPBL)
+- ✅ CLI `--enable-msn` flag
 - ✅ Benchmarking infrastructure
 
-### v0.2.0 (MSN Port)
-- [ ] Create cpac-msn crate
-- [ ] Port JSON, CSV, XML domain handlers
-- [ ] Implement CP2 frame format
-- [ ] CLI flag: `--enable-msn`
-- [ ] Benchmarks: match Python ratios
+### v0.2.0 (Planned)
+- [ ] MSN performance optimization
+- [ ] Additional domain handlers (Parquet, Avro, etc.)
+- [ ] Adaptive MSN confidence thresholds
+- [ ] MSN benchmarks vs Python implementation
 
-### v0.3.0 (MSN Stable)
-- [ ] Port all Python domain handlers
+### v0.3.0 (Future)
 - [ ] MSN enabled by default for Track1
 - [ ] Production validation
 - [ ] Fuzzing (100M+ iterations)
+- [ ] Domain-specific compression tuning
 
 ### v1.0.0 (Full Parity)
 - [ ] Feature-complete with Python
