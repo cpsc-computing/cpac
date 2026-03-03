@@ -22,8 +22,15 @@ ciborium = "0.2"
 base64 = "0.22"
 prost = { version = "0.13", optional = true }
 
+[dev-dependencies]
+criterion = { workspace = true }
+
 [features]
 default = []
 text-domains = ["csv", "quick-xml"]
 binary-domains = ["prost"]
 all-domains = ["text-domains", "binary-domains"]
+
+[[bench]]
+name = "domains"
+harness = false
