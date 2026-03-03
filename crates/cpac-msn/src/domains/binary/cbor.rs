@@ -31,9 +31,24 @@ impl Domain for CborDomain {
             }
         }
 
-        // Try to parse as CBOR - use ciborium
+        // CBOR detection must be strict to avoid false positives
+        // Check if it's mostly ASCII text (indicates not CBOR)
+        let ascii_ratio = data.iter().filter(|&&b| b.is_ascii() && b >= 32 && b < 127).count() as f64 / data.len() as f64;
+        if ascii_ratio > 0.9 {
+            // Likely plain text, not CBOR
+            return 0.0;
+        }
+
+        // Try to parse as CBOR and check structure
         match ciborium::from_reader::<ciborium::Value, _>(data) {
-            Ok(_) => 0.7,
+            Ok(value) => {
+                // Only consider structured data (objects/arrays)
+                match value {
+                    ciborium::Value::Map(ref map) if !map.is_empty() => 0.7,
+                    ciborium::Value::Array(ref arr) if arr.len() > 1 => 0.6,
+                    _ => 0.0, // Plain strings/numbers are not CBOR-specific
+                }
+            }
             Err(_) => 0.0,
         }
     }

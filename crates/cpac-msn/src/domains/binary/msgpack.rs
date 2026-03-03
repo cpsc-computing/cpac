@@ -32,9 +32,27 @@ impl Domain for MsgPackDomain {
             }
         }
 
-        // Try to parse as MessagePack
-        if decode::from_slice::<Value>(data).is_ok() {
-            return 0.7;
+        // MessagePack detection must be strict to avoid false positives
+        // Only detect if:
+        // 1. Data successfully parses as MessagePack
+        // 2. AND it's not plain ASCII text (MessagePack is binary)
+        // 3. AND it's structured (object or array)
+        
+        // Check if it's mostly ASCII text (indicates not MessagePack)
+        let ascii_ratio = data.iter().filter(|&&b| b.is_ascii() && b >= 32 && b < 127).count() as f64 / data.len() as f64;
+        if ascii_ratio > 0.9 {
+            // Likely plain text, not MessagePack
+            return 0.0;
+        }
+
+        // Try to parse as MessagePack and check structure
+        if let Ok(value) = decode::from_slice::<Value>(data) {
+            // Only consider structured data (objects/arrays)
+            match value {
+                Value::Object(ref map) if !map.is_empty() => return 0.7,
+                Value::Array(ref arr) if arr.len() > 1 => return 0.6,
+                _ => return 0.0, // Plain strings/numbers are not MessagePack-specific
+            }
         }
 
         0.0

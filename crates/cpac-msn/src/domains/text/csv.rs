@@ -55,6 +55,13 @@ impl Domain for CsvDomain {
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("CSV decode: {}", e)))?;
 
+        // Detect line ending style
+        let line_ending = if text.contains("\r\n") {
+            "\r\n"
+        } else {
+            "\n"
+        };
+
         let mut lines = text.lines();
         let header = lines.next()
             .ok_or_else(|| CpacError::CompressFailed("Empty CSV".into()))?;
@@ -62,13 +69,16 @@ impl Domain for CsvDomain {
         // Extract headers
         let headers: Vec<&str> = header.split(',').map(|h| h.trim()).collect();
 
-        // Store body without header
-        let body = lines.collect::<Vec<_>>().join("\n");
+        // Store body without header, preserving line ending
+        let body = lines.collect::<Vec<_>>().join(line_ending);
+        let has_trailing_newline = text.ends_with('\n');
 
         let mut fields = HashMap::new();
         fields.insert("headers".to_string(), serde_json::Value::Array(
             headers.iter().map(|h| serde_json::Value::String(h.to_string())).collect()
         ));
+        fields.insert("trailing_newline".to_string(), serde_json::Value::Bool(has_trailing_newline));
+        fields.insert("line_ending".to_string(), serde_json::Value::String(line_ending.to_string()));
 
         Ok(ExtractionResult {
             fields,
@@ -88,14 +98,30 @@ impl Domain for CsvDomain {
             return Err(CpacError::DecompressFailed("Invalid headers format".into()));
         };
 
+        let has_trailing_newline = result.fields.get("trailing_newline")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let line_ending = result.fields.get("line_ending")
+            .and_then(|v| v.as_str())
+            .unwrap_or("\n");
+
         let header_line = headers.join(",");
         let body = std::str::from_utf8(&result.residual)
             .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {}", e)))?;
 
         let reconstructed = if body.is_empty() {
-            header_line
+            if has_trailing_newline {
+                format!("{}{}", header_line, line_ending)
+            } else {
+                header_line
+            }
         } else {
-            format!("{}\n{}", header_line, body)
+            if has_trailing_newline {
+                format!("{}{}{}{}", header_line, line_ending, body, line_ending)
+            } else {
+                format!("{}{}{}", header_line, line_ending, body)
+            }
         };
 
         Ok(reconstructed.into_bytes())
