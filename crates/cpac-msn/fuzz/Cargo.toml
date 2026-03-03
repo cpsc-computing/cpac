@@ -12,7 +12,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 
-[dependencies.cpac-types]
+[dependencies.cpac-msn]
 path = ".."
 
 [[bin]]
