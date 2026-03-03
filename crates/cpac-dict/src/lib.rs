@@ -50,7 +50,7 @@ impl CpacDictionary {
         }
 
         let corpus_size: usize = samples.iter().map(|s| s.len()).sum();
-        
+
         // Convert samples to slice of slices for zstd
         let sample_refs: Vec<&[u8]> = samples.iter().map(|s| s.as_slice()).collect();
 
@@ -126,7 +126,9 @@ impl CpacDictionary {
             return Err(CpacError::InvalidFrame("invalid dictionary magic".into()));
         }
         if bytes[4] != 1 {
-            return Err(CpacError::InvalidFrame("unsupported dictionary version".into()));
+            return Err(CpacError::InvalidFrame(
+                "unsupported dictionary version".into(),
+            ));
         }
 
         let dict_id = u64::from_le_bytes([
@@ -134,11 +136,9 @@ impl CpacDictionary {
         ]);
         let size = u32::from_le_bytes([bytes[13], bytes[14], bytes[15], bytes[16]]) as usize;
         let samples = u32::from_le_bytes([bytes[17], bytes[18], bytes[19], bytes[20]]) as usize;
-        let corpus_size =
-            u64::from_le_bytes([
-                bytes[21], bytes[22], bytes[23], bytes[24], bytes[25], bytes[26], bytes[27],
-                bytes[28],
-            ]) as usize;
+        let corpus_size = u64::from_le_bytes([
+            bytes[21], bytes[22], bytes[23], bytes[24], bytes[25], bytes[26], bytes[27], bytes[28],
+        ]) as usize;
         let created_at = u64::from_le_bytes([
             bytes[29], bytes[30], bytes[31], bytes[32], bytes[33], bytes[34], bytes[35], bytes[36],
         ]);
@@ -249,16 +249,16 @@ mod tests {
             },
             data: vec![255u8; 50],
         };
-        
+
         let temp_dir = std::env::temp_dir();
         let dict_path = temp_dir.join("test.cpac-dict");
-        
+
         dict.save_to_file(&dict_path).unwrap();
         let dict2 = CpacDictionary::load_from_file(&dict_path).unwrap();
-        
+
         assert_eq!(dict.metadata.dict_id, dict2.metadata.dict_id);
         assert_eq!(dict.data, dict2.data);
-        
+
         std::fs::remove_file(dict_path).ok();
     }
 }

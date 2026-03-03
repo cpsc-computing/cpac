@@ -82,9 +82,9 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     let ssr = cpac_ssr::analyze(data);
 
     // 2. Select backend with size awareness
-    let backend = config
-        .backend
-        .unwrap_or_else(|| cpac_entropy::auto_select_backend_with_size(ssr.entropy_estimate, original_size));
+    let backend = config.backend.unwrap_or_else(|| {
+        cpac_entropy::auto_select_backend_with_size(ssr.entropy_estimate, original_size)
+    });
 
     // 3. Check if we should use parallel compression for large files
     // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel)
@@ -101,7 +101,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // - Small files (< 4KB) where overhead exceeds benefit
     const PREPROCESS_THRESHOLD: usize = 4096;
     let should_preprocess = backend != Backend::Raw && original_size >= PREPROCESS_THRESHOLD;
-    
+
     let preprocessed = if should_preprocess {
         let transform_ctx = cpac_transforms::TransformContext {
             entropy_estimate: ssr.entropy_estimate,
@@ -117,7 +117,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
 
     // 5. Entropy coding (with optional dictionary for Zstd)
     let compressed_payload = if backend == Backend::Zstd && config.dictionary.is_some() {
-        cpac_entropy::compress_with_dict(&preprocessed, backend, config.dictionary.as_deref())?  
+        cpac_entropy::compress_with_dict(&preprocessed, backend, config.dictionary.as_deref())?
     } else {
         cpac_entropy::compress(&preprocessed, backend)?
     };
@@ -174,6 +174,12 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
 /// - [`decompress_parallel`] — parallel block decompression
 #[must_use = "decompression result is returned"]
 pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
+    // Check if this is a CPBL (parallel) frame first
+    if is_cpbl(data) {
+        let num_threads = rayon::current_num_threads();
+        return decompress_parallel(data, num_threads);
+    }
+
     // 1. Decode frame
     let (header, payload) = cpac_frame::decode_frame(data)?;
 

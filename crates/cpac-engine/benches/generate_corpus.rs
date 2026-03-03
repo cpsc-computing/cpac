@@ -117,7 +117,9 @@ fn generate_random(size_kb: usize) -> Vec<u8> {
     let mut rng: u64 = 0x123456789ABCDEF0;
     (0..size_kb * 1024)
         .map(|_| {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (rng >> 33) as u8
         })
         .collect()
@@ -132,47 +134,47 @@ fn write_corpus(name: &str, data: &[u8]) {
 #[allow(dead_code)]
 fn generate_all_corpus() {
     fs::create_dir_all(CORPUS_DIR).unwrap();
-    
+
     println!("\n🔨 Generating benchmark corpus...\n");
-    
+
     // Text files (10KB, 100KB, 1MB)
     write_corpus("text_10kb.txt", &generate_text_english(10));
     write_corpus("text_100kb.txt", &generate_text_english(100));
     write_corpus("text_1mb.txt", &generate_text_english(1024));
-    
+
     // CSV files
     write_corpus("csv_1k_rows.csv", &generate_csv(1000));
     write_corpus("csv_10k_rows.csv", &generate_csv(10000));
     write_corpus("csv_100k_rows.csv", &generate_csv(100000));
-    
+
     // JSON files
     write_corpus("json_100_objects.json", &generate_json(100));
     write_corpus("json_1k_objects.json", &generate_json(1000));
     write_corpus("json_10k_objects.json", &generate_json(10000));
-    
+
     // XML files
     write_corpus("xml_500_records.xml", &generate_xml(500));
     write_corpus("xml_5k_records.xml", &generate_xml(5000));
-    
+
     // Log files
     write_corpus("log_1k_lines.log", &generate_log(1000));
     write_corpus("log_10k_lines.log", &generate_log(10000));
     write_corpus("log_100k_lines.log", &generate_log(100000));
-    
+
     // Binary structured
     write_corpus("binary_10kb.bin", &generate_binary_structured(10));
     write_corpus("binary_100kb.bin", &generate_binary_structured(100));
     write_corpus("binary_1mb.bin", &generate_binary_structured(1024));
-    
+
     // Source code
     write_corpus("source_100_funcs.rs", &generate_source_code(100));
     write_corpus("source_1k_funcs.rs", &generate_source_code(1000));
-    
+
     // Random (incompressible)
     write_corpus("random_10kb.bin", &generate_random(10));
     write_corpus("random_100kb.bin", &generate_random(100));
     write_corpus("random_1mb.bin", &generate_random(1024));
-    
+
     // Create README
     let readme = r#"# Benchmark Corpus
 
@@ -211,7 +213,7 @@ cargo bench --bench generate_corpus
 "#;
     fs::write(Path::new(CORPUS_DIR).join("README.md"), readme).unwrap();
     println!("✓ Generated: {}/README.md", CORPUS_DIR);
-    
+
     println!("\n✅ Corpus generated!\n");
 }
 
@@ -230,7 +232,7 @@ criterion_main!(benches);
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     #[ignore]
     fn run_corpus_generation() {

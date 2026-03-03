@@ -53,24 +53,24 @@ pub enum DownloadKind {
 /// Returns error if file cannot be read or parsed.
 pub fn load_corpus_config(path: &Path) -> io::Result<CorpusConfig> {
     let contents = fs::read_to_string(path)?;
-    serde_yaml::from_str(&contents)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    serde_yaml::from_str(&contents).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// List all available corpus configs.
 pub fn list_corpus_configs(config_dir: &Path) -> io::Result<Vec<CorpusConfig>> {
     let mut configs = Vec::new();
-    
+
     if !config_dir.exists() {
         return Ok(configs);
     }
-    
+
     for entry in fs::read_dir(config_dir)? {
         let entry = entry?;
         let path = entry.path();
-        
-        if path.extension().and_then(|s| s.to_str()) == Some("yaml") 
-            && path.file_name()
+
+        if path.extension().and_then(|s| s.to_str()) == Some("yaml")
+            && path
+                .file_name()
                 .and_then(|s| s.to_str())
                 .map(|s| s.starts_with("corpus_"))
                 .unwrap_or(false)
@@ -80,7 +80,7 @@ pub fn list_corpus_configs(config_dir: &Path) -> io::Result<Vec<CorpusConfig>> {
             }
         }
     }
-    
+
     configs.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(configs)
 }
@@ -103,10 +103,10 @@ pub fn download_corpus(
     _cache_dir: &Path,
 ) -> io::Result<()> {
     use indicatif::{ProgressBar, ProgressStyle};
-    
+
     let target_dir = benchdata_root.join(&config.target_subdir);
     fs::create_dir_all(&target_dir)?;
-    
+
     match &config.download_url {
         DownloadUrl::None => {
             return Err(io::Error::new(
@@ -123,16 +123,13 @@ pub fn download_corpus(
                     .unwrap(),
             );
             pb.set_message("Downloading...");
-            
-            let response = reqwest::blocking::get(url)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            
-            let bytes = response
-                .bytes()
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            
+
+            let response = reqwest::blocking::get(url).map_err(io::Error::other)?;
+
+            let bytes = response.bytes().map_err(io::Error::other)?;
+
             pb.set_message("Extracting...");
-            
+
             match config.download_kind {
                 DownloadKind::HttpTargz => {
                     extract_targz(&bytes, &target_dir)?;
@@ -152,7 +149,7 @@ pub fn download_corpus(
                     ))
                 }
             }
-            
+
             pb.finish_with_message("Complete");
         }
         DownloadUrl::Multiple(urls) => {
@@ -164,28 +161,25 @@ pub fn download_corpus(
                     .unwrap()
                     .progress_chars("█▓░"),
             );
-            
+
             for url in urls {
                 let filename = url.rsplit('/').next().unwrap_or("download");
                 pb.set_message(filename.to_string());
-                
-                let response = reqwest::blocking::get(url)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                
-                let bytes = response
-                    .bytes()
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                
+
+                let response = reqwest::blocking::get(url).map_err(io::Error::other)?;
+
+                let bytes = response.bytes().map_err(io::Error::other)?;
+
                 let dest_path = target_dir.join(filename);
                 fs::write(dest_path, bytes)?;
-                
+
                 pb.inc(1);
             }
-            
+
             pb.finish_with_message("Complete");
         }
     }
-    
+
     Ok(())
 }
 
@@ -193,7 +187,7 @@ pub fn download_corpus(
 fn extract_targz(data: &[u8], target_dir: &Path) -> io::Result<()> {
     use flate2::read::GzDecoder;
     use tar::Archive;
-    
+
     let gz = GzDecoder::new(data);
     let mut archive = Archive::new(gz);
     archive.unpack(target_dir)?;
@@ -204,21 +198,21 @@ fn extract_targz(data: &[u8], target_dir: &Path) -> io::Result<()> {
 fn extract_zip(data: &[u8], target_dir: &Path) -> io::Result<()> {
     use std::io::Cursor;
     use zip::ZipArchive;
-    
+
     let cursor = Cursor::new(data);
-    let mut archive = ZipArchive::new(cursor)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
     for i in 0..archive.len() {
         let mut file = archive
             .by_index(i)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        
+
         let outpath = match file.enclosed_name() {
             Some(path) => target_dir.join(path),
             None => continue,
         };
-        
+
         if file.is_dir() {
             fs::create_dir_all(&outpath)?;
         } else {
@@ -229,14 +223,14 @@ fn extract_zip(data: &[u8], target_dir: &Path) -> io::Result<()> {
             io::copy(&mut file, &mut outfile)?;
         }
     }
-    
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_corpus_config_parse() {
         let yaml = r#"
@@ -249,7 +243,7 @@ target_subdir: test
 license: Public domain
 citation: Test citation
 "#;
-        
+
         let config: CorpusConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.id, "test_corpus");
         assert_eq!(config.name, "Test Corpus");

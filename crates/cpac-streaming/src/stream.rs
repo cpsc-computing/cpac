@@ -189,13 +189,11 @@ impl StreamingCompressor {
 
 impl Write for StreamingCompressor {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.write(buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+        self.write(buf).map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.flush()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+        self.flush().map_err(|e| io::Error::other(e.to_string()))
     }
 }
 
@@ -232,6 +230,7 @@ pub struct StreamingDecompressor {
     block_size: usize,
     blocks_processed: usize,
     blocks: Vec<Vec<u8>>, // Compressed block data
+    #[allow(dead_code)]
     max_buffer_size: usize,
 }
 
@@ -455,7 +454,7 @@ mod tests {
         comp.reset();
         comp.write(b"data2").unwrap();
         let frame = comp.finish().unwrap();
-        
+
         let mut decomp = StreamingDecompressor::new().unwrap();
         decomp.feed(&frame).unwrap();
         let output = decomp.read_output();

@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! Regression tests: golden vectors, ratio gates, determinism across runs.
 
+#![allow(clippy::single_char_add_str)]
+#![allow(clippy::manual_range_contains)]
+
 use cpac_engine::{compress, decompress, Backend, CompressConfig};
 
 // ---------------------------------------------------------------------------
@@ -233,7 +236,9 @@ fn ratio_gate_random_should_expand() {
     let mut rng: u64 = 12345;
     let data: Vec<u8> = (0..16384)
         .map(|_| {
-            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng = rng
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (rng >> 33) as u8
         })
         .collect();
@@ -352,14 +357,14 @@ fn frame_backward_compatibility() {
     let data = b"Backward compatibility test data for version 1";
     let config = CompressConfig::default();
     let compressed = compress(data, &config).unwrap();
-    
+
     // Store frame for future compatibility testing
     assert!(compressed.data.len() >= 12, "frame too short");
-    
+
     // Decompress should work
     let decompressed = decompress(&compressed.data).unwrap();
     assert_eq!(decompressed.data, data);
-    
+
     // Version 1 frames should have specific structure
     assert_eq!(&compressed.data[0..2], b"CP", "magic bytes mismatch");
     assert_eq!(compressed.data[2], 1, "version mismatch");
@@ -370,7 +375,7 @@ fn frame_handles_unknown_transforms() {
     // Create a frame with current transforms
     let data = b"Transform compatibility test";
     let compressed = compress(data, &CompressConfig::default()).unwrap();
-    
+
     // Decompress should succeed
     let result = decompress(&compressed.data);
     assert!(result.is_ok(), "failed to decompress valid frame");

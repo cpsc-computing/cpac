@@ -155,7 +155,13 @@ impl Default for BenchmarkRunner {
     fn default() -> Self {
         Self {
             profile: BenchProfile::Balanced,
-            backends: vec![Backend::Zstd, Backend::Brotli, Backend::Gzip, Backend::Lzma, Backend::Raw],
+            backends: vec![
+                Backend::Zstd,
+                Backend::Brotli,
+                Backend::Gzip,
+                Backend::Lzma,
+                Backend::Raw,
+            ],
             skip_baselines: false,
         }
     }

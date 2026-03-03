@@ -22,9 +22,9 @@ fn write_golden(name: &str, data: &[u8]) {
 #[ignore] // Run with --ignored
 fn generate_backend_golden_vectors() {
     fs::create_dir_all(GOLDEN_DIR).unwrap();
-    
+
     let test_data = b"The quick brown fox jumps over the lazy dog. ".repeat(100);
-    
+
     // Test each backend
     for backend in [Backend::Zstd, Backend::Brotli, Backend::Raw] {
         let config = CompressConfig {
@@ -42,26 +42,26 @@ fn generate_backend_golden_vectors() {
 #[ignore]
 fn generate_edge_case_golden_vectors() {
     fs::create_dir_all(GOLDEN_DIR).unwrap();
-    
+
     // Empty file
     let config = CompressConfig::default();
     let result = compress(b"", &config).unwrap();
     write_golden("edge_empty.cpac", &result.data);
-    
+
     // Single byte
     let result = compress(b"X", &config).unwrap();
     write_golden("edge_single_byte.cpac", &result.data);
-    
+
     // Small file (< 256 bytes)
     let small_data = b"Small test data for golden vector validation.";
     let result = compress(small_data, &config).unwrap();
     write_golden("edge_small.cpac", &result.data);
-    
+
     // Medium file (~4KB)
     let medium_data = vec![0xABu8; 4096];
     let result = compress(&medium_data, &config).unwrap();
     write_golden("edge_medium.cpac", &result.data);
-    
+
     // Large repetitive file (triggers good compression)
     let large_data = b"ABCDEFGH".repeat(10000);
     let result = compress(&large_data, &config).unwrap();
@@ -74,23 +74,24 @@ fn generate_edge_case_golden_vectors() {
 fn generate_pattern_golden_vectors() {
     fs::create_dir_all(GOLDEN_DIR).unwrap();
     let config = CompressConfig::default();
-    
+
     // Highly compressible text
     let text = b"The quick brown fox jumps over the lazy dog.\n".repeat(500);
     let result = compress(&text, &config).unwrap();
     write_golden("pattern_text_repetitive.cpac", &result.data);
-    
+
     // CSV-like data
     let mut csv = String::from("id,name,value,status\n");
     for i in 0..1000 {
-        csv.push_str(&format!("{i},item_{i},{},{}\n", 
+        csv.push_str(&format!(
+            "{i},item_{i},{},{}\n",
             i * 7 % 1000,
             if i % 2 == 0 { "ok" } else { "err" }
         ));
     }
     let result = compress(csv.as_bytes(), &config).unwrap();
     write_golden("pattern_csv.cpac", &result.data);
-    
+
     // JSON-like data
     let mut json = String::from("[");
     for i in 0..500 {
@@ -103,7 +104,7 @@ fn generate_pattern_golden_vectors() {
     json.push(']');
     let result = compress(json.as_bytes(), &config).unwrap();
     write_golden("pattern_json.cpac", &result.data);
-    
+
     // Binary structured data
     let mut binary = Vec::new();
     for _ in 0..1000 {
@@ -112,7 +113,7 @@ fn generate_pattern_golden_vectors() {
     }
     let result = compress(&binary, &config).unwrap();
     write_golden("pattern_binary_structured.cpac", &result.data);
-    
+
     // Random-like data (LCG)
     let mut rng: u64 = 42;
     let random: Vec<u8> = (0..8192)
@@ -163,7 +164,7 @@ To regenerate all golden vectors:
 cargo test -p cpac-engine --test generate_golden_vectors -- --ignored --nocapture
 ```
 "#;
-    
+
     let path = Path::new(GOLDEN_DIR).join("README.md");
     fs::write(&path, metadata).unwrap();
     println!("✓ Generated: {}", path.display());

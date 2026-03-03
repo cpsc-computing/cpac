@@ -297,10 +297,7 @@ fn write_output(path: &PathBuf, data: &[u8], force: bool) {
         });
     } else {
         if !force && path.exists() {
-            eprintln!(
-                "Error: Output file '{}' already exists",
-                path.display()
-            );
+            eprintln!("Error: Output file '{}' already exists", path.display());
             eprintln!("Hint: Use --force (-f) to overwrite, or specify a different output path with --output.");
             process::exit(1);
         }
@@ -432,7 +429,9 @@ fn cmd_compress(
             Ok(r) => r,
             Err(e) => {
                 eprintln!("Compression failed for '{}': {e}", file_path.display());
-                eprintln!("Hint: Check input file format and try different backends with --backend.");
+                eprintln!(
+                    "Hint: Check input file format and try different backends with --backend."
+                );
                 if files.len() > 1 {
                     eprintln!("       Continuing with remaining files...\n");
                     continue;
@@ -456,7 +455,10 @@ fn cmd_compress(
         write_output(&out_path, &result.data, force);
 
         if let Some(ref pb) = progress_bar {
-            pb.set_message(format!("{}", file_path.file_name().unwrap_or_default().to_string_lossy()));
+            pb.set_message(format!(
+                "{}",
+                file_path.file_name().unwrap_or_default().to_string_lossy()
+            ));
             pb.inc(1);
         }
 
@@ -536,7 +538,10 @@ fn cmd_decompress(
         Err(e) => {
             eprintln!("Decompression failed for '{}': {e}", input.display());
             eprintln!("Hint: Ensure the file is a valid CPAC archive and not corrupted.");
-            eprintln!("      Use 'cpac info {}' to inspect the file.", input.display());
+            eprintln!(
+                "      Use 'cpac info {}' to inspect the file.",
+                input.display()
+            );
             process::exit(1);
         }
     };
@@ -701,7 +706,7 @@ fn cmd_benchmark(
                     result.ratio,
                     result.compress_throughput_mbs,
                     result.decompress_throughput_mbs,
-                    if result.lossless_verified { "✓" } else { "✗" }
+                    if result.lossless_verified { "YES" } else { "NO" }
                 );
                 all_results.push(result);
             }
@@ -726,7 +731,7 @@ fn cmd_benchmark(
                         result.ratio,
                         result.compress_throughput_mbs,
                         result.decompress_throughput_mbs,
-                        if result.lossless_verified { "✓" } else { "✗" }
+                        if result.lossless_verified { "YES" } else { "NO" }
                     );
                     all_results.push(result);
                 }
@@ -750,7 +755,10 @@ fn cmd_benchmark(
                     .unwrap()
             })
             .unwrap();
-        println!("Best ratio:        {} ({:.2}x)", best_ratio.engine_label, best_ratio.ratio);
+        println!(
+            "Best ratio:        {} ({:.2}x)",
+            best_ratio.engine_label, best_ratio.ratio
+        );
         println!(
             "Fastest compress:  {} ({:.1} MB/s)",
             best_speed.engine_label, best_speed.compress_throughput_mbs

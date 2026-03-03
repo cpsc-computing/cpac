@@ -395,9 +395,7 @@ pub unsafe extern "C" fn cpac_compressor_write(
 ///
 /// - `compressor` must be a valid handle from `cpac_compressor_new()`
 #[no_mangle]
-pub unsafe extern "C" fn cpac_compressor_finish(
-    compressor: *mut CpacCompressor,
-) -> CpacErrorCode {
+pub unsafe extern "C" fn cpac_compressor_finish(compressor: *mut CpacCompressor) -> CpacErrorCode {
     if compressor.is_null() {
         return CpacErrorCode::InvalidArg;
     }
@@ -727,8 +725,7 @@ mod tests {
             let decompressor = cpac_decompressor_new();
             assert!(!decompressor.is_null());
 
-            let result =
-                cpac_decompressor_feed(decompressor, compressed.as_ptr(), compressed_size);
+            let result = cpac_decompressor_feed(decompressor, compressed.as_ptr(), compressed_size);
             assert_eq!(result, CpacErrorCode::Ok);
 
             let mut output = vec![0u8; 1024];

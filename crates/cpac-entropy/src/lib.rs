@@ -3,8 +3,8 @@
 //! Entropy coding backends: Zstd, Brotli, Gzip, LZMA, Raw passthrough.
 
 use cpac_types::{Backend, CpacError, CpacResult};
-use flate2::write::GzEncoder;
 use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::io::{Read, Write};
 
@@ -25,17 +25,24 @@ pub fn compress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
 
 /// Compress `data` using the specified backend with optional dictionary.
 #[must_use = "compressed data is returned"]
-pub fn compress_with_dict(data: &[u8], backend: Backend, dict: Option<&[u8]>) -> CpacResult<Vec<u8>> {
+pub fn compress_with_dict(
+    data: &[u8],
+    backend: Backend,
+    dict: Option<&[u8]>,
+) -> CpacResult<Vec<u8>> {
     match backend {
         Backend::Raw => Ok(data.to_vec()),
         Backend::Zstd => {
             if let Some(dict_data) = dict {
                 // Use dictionary compression via stream API
-                let mut encoder = zstd::stream::Encoder::with_dictionary(Vec::new(), ZSTD_LEVEL, dict_data)
-                    .map_err(|e| CpacError::CompressFailed(format!("zstd encoder: {e}")))?;
-                encoder.write_all(data)
+                let mut encoder =
+                    zstd::stream::Encoder::with_dictionary(Vec::new(), ZSTD_LEVEL, dict_data)
+                        .map_err(|e| CpacError::CompressFailed(format!("zstd encoder: {e}")))?;
+                encoder
+                    .write_all(data)
                     .map_err(|e| CpacError::CompressFailed(format!("zstd write: {e}")))?;
-                encoder.finish()
+                encoder
+                    .finish()
                     .map_err(|e| CpacError::CompressFailed(format!("zstd finish: {e}")))
             } else {
                 zstd::bulk::compress(data, ZSTD_LEVEL)
@@ -61,18 +68,17 @@ pub fn compress_with_dict(data: &[u8], backend: Backend, dict: Option<&[u8]>) ->
         Backend::Gzip => {
             // Use level 9 consistently to match gzip-9 baseline
             let mut encoder = GzEncoder::new(Vec::new(), Compression::new(GZIP_LEVEL));
-            encoder.write_all(data)
+            encoder
+                .write_all(data)
                 .map_err(|e| CpacError::CompressFailed(format!("gzip write: {e}")))?;
-            encoder.finish()
+            encoder
+                .finish()
                 .map_err(|e| CpacError::CompressFailed(format!("gzip finish: {e}")))
         }
         Backend::Lzma => {
             let mut out = Vec::new();
-            lzma_rs::xz_compress(
-                &mut std::io::Cursor::new(data),
-                &mut out,
-            )
-            .map_err(|e| CpacError::CompressFailed(format!("lzma: {e}")))?;
+            lzma_rs::xz_compress(&mut std::io::Cursor::new(data), &mut out)
+                .map_err(|e| CpacError::CompressFailed(format!("lzma: {e}")))?;
             Ok(out)
         }
     }
@@ -86,7 +92,11 @@ pub fn decompress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
 
 /// Decompress `data` using the specified backend with optional dictionary.
 #[must_use = "decompressed data is returned"]
-pub fn decompress_with_dict(data: &[u8], backend: Backend, dict: Option<&[u8]>) -> CpacResult<Vec<u8>> {
+pub fn decompress_with_dict(
+    data: &[u8],
+    backend: Backend,
+    dict: Option<&[u8]>,
+) -> CpacResult<Vec<u8>> {
     match backend {
         Backend::Raw => Ok(data.to_vec()),
         Backend::Zstd => {
@@ -95,7 +105,8 @@ pub fn decompress_with_dict(data: &[u8], backend: Backend, dict: Option<&[u8]>) 
                 let mut decoder = zstd::stream::Decoder::with_dictionary(data, dict_data)
                     .map_err(|e| CpacError::DecompressFailed(format!("zstd decoder: {e}")))?;
                 let mut out = Vec::new();
-                decoder.read_to_end(&mut out)
+                decoder
+                    .read_to_end(&mut out)
                     .map_err(|e| CpacError::DecompressFailed(format!("zstd read: {e}")))?;
                 Ok(out)
             } else {
@@ -113,7 +124,8 @@ pub fn decompress_with_dict(data: &[u8], backend: Backend, dict: Option<&[u8]>) 
         Backend::Gzip => {
             let mut decoder = GzDecoder::new(data);
             let mut out = Vec::new();
-            decoder.read_to_end(&mut out)
+            decoder
+                .read_to_end(&mut out)
                 .map_err(|e| CpacError::DecompressFailed(format!("gzip: {e}")))?;
             Ok(out)
         }
@@ -143,22 +155,22 @@ pub fn auto_select_backend_with_size(entropy: f64, data_size: usize) -> Backend 
     if entropy < 1.0 {
         return Backend::Raw;
     }
-    
+
     // For very large files (>10MB), prioritize speed with Zstd
     if data_size > 10_000_000 && entropy < 7.0 {
         return Backend::Zstd;
     }
-    
+
     // For high-entropy data, Brotli usually wins on ratio
     if entropy >= 6.5 {
         return Backend::Brotli;
     }
-    
+
     // For medium files with medium entropy, Zstd is balanced
     if entropy < 6.5 {
         return Backend::Zstd;
     }
-    
+
     // Default to Brotli for everything else
     Backend::Brotli
 }

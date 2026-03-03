@@ -13,13 +13,11 @@ pub fn bwt_encode(data: &[u8]) -> CpacResult<(Vec<u8>, usize)> {
     }
 
     let n = data.len();
-    
+
     // Build suffix array using simple O(n^2 log n) algorithm
     // For production, use SA-IS or divsufsort
     let mut suffixes: Vec<usize> = (0..n).collect();
-    suffixes.sort_by(|&a, &b| {
-        data[a..].cmp(&data[b..])
-    });
+    suffixes.sort_by(|&a, &b| data[a..].cmp(&data[b..]));
 
     // Find original position
     let original_idx = suffixes.iter().position(|&i| i == 0).unwrap();
@@ -64,8 +62,7 @@ pub fn bwt_decode(data: &[u8], original_idx: usize) -> CpacResult<Vec<u8>> {
         cumulative[i] = cumulative[i - 1] + count[i - 1];
     }
 
-    for i in 0..n {
-        let byte = data[i];
+    for (i, &byte) in data.iter().enumerate().take(n) {
         transform[cumulative[byte as usize]] = i;
         cumulative[byte as usize] += 1;
     }
@@ -122,16 +119,16 @@ mod tests {
     fn bwt_properties() {
         let data = b"the quick brown fox jumps over the lazy dog";
         let (encoded, idx) = bwt_encode(data).unwrap();
-        
+
         // BWT properties: same length, same character frequencies
         assert_eq!(encoded.len(), data.len());
-        
+
         let mut data_sorted = data.to_vec();
         let mut encoded_sorted = encoded.clone();
         data_sorted.sort_unstable();
         encoded_sorted.sort_unstable();
         assert_eq!(data_sorted, encoded_sorted);
-        
+
         let decoded = bwt_decode(&encoded, idx).unwrap();
         assert_eq!(decoded, data);
     }

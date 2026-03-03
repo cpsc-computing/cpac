@@ -66,7 +66,7 @@ pub fn compress_parallel(
     // Compress blocks in parallel with disable_parallel flag to prevent recursion
     let mut block_config = config.clone();
     block_config.disable_parallel = true;
-    
+
     let compressed_blocks: Vec<CpacResult<Vec<u8>>> = pool.install(|| {
         blocks
             .par_iter()
