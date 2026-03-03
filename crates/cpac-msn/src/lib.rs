@@ -32,6 +32,9 @@ pub struct MsnResult {
 /// Lightweight MSN metadata for frame storage (excludes residual).
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MsnMetadata {
+    /// MSN format version (currently 1)
+    #[serde(default = "default_msn_version")]
+    pub version: u8,
     /// Extracted semantic fields
     pub fields: std::collections::HashMap<String, serde_json::Value>,
     /// Whether MSN was actually applied
@@ -40,6 +43,10 @@ pub struct MsnMetadata {
     pub domain_id: Option<String>,
     /// Detection confidence
     pub confidence: f64,
+}
+
+fn default_msn_version() -> u8 {
+    1
 }
 
 impl MsnResult {
@@ -57,6 +64,7 @@ impl MsnResult {
     /// Extract metadata for frame storage (without residual).
     pub fn metadata(&self) -> MsnMetadata {
         MsnMetadata {
+            version: 1,
             fields: self.fields.clone(),
             applied: self.applied,
             domain_id: self.domain_id.clone(),

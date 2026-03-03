@@ -69,6 +69,7 @@ cargo bench -p cpac-engine --bench dag        # DAG compile/execute
 - **Doc comments** on all public items.
 - **Unit tests** in each crate (`#[cfg(test)] mod tests`).
 - **Integration tests** in `tests/` directory of `cpac-engine`.
+- **NO SYNTHETIC DATA**: Tests must use only existing corpus data. Never generate fake/synthetic test data.
 - **Copyright header** on every `.rs` file:
   ```
   // Copyright (c) 2026 BitConcepts, LLC
