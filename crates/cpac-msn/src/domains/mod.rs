@@ -3,5 +3,7 @@
 //! Domain handler implementations.
 
 pub mod passthrough;
+pub mod text;
 
 pub use passthrough::PassthroughDomain;
+pub use text::JsonDomain;
