@@ -8,6 +8,11 @@ updates:
       day: "monday"
       time: "09:00"
     open-pull-requests-limit: 10
+    ignore:
+      # Keep rand at 0.8 for compatibility with crypto libs (x25519-dalek, ed25519-dalek)
+      # that use rand_core 0.6. rand 0.9+ uses rand_core 0.10+ which is incompatible.
+      - dependency-name: "rand"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     reviewers:
       - "cpsc-computing/maintainers"
     labels:
