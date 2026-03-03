@@ -7,7 +7,6 @@ use aes_gcm::{Aes256Gcm, KeyInit, Nonce as AesNonce};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChachaNonce};
 use cpac_types::{CpacError, CpacResult};
 use rand::RngCore;
-
 /// Supported AEAD algorithms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AeadAlgorithm {

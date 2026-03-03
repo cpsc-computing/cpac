@@ -34,18 +34,18 @@ rmp-serde = "1"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 zstd = "0.13"
-brotli = "7"
-criterion = { version = "0.5", features = ["html_reports"] }
-toml = "0.8"
+brotli = "8"
+criterion = { version = "0.8", features = ["html_reports"] }
+toml = "1.0"
 rayon = "1.10"
-sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 flate2 = "1"
 lzma-rs = "0.3"
-indicatif = "0.17"
+indicatif = "0.18"
 serde_yaml = "0.9"
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.13", features = ["blocking"] }
 tar = "0.4"
-zip = "2"
+zip = "8"
 
 # Internal crates
 cpac-types = { path = "crates/cpac-types" }

@@ -18,7 +18,7 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 hkdf = "0.12"
 sha2 = "0.10"
 argon2 = "0.5"
-rand = { version = "0.8", features = ["std", "std_rng"] }
+rand = "0.8"
 zeroize = { version = "1", features = ["derive"] }
 ml-kem = { version = "0.2", optional = true }
 ml-dsa = { version = "0.0.4", optional = true }
