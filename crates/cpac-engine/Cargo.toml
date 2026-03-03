@@ -12,6 +12,7 @@ download = ["dep:reqwest", "dep:tar", "dep:zip"]
 [dependencies]
 cpac-types = { workspace = true }
 cpac-ssr = { workspace = true }
+cpac-msn = { workspace = true }
 cpac-entropy = { workspace = true }
 cpac-frame = { workspace = true }
 cpac-transforms = { workspace = true }
@@ -19,6 +20,7 @@ cpac-dag = { workspace = true }
 sysinfo = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 indicatif = { workspace = true }
 reqwest = { workspace = true, optional = true }
@@ -28,6 +30,7 @@ flate2 = { workspace = true }
 lzma-rs = { workspace = true }
 zstd = { workspace = true }
 brotli = { workspace = true }
+bincode = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

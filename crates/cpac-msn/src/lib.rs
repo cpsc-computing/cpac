@@ -15,7 +15,7 @@ pub use registry::{DomainRegistry, global_registry};
 use cpac_types::{CpacResult, DomainHint};
 
 /// Result of MSN extraction.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MsnResult {
     /// Extracted semantic fields
     pub fields: std::collections::HashMap<String, serde_json::Value>,
