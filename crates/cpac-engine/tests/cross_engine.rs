@@ -45,7 +45,11 @@ fn fixture_zeros_bin() {
     let decompressed = decompress(&compressed.data).unwrap();
     assert_eq!(decompressed.data, data);
     // All zeros should compress extremely well with forced backend
-    assert!(compressed.ratio() > 10.0, "ratio {} should be > 10.0 for zeros", compressed.ratio());
+    assert!(
+        compressed.ratio() > 10.0,
+        "ratio {} should be > 10.0 for zeros",
+        compressed.ratio()
+    );
 }
 
 #[test]

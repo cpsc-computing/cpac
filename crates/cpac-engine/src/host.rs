@@ -161,7 +161,7 @@ fn detect_core_counts() -> (usize, usize) {
     let mut sys = sysinfo::System::new();
     sys.refresh_cpu_all();
     let logical = sys.cpus().len().max(1);
-    // sysinfo 0.33: physical_core_count is an instance method.
+    // sysinfo 0.33: physical_core_count is an instance method
     let physical = sys.physical_core_count().unwrap_or(logical / 2).max(1);
     (physical, logical)
 }
