@@ -82,7 +82,21 @@ impl Default for DomainRegistry {
 
 /// Global domain registry singleton.
 static GLOBAL_REGISTRY: once_cell::sync::Lazy<DomainRegistry> =
-    once_cell::sync::Lazy::new(DomainRegistry::new);
+    once_cell::sync::Lazy::new(|| {
+        let registry = DomainRegistry::new();
+        
+        // Register all domain handlers
+        registry.register(Arc::new(crate::domains::PassthroughDomain));
+        registry.register(Arc::new(crate::domains::JsonDomain));
+        registry.register(Arc::new(crate::domains::CsvDomain));
+        registry.register(Arc::new(crate::domains::XmlDomain));
+        registry.register(Arc::new(crate::domains::MsgPackDomain));
+        registry.register(Arc::new(crate::domains::SyslogDomain));
+        registry.register(Arc::new(crate::domains::ApacheDomain));
+        registry.register(Arc::new(crate::domains::JsonLogDomain));
+        
+        registry
+    });
 
 /// Get the global domain registry.
 pub fn global_registry() -> &'static DomainRegistry {
