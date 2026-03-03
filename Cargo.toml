@@ -34,7 +34,7 @@ rmp-serde = "1"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 zstd = "0.13"
-brotli = "7"
+brotli = "8"
 criterion = { version = "0.5", features = ["html_reports"] }
 toml = "0.8"
 rayon = "1.10"
