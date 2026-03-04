@@ -6,6 +6,15 @@
 //! functional dependencies) that reduce the Degrees of Freedom (`DoF`)
 //! and improve compression.
 
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::no_effect_underscore_binding,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+)]
+
 use std::collections::HashSet;
 
 /// A discovered constraint on a column.

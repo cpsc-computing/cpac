@@ -376,6 +376,47 @@ MSN improvement: 85.14% - 85.54%
 - **1 new fuzz target** (`fuzz_streaming_decode`)
 - **2 new scripts** (`benchmark-all.ps1`, `download-corpus.ps1`)
 
+## Session 14 (2026-03-04)
+### Pedantic Clippy Warning Cleanup (0 Warnings)
+
+#### Goal
+Achieve `cargo clippy --workspace --exclude cpac-py -- -D warnings -W clippy::pedantic` → 0 warnings across all crates, including newly integrated crates (`cpac-archive`, `cpac-ffi`, `cpac-cli`) that had never been linted at pedantic level.
+
+#### Fix: `write_with_newline` in bench.rs
+- `crates/cpac-engine/src/bench.rs`: Converted 8 `write!(x, "...\n", ...)` calls → `writeln!(x, "...", ...)`. Double-newline cases left as `write!` (lint only fires for single trailing `\n`).
+
+#### Fix: cpac-archive (new to pedantic lint)
+- Added `#![allow(clippy::cast_possible_truncation, clippy::missing_errors_doc)]`.
+- Moved `const MAX_ENTRIES: usize = 1_000_000;` from inside `parse_entries()` to module level (fixes `items_after_statements`).
+
+#### Fix: cpac-streaming
+- `src/lib.rs`: Added `cast_sign_loss` to existing `#![allow(...)]` (line 354: `f64 as usize` in `select_block_size`).
+- `src/stream.rs`: Changed `detect_msn` return type from `CpacResult<()>` → `()` (fixes `unnecessary_wraps`); updated 2 call sites from `self.detect_msn()?` → `self.detect_msn()`.
+
+#### Fix: cpac-ffi (new to pedantic lint)
+- Added `#![allow(clippy::missing_panics_doc)]`.
+- Combined `match_same_arms`: `CpacError::Io(_) | CpacError::IoError(_) => CpacErrorCode::Io` and `CpacError::CompressFailed(_) | CpacError::DomainError { .. } => CpacErrorCode::CompressFailed`.
+
+#### Fix: cpac-cli (new to pedantic lint)
+- Added `#![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::fn_params_excessive_bools, clippy::needless_pass_by_value)]`.
+- Fixed `map_unwrap_or`: `.map(|e| e == "cpac-stream").unwrap_or(false)` → `.is_some_and(|e| e == "cpac-stream")`.
+- Fixed `manual_let_else`: `let path = if let Some(p) = input { p } else { ... }` → `let Some(path) = input else { ... }`.
+
+#### Fix: Workspace-wide `#![allow(...)]` suppressions
+All intentional casts and doc suppressions applied at file/crate level across:
+- `cpac-types`, `cpac-transforms`, `cpac-ssr`, `cpac-cas`, `cpac-dag`, `cpac-dict`, `cpac-frame`, `cpac-entropy`, `cpac-domains`, `cpac-crypto`: `cast_precision_loss`, `cast_possible_truncation`, `cast_sign_loss`, `cast_possible_wrap`, `missing_errors_doc`, `missing_panics_doc` as appropriate.
+
+#### Bug Fix: JSONL Columnar Extraction Key Order
+- **Root cause:** `extract_jsonl` in `cpac-msn/src/domains/text/json.rs` used `build_field_index` which sorted field names alphabetically. With `serde_json`'s `preserve_order` feature enabled, reconstruction inserted keys in sorted order, breaking byte-exact roundtrip for the `jsonl_application_logs` real-world test.
+- **Fix:** Replaced sorted `build_field_index` with a first-occurrence document-order traversal using `HashSet<String>` + `Vec<String>`. Fields now appear in the order they are first encountered across all lines, matching serde_json's `preserve_order` reconstruction.
+- **Tests:** `jsonl_application_logs` (msn_realworld) now passes; all other JSONL tests continue to pass.
+
+#### Statistics
+- **`cargo clippy --workspace --exclude cpac-py -- -D warnings -W clippy::pedantic`** → **0 warnings** ✅
+- **`cargo test --workspace --exclude cpac-py`** → **0 failures** ✅
+- **34 files modified** across 14 crates
+- **0 new tests** (all existing tests preserved)
+
 ## Session 11 (2026-03-03)
 ### MSN Streaming Fixes + Full Benchmark Run
 

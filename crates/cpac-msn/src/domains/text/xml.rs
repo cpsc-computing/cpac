@@ -25,10 +25,14 @@ impl Domain for XmlDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
-            if fname.ends_with(".xml") || fname.ends_with(".svg") {
+            if std::path::Path::new(fname).extension().is_some_and(|e| {
+                e.eq_ignore_ascii_case("xml") || e.eq_ignore_ascii_case("svg")
+            }) {
                 return 0.9;
             }
-            if fname.ends_with(".html") || fname.ends_with(".xhtml") {
+            if std::path::Path::new(fname).extension().is_some_and(|e| {
+                e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("xhtml")
+            }) {
                 return 0.85;
             }
         }
@@ -99,6 +103,7 @@ impl Domain for XmlDomain {
 
         // Build tag map
         let mut tag_map: HashMap<String, u32> = HashMap::new();
+        #[allow(clippy::cast_possible_truncation)]
         for (idx, (tag, _)) in repeated_tags.iter().enumerate() {
             tag_map.insert(tag.clone(), idx as u32);
         }
@@ -150,6 +155,7 @@ impl Domain for XmlDomain {
         };
 
         // Build tag_map from detection-phase list (same stable indices).
+        #[allow(clippy::cast_possible_truncation)]
         let tag_map: HashMap<String, u32> = tags
             .iter()
             .enumerate()

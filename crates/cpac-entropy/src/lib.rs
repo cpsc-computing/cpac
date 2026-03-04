@@ -2,41 +2,87 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! Entropy coding backends: Zstd, Brotli, Gzip, LZMA, Raw passthrough.
 
-use cpac_types::{Backend, CpacError, CpacResult};
+#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
+use cpac_types::{Backend, CompressionLevel, CpacError, CpacResult};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::io::{Read, Write};
 
-/// Default Zstd compression level (3 = fast, good for general use).
-const ZSTD_LEVEL: i32 = 3;
-
-/// Default Brotli compression quality (8 = high quality, competitive with brotli-11).
-const BROTLI_QUALITY: i32 = 8;
-
-/// Default Gzip compression level (9 = best, matches gzip-9 baseline).
+/// Gzip level is always 9 (matches gzip-9 baseline; irrelevant to `CompressionLevel`).
 const GZIP_LEVEL: u32 = 9;
 
-/// Compress `data` using the specified backend.
+/// Brotli quality for each `CompressionLevel`.
+///
+/// - Fast    → 6  (high throughput, still good ratio)
+/// - Default → 11 (matches the industry brotli-11 baseline so benchmarks are
+///   a fair measure of CPAC preprocessing value, not encoder gap)
+/// - Best    → 11 (same ceiling; brotli 11 is already max quality)
+fn brotli_quality(level: CompressionLevel) -> u32 {
+    match level {
+        CompressionLevel::Fast => 6,
+        CompressionLevel::Default | CompressionLevel::Best => 11,
+    }
+}
+
+/// Zstd compression level for each `CompressionLevel`.
+///
+/// - Fast    → 1  (fastest, still good ratio)
+/// - Default → 3  (zstd default; best speed/ratio balance)
+/// - Best    → 9  (high ratio at moderate speed cost)
+fn zstd_level(level: CompressionLevel) -> i32 {
+    match level {
+        CompressionLevel::Fast => 1,
+        CompressionLevel::Default => 3,
+        CompressionLevel::Best => 9,
+    }
+}
+
+/// Compress `data` using the specified backend at `CompressionLevel::Default`.
+///
+/// # Errors
+///
+/// Returns [`CpacError::CompressFailed`] if the backend encounters an I/O error.
 #[must_use = "compressed data is returned"]
 pub fn compress(data: &[u8], backend: Backend) -> CpacResult<Vec<u8>> {
-    compress_with_dict(data, backend, None)
+    compress_at_level(data, backend, CompressionLevel::Default, None)
 }
 
 /// Compress `data` using the specified backend with optional dictionary.
+///
+/// # Errors
+///
+/// Returns [`CpacError::CompressFailed`] if the backend encounters an I/O error.
 #[must_use = "compressed data is returned"]
 pub fn compress_with_dict(
     data: &[u8],
     backend: Backend,
     dict: Option<&[u8]>,
 ) -> CpacResult<Vec<u8>> {
+    compress_at_level(data, backend, CompressionLevel::Default, dict)
+}
+
+/// Compress `data` at the specified [`CompressionLevel`] with an optional dictionary.
+///
+/// # Errors
+///
+/// Returns [`CpacError::CompressFailed`] if the backend encounters an I/O error.
+#[must_use = "compressed data is returned"]
+pub fn compress_at_level(
+    data: &[u8],
+    backend: Backend,
+    level: CompressionLevel,
+    dict: Option<&[u8]>,
+) -> CpacResult<Vec<u8>> {
     match backend {
         Backend::Raw => Ok(data.to_vec()),
         Backend::Zstd => {
+            let lvl = zstd_level(level);
             if let Some(dict_data) = dict {
                 // Use dictionary compression via stream API
                 let mut encoder =
-                    zstd::stream::Encoder::with_dictionary(Vec::new(), ZSTD_LEVEL, dict_data)
+                    zstd::stream::Encoder::with_dictionary(Vec::new(), lvl, dict_data)
                         .map_err(|e| CpacError::CompressFailed(format!("zstd encoder: {e}")))?;
                 encoder
                     .write_all(data)
@@ -45,18 +91,19 @@ pub fn compress_with_dict(
                     .finish()
                     .map_err(|e| CpacError::CompressFailed(format!("zstd finish: {e}")))
             } else {
-                zstd::bulk::compress(data, ZSTD_LEVEL)
+                zstd::bulk::compress(data, lvl)
                     .map_err(|e| CpacError::CompressFailed(format!("zstd: {e}")))
             }
         }
         Backend::Brotli => {
+            let quality = brotli_quality(level);
             let mut out = Vec::new();
             {
                 let mut writer = brotli::CompressorWriter::new(
                     &mut out,
                     4096,
-                    BROTLI_QUALITY as u32,
-                    22, // lgwin
+                    quality,
+                    22, // lgwin = max window
                 );
                 std::io::Write::write_all(&mut writer, data)
                     .map_err(|e| CpacError::CompressFailed(format!("brotli write: {e}")))?;

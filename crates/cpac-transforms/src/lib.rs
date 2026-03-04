@@ -9,6 +9,16 @@
 //! The preprocessed output uses a self-describing `TP` frame so the
 //! decompressor can reverse transforms automatically.
 
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_ptr_alignment,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+)]
+
 pub mod bwt;
 pub mod dedup;
 pub mod delta;

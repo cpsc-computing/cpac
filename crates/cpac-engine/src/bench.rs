@@ -3,6 +3,7 @@
 //! Benchmarking framework: `BenchmarkRunner`, `CorpusManager`, report generation.
 
 use cpac_types::{Backend, CompressConfig, CpacResult, CpacError};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -118,10 +119,7 @@ impl CorpusManager {
     }
 
     fn scan_recursive(dir: &Path, out: &mut Vec<PathBuf>, max_bytes: Option<u64>) {
-        let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
+        let Ok(entries) = std::fs::read_dir(dir) else { return; };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -597,42 +595,19 @@ pub fn check_regressions(
 #[must_use] 
 pub fn generate_markdown_report(summary: &CorpusSummary) -> String {
     let mut md = String::new();
-    md.push_str(&format!(
-        "# CPAC Benchmark Report: {}\n\n",
-        summary.corpus_name
-    ));
-    md.push_str(&format!(
-        "- **Total original**: {} bytes\n",
-        summary.total_original
-    ));
-    md.push_str(&format!(
-        "- **Total compressed**: {} bytes\n",
-        summary.total_compressed
-    ));
-    md.push_str(&format!(
-        "- **Overall ratio**: {:.2}x\n",
-        summary.overall_ratio
-    ));
-    md.push_str(&format!(
-        "- **Mean compress throughput**: {:.1} MB/s\n",
-        summary.mean_compress_mbs
-    ));
-    md.push_str(&format!(
-        "- **Mean decompress throughput**: {:.1} MB/s\n",
-        summary.mean_decompress_mbs
-    ));
-    md.push_str(&format!(
-        "- **Lossless verified**: {}\n",
-        if summary.all_lossless { "YES" } else { "FAIL" }
-    ));
-    md.push_str(&format!(
-        "- **Peak memory (est.)**: {:.1} MB\n\n",
-        summary.total_peak_memory_bytes as f64 / 1_048_576.0
-    ));
+    write!(md, "# CPAC Benchmark Report: {}\n\n", summary.corpus_name).ok();
+    writeln!(md, "- **Total original**: {} bytes", summary.total_original).ok();
+    writeln!(md, "- **Total compressed**: {} bytes", summary.total_compressed).ok();
+    writeln!(md, "- **Overall ratio**: {:.2}x", summary.overall_ratio).ok();
+    writeln!(md, "- **Mean compress throughput**: {:.1} MB/s", summary.mean_compress_mbs).ok();
+    writeln!(md, "- **Mean decompress throughput**: {:.1} MB/s", summary.mean_decompress_mbs).ok();
+    writeln!(md, "- **Lossless verified**: {}", if summary.all_lossless { "YES" } else { "FAIL" }).ok();
+    write!(md, "- **Peak memory (est.)**: {:.1} MB\n\n", summary.total_peak_memory_bytes as f64 / 1_048_576.0).ok();
     md.push_str("## Per-file results\n\n");
     for r in &summary.results {
-        md.push_str(&format!(
-            "- `{}` [{}]: {:.2}x ratio, {:.1}/{:.1} MB/s (c/d), {:.1} MB mem, lossless={}\n",
+        writeln!(
+            md,
+            "- `{}` [{}]: {:.2}x ratio, {:.1}/{:.1} MB/s (c/d), {:.1} MB mem, lossless={}",
             r.file.display(),
             r.engine_label,
             r.ratio,
@@ -640,7 +615,7 @@ pub fn generate_markdown_report(summary: &CorpusSummary) -> String {
             r.decompress_throughput_mbs,
             r.peak_memory_bytes as f64 / 1_048_576.0,
             r.lossless_verified,
-        ));
+        ).ok();
     }
     md
 }
@@ -652,8 +627,9 @@ pub fn generate_csv_export(results: &[BenchResult]) -> String {
         "file,engine,original_bytes,compressed_bytes,ratio,compress_ms,decompress_ms,compress_mbs,decompress_mbs,peak_memory_bytes,lossless\n",
     );
     for r in results {
-        csv.push_str(&format!(
-            "{},{},{},{},{:.4},{:.3},{:.3},{:.2},{:.2},{},{}\n",
+        writeln!(
+            csv,
+            "{},{},{},{},{:.4},{:.3},{:.3},{:.2},{:.2},{},{}",
             r.file.display(),
             r.engine_label,
             r.original_size,
@@ -665,7 +641,7 @@ pub fn generate_csv_export(results: &[BenchResult]) -> String {
             r.decompress_throughput_mbs,
             r.peak_memory_bytes,
             r.lossless_verified,
-        ));
+        ).ok();
     }
     csv
 }

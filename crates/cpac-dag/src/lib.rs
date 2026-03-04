@@ -5,6 +5,13 @@
 //! Provides `TransformRegistry`, `TransformDAG`, and `ProfileCache`
 //! for composing and executing transform pipelines.
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::needless_pass_by_value,
+)]
+
 pub mod dag;
 pub mod profile;
 pub mod registry;

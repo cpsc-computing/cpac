@@ -69,7 +69,6 @@ pub fn prefix_decode(data: &[u8]) -> CpacResult<Vec<String>> {
     if data[2] != VERSION {
         return Err(CpacError::Transform("prefix: unsupported version".into()));
     }
-    let _mode = data[3];
     let mut offset = 4;
     let (prefix_len, c) = decode_varint(&data[offset..])?;
     offset += c;

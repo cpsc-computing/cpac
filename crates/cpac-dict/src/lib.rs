@@ -5,6 +5,8 @@
 //! Provides Zstd dictionary generation from corpus files, storage format,
 //! and integration with compression pipeline.
 
+#![allow(clippy::cast_possible_truncation, clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
 use cpac_types::{CpacError, CpacResult};
 use std::path::Path;
 

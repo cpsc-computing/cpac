@@ -26,10 +26,10 @@ impl Domain for CsvDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
-            if fname.ends_with(".csv") {
+            if std::path::Path::new(fname).extension().is_some_and(|e| e.eq_ignore_ascii_case("csv")) {
                 return 0.9;
             }
-            if fname.ends_with(".tsv") {
+            if std::path::Path::new(fname).extension().is_some_and(|e| e.eq_ignore_ascii_case("tsv")) {
                 return 0.85;
             }
         }

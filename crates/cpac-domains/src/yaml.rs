@@ -12,10 +12,7 @@ pub fn detect_yaml(data: &[u8]) -> bool {
     if data.len() < 4 {
         return false;
     }
-    let text = match std::str::from_utf8(&data[..data.len().min(512)]) {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
+    let Ok(text) = std::str::from_utf8(&data[..data.len().min(512)]) else { return false; };
     let trimmed = text.trim_start();
     if trimmed.starts_with("---") {
         return true;
@@ -88,13 +85,11 @@ impl DomainHandler for YamlHandler {
     fn reconstruct(&self, columns: &CpacType) -> CpacResult<Vec<u8>> {
         let (keys, values) = match columns {
             CpacType::ColumnSet { columns } if columns.len() == 2 => {
-                let k = match &columns[0].1 {
-                    CpacType::StringColumn { values, .. } => values,
-                    _ => return Err(CpacError::Other("yaml: expected StringColumn".into())),
+                let CpacType::StringColumn { values: k, .. } = &columns[0].1 else {
+                    return Err(CpacError::Other("yaml: expected StringColumn".into()));
                 };
-                let v = match &columns[1].1 {
-                    CpacType::StringColumn { values, .. } => values,
-                    _ => return Err(CpacError::Other("yaml: expected StringColumn".into())),
+                let CpacType::StringColumn { values: v, .. } = &columns[1].1 else {
+                    return Err(CpacError::Other("yaml: expected StringColumn".into()));
                 };
                 (k, v)
             }
@@ -103,9 +98,13 @@ impl DomainHandler for YamlHandler {
         let mut out = String::from("---\n");
         for (k, v) in keys.iter().zip(values.iter()) {
             if v.is_empty() {
-                out.push_str(&format!("{k}:\n"));
+                out.push_str(k);
+                out.push_str(":\n");
             } else {
-                out.push_str(&format!("{k}: {v}\n"));
+                out.push_str(k);
+                out.push_str(": ");
+                out.push_str(v);
+                out.push('\n');
             }
         }
         Ok(out.into_bytes())

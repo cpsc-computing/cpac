@@ -5,6 +5,14 @@
 //! Splits large data into fixed-size blocks, compresses each independently
 //! (optionally in parallel via rayon), and reassembles on decompression.
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+)]
+
 pub mod mmap;
 pub mod stream;
 

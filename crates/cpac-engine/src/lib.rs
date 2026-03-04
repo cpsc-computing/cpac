@@ -8,6 +8,13 @@
 //! 3. Entropy coding (Zstd/Brotli/Raw)
 //! 4. Frame encoding (self-describing wire format)
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+)]
+
 pub mod bench;
 pub mod corpus;
 pub mod host;
@@ -32,6 +39,9 @@ pub use parallel::{
 
 /// Engine version string.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Minimum input size (in bytes) below which preprocessing is skipped.
+const PREPROCESS_THRESHOLD: usize = 4096;
 
 /// Compress data using the CPAC pipeline.
 ///
@@ -114,8 +124,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
 
     // 4. Check if we should use parallel compression for large files
     // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel)
-    const PARALLEL_THRESHOLD: usize = 1_048_576; // 1MB
-    if !config.disable_parallel && original_size >= PARALLEL_THRESHOLD && backend != Backend::Raw {
+    if !config.disable_parallel && original_size >= parallel::PARALLEL_THRESHOLD && backend != Backend::Raw {
         // Use default 1MB block size and auto-detect thread count
         let num_threads = rayon::current_num_threads();
         return compress_parallel(data, config, DEFAULT_BLOCK_SIZE, num_threads);
@@ -125,7 +134,6 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // Skip preprocessing for:
     // - Raw backend (passthrough mode)
     // - Small files (< 4KB) where overhead exceeds benefit
-    const PREPROCESS_THRESHOLD: usize = 4096;
     let should_preprocess = backend != Backend::Raw && original_size >= PREPROCESS_THRESHOLD;
 
     let preprocessed = if should_preprocess {
@@ -141,12 +149,13 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         data_to_compress.clone()
     };
 
-    // 6. Entropy coding (with optional dictionary for Zstd)
-    let compressed_payload = if backend == Backend::Zstd && config.dictionary.is_some() {
-        cpac_entropy::compress_with_dict(&preprocessed, backend, config.dictionary.as_deref())?
-    } else {
-        cpac_entropy::compress(&preprocessed, backend)?
-    };
+    // 6. Entropy coding (level-aware, with optional dictionary for Zstd)
+    let compressed_payload = cpac_entropy::compress_at_level(
+        &preprocessed,
+        backend,
+        config.level,
+        if backend == Backend::Zstd { config.dictionary.as_deref() } else { None },
+    )?;
 
     // 7. Frame encoding (CP2 if MSN enabled, CP otherwise)
     let frame = if msn_metadata.is_empty() {

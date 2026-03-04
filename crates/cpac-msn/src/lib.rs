@@ -5,6 +5,13 @@
 //! MSN performs domain-specific semantic extraction on structured data formats.
 //! It runs only when SSR indicates Track 1 (structured data worth extracting).
 
+#![allow(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::unnecessary_wraps,
+    clippy::needless_pass_by_value,
+)]
+
 pub mod domain;
 pub mod registry;
 pub mod domains;
@@ -77,7 +84,8 @@ impl MsnResult {
 
 impl MsnMetadata {
     /// Convert to `MsnResult` by adding residual.
-    #[must_use] 
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn with_residual(self, residual: Vec<u8>) -> MsnResult {
         MsnResult {
             fields: self.fields,
@@ -199,7 +207,7 @@ pub fn extract_with_metadata(
 
 /// Encode [`MsnMetadata`] to a compact binary representation.
 ///
-/// Uses MessagePack (via `rmp-serde`) prefixed with a `0x01` discriminator byte.
+/// Uses `MessagePack` (via `rmp-serde`) prefixed with a `0x01` discriminator byte.
 /// This is ~30-40% smaller than JSON for typical metadata payloads and avoids
 /// UTF-8 parsing overhead on the hot decompression path.
 ///
@@ -228,7 +236,7 @@ pub fn extract_with_metadata(
 ///
 /// # Errors
 ///
-/// Returns [`cpac_types::CpacError::CompressFailed`] if MessagePack serialization fails.
+/// Returns [`cpac_types::CpacError::CompressFailed`] if `MessagePack` serialization fails.
 pub fn encode_metadata_compact(meta: &MsnMetadata) -> CpacResult<Vec<u8>> {
     let mut out = vec![0x01u8]; // discriminator: 0x01 = MessagePack
     let msgpack = rmp_serde::to_vec(meta)

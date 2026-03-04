@@ -5,6 +5,8 @@
 //! Detects CSV, JSON, and XML formats and decomposes them into
 //! typed column sets for optimized compression.
 
+#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
 pub mod csv;
 pub mod json;
 pub mod log;

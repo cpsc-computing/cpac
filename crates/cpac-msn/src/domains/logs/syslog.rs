@@ -25,7 +25,9 @@ impl Domain for SyslogDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
-            if fname.contains("syslog") || fname.ends_with(".log") {
+            if fname.contains("syslog")
+                || std::path::Path::new(fname)
+                .extension().is_some_and(|e| e.eq_ignore_ascii_case("log")) {
                 return 0.6;
             }
         }

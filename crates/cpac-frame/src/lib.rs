@@ -18,6 +18,8 @@
 //! | dag_descriptor | msn_metadata | payload
 //! ```
 
+#![allow(clippy::cast_possible_truncation, clippy::missing_errors_doc, clippy::missing_panics_doc)]
+
 use cpac_types::{Backend, CpacError, CpacResult};
 
 /// Magic bytes identifying a CPAC frame.

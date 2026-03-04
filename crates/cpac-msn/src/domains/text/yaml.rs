@@ -25,7 +25,9 @@ impl Domain for YamlDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
-            if fname.ends_with(".yaml") || fname.ends_with(".yml") {
+            if std::path::Path::new(fname).extension().is_some_and(|e| {
+                e.eq_ignore_ascii_case("yaml") || e.eq_ignore_ascii_case("yml")
+            }) {
                 return 0.9;
             }
         }
@@ -72,6 +74,7 @@ impl Domain for YamlDomain {
             .collect();
         repeated_keys.sort_by(|a, b| b.1.cmp(&a.1));
 
+        #[allow(clippy::cast_possible_truncation)]
         let key_map: HashMap<String, u32> = repeated_keys
             .iter()
             .enumerate()
@@ -116,6 +119,7 @@ impl Domain for YamlDomain {
             _ => Vec::new(),
         };
 
+        #[allow(clippy::cast_possible_truncation)]
         let key_map: HashMap<String, u32> = keys
             .iter()
             .enumerate()

@@ -30,10 +30,7 @@ impl Domain for HttpDomain {
             }
         }
 
-        let text = match std::str::from_utf8(data) {
-            Ok(t) => t,
-            Err(_) => return 0.0,
-        };
+        let Ok(text) = std::str::from_utf8(data) else { return 0.0; };
 
         // Check for HTTP request/response patterns
         let first_lines: Vec<&str> = text.lines().take(10).collect();

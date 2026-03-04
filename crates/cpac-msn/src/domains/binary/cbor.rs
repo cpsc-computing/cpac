@@ -26,13 +26,15 @@ impl Domain for CborDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
-            if fname.ends_with(".cbor") {
+            if std::path::Path::new(fname)
+                .extension().is_some_and(|e| e.eq_ignore_ascii_case("cbor")) {
                 return 0.9;
             }
         }
 
         // CBOR detection must be strict to avoid false positives
         // Check if it's mostly ASCII text (indicates not CBOR)
+        #[allow(clippy::cast_precision_loss)]
         let ascii_ratio = data.iter().filter(|&&b| (32u8..127u8).contains(&b)).count() as f64 / data.len() as f64;
         if ascii_ratio > 0.9 {
             // Likely plain text, not CBOR
@@ -74,8 +76,9 @@ impl Domain for CborDomain {
 
         // Build key map
         let mut key_map: HashMap<String, u32> = HashMap::new();
+        #[allow(clippy::cast_possible_truncation)]
         for (idx, (key, _)) in repeated_keys.iter().enumerate() {
-            key_map.insert(key.clone(), idx as u32);
+            key_map.insert(key.clone(), idx as u32); // bounded by key count
         }
 
         // Compact value by replacing keys

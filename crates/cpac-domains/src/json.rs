@@ -32,10 +32,10 @@ impl DomainHandler for JsonHandler {
             .map_err(|e| CpacError::Transform(format!("JSON parse: {e}")))?;
 
         match value {
-            serde_json::Value::Array(arr) => decompose_array(&arr),
+            serde_json::Value::Array(arr) => Ok(decompose_array(&arr)),
             serde_json::Value::Object(_) => {
                 // Wrap single object in array
-                decompose_array(&[value])
+                Ok(decompose_array(&[value]))
             }
             _ => Ok(CpacType::Serial(data.to_vec())),
         }
@@ -80,11 +80,11 @@ impl DomainHandler for JsonHandler {
 }
 
 /// Decompose a JSON array of objects into columns.
-fn decompose_array(arr: &[serde_json::Value]) -> CpacResult<CpacType> {
+fn decompose_array(arr: &[serde_json::Value]) -> CpacType {
     if arr.is_empty() {
-        return Ok(CpacType::ColumnSet {
+        return CpacType::ColumnSet {
             columns: Vec::new(),
-        });
+        };
     }
 
     // Collect all keys in order
@@ -112,9 +112,9 @@ fn decompose_array(arr: &[serde_json::Value]) -> CpacResult<CpacType> {
         })
         .collect();
 
-    Ok(CpacType::ColumnSet {
+    CpacType::ColumnSet {
         columns: typed_columns,
-    })
+    }
 }
 
 fn value_to_string(v: &serde_json::Value) -> String {

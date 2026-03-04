@@ -26,7 +26,10 @@ impl Domain for JsonLogDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
-            if fname.ends_with(".jsonl") || fname.ends_with(".ndjson") {
+            if std::path::Path::new(fname)
+                .extension().is_some_and(|e| e.eq_ignore_ascii_case("jsonl"))
+                || std::path::Path::new(fname)
+                .extension().is_some_and(|e| e.eq_ignore_ascii_case("ndjson")) {
                 return 0.9;
             }
         }
@@ -67,8 +70,9 @@ impl Domain for JsonLogDomain {
 
         // Build key map
         let mut key_map: HashMap<String, u32> = HashMap::new();
+        #[allow(clippy::cast_possible_truncation)]
         for (idx, (key, _)) in repeated_keys.iter().enumerate() {
-            key_map.insert(key.clone(), idx as u32);
+            key_map.insert(key.clone(), idx as u32); // bounded by key count
         }
 
         // Compact each line
@@ -127,10 +131,11 @@ impl Domain for JsonLogDomain {
         };
 
         // Build key → compact-index map.
+        #[allow(clippy::cast_possible_truncation)]
         let key_map: HashMap<String, u32> = keys
             .iter()
             .enumerate()
-            .map(|(idx, k)| (k.clone(), idx as u32))
+            .map(|(idx, k)| (k.clone(), idx as u32)) // bounded by key count
             .collect();
 
         // Split at the last '\n' so we only process complete lines.
@@ -170,7 +175,8 @@ impl Domain for JsonLogDomain {
 
         // Encode streaming residual: [0x01][suffix_len: u32 LE][compacted][suffix]
         let compacted_bytes = compacted_str.as_bytes();
-        let suffix_len = suffix.len() as u32;
+        #[allow(clippy::cast_possible_truncation)]
+        let suffix_len = suffix.len() as u32; // suffix bounded by block size
         let mut residual = Vec::with_capacity(5 + compacted_bytes.len() + suffix.len());
         residual.push(0x01u8);
         residual.extend_from_slice(&suffix_len.to_le_bytes());

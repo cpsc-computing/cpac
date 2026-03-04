@@ -1,6 +1,8 @@
 // Copyright (c) 2026 BitConcepts, LLC
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! C/C++ FFI bindings for the CPAC compression engine.
+
+#![allow(clippy::missing_panics_doc)]
 //!
 //! This crate provides a C-compatible API for compressing and decompressing
 //! data using CPAC. All types are C-compatible and can be used from any
@@ -58,17 +60,15 @@ pub enum CpacErrorCode {
 impl From<CpacError> for CpacErrorCode {
     fn from(err: CpacError) -> Self {
         match err {
-            CpacError::Io(_) => CpacErrorCode::Io,
+            CpacError::Io(_) | CpacError::IoError(_) => CpacErrorCode::Io,
             CpacError::InvalidFrame(_) => CpacErrorCode::InvalidFrame,
             CpacError::UnsupportedBackend(_) => CpacErrorCode::UnsupportedBackend,
             CpacError::DecompressFailed(_) => CpacErrorCode::DecompressFailed,
-            CpacError::CompressFailed(_) => CpacErrorCode::CompressFailed,
+            CpacError::CompressFailed(_) | CpacError::DomainError { .. } => CpacErrorCode::CompressFailed,
             CpacError::Transform(_) => CpacErrorCode::Transform,
             CpacError::Encryption(_) => CpacErrorCode::Encryption,
-            CpacError::IoError(_) => CpacErrorCode::Io,
             CpacError::Other(_) => CpacErrorCode::Other,
             CpacError::AlreadyFinalized => CpacErrorCode::InvalidArg,
-            CpacError::DomainError { .. } => CpacErrorCode::CompressFailed,
         }
     }
 }
@@ -172,6 +172,7 @@ impl From<CpacCompressConfig> for CompressConfig {
             enable_msn: false, // FFI defaults to MSN disabled
             msn_confidence: 0.5,
             msn_domain: None,
+            level: cpac_types::CompressionLevel::Default,
         }
     }
 }

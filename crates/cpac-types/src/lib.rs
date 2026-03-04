@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! Shared types and error definitions for the CPAC engine.
 
+#![allow(clippy::cast_precision_loss)]
+
 use thiserror::Error;
 
 /// Unified error type for all CPAC operations.
@@ -119,6 +121,25 @@ impl CpacType {
             CpacType::ColumnSet { .. } => TypeTag::ColumnSet,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Compression level
+// ---------------------------------------------------------------------------
+
+/// Compression quality preset.
+///
+/// Controls the trade-off between compression ratio and speed.
+/// `Default` preserves the historical CPAC behaviour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CompressionLevel {
+    /// Fast: optimise for throughput (brotli-6 / zstd-1).
+    Fast,
+    /// Default: brotli-11 / zstd-3 — matches industry baselines for fair comparison.
+    #[default]
+    Default,
+    /// Best: brotli-11 / zstd-9 — same brotli quality as Default, higher zstd level.
+    Best,
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +300,9 @@ pub struct CompressConfig {
     /// Format: "category.type" (e.g., "text.json", "log.apache").
     /// None = auto-detect based on content.
     pub msn_domain: Option<String>,
+    /// Compression quality preset.
+    /// Controls brotli quality and zstd level. `Default` preserves previous behaviour.
+    pub level: CompressionLevel,
     /// Internal: disable parallel compression (prevents recursive parallel calls).
     #[doc(hidden)]
     pub disable_parallel: bool,
@@ -295,6 +319,7 @@ impl Default for CompressConfig {
             enable_msn: false,
             msn_confidence: 0.5,
             msn_domain: None,
+            level: CompressionLevel::Default,
             disable_parallel: false,
         }
     }

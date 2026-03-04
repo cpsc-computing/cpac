@@ -154,7 +154,7 @@ impl StreamingCompressor {
         // MSN detection phase: buffer until detection_buffer_size
         if self.msn_config.enable && !self.msn_detected {
             if self.input_buffer.len() >= self.msn_config.detection_buffer_size {
-                self.detect_msn()?;
+                self.detect_msn();
                 self.state = CompressorState::Processing;
             } else {
                 self.state = CompressorState::Detecting;
@@ -191,14 +191,13 @@ impl StreamingCompressor {
     }
 
     /// Detect MSN domain from buffered data.
-    fn detect_msn(&mut self) -> CpacResult<()> {
+    fn detect_msn(&mut self) {
         self.msn_detected = true;
         let sample = if self.input_buffer.len() > self.msn_config.detection_buffer_size {
             &self.input_buffer[..self.msn_config.detection_buffer_size]
         } else {
             &self.input_buffer
         };
-        
         match cpac_msn::extract(sample, None, self.msn_config.confidence_threshold) {
             Ok(result) if result.applied => {
                 // Domain detected - store metadata (without residual)
@@ -209,7 +208,6 @@ impl StreamingCompressor {
                 self.msn_metadata = None;
             }
         }
-        Ok(())
     }
 
     /// Compress one full block from the input buffer.
@@ -264,7 +262,7 @@ impl StreamingCompressor {
         if !self.input_buffer.is_empty() {
             // If MSN not yet detected and enabled, detect now.
             if self.msn_config.enable && !self.msn_detected {
-                self.detect_msn()?;
+                self.detect_msn();
             }
             // Same rationale as compress_block_with_msn: disable internal MSN.
             let inner_config = cpac_types::CompressConfig {

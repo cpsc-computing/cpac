@@ -2,11 +2,18 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! CPAC CLI — command-line interface for compression/decompression.
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::fn_params_excessive_bools,
+    clippy::needless_pass_by_value,
+)]
+
 mod config;
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
-use cpac_types::{Backend, CompressConfig, ResourceConfig};
+use cpac_types::{Backend, CompressConfig, CompressionLevel, ResourceConfig};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -75,6 +82,12 @@ enum Commands {
         /// Use "cpac list-domains" to see available domains.
         #[arg(long, requires = "enable_msn")]
         msn_domain: Option<String>,
+        /// Compression quality preset: fast, default, or best.
+        /// fast    = brotli-6 / zstd-1   (throughput focus)
+        /// default = brotli-11 / zstd-3  (matches industry baseline; fair comparison)
+        /// best    = brotli-11 / zstd-9  (maximum ratio)
+        #[arg(long, default_value = "default")]
+        level: String,
         /// Use incremental streaming compression (bounded memory, large files).
         /// Output uses the CPAC streaming wire format (.cpac-stream).
         #[arg(long)]
@@ -387,6 +400,14 @@ fn build_resources(threads: usize, max_memory: usize) -> ResourceConfig {
     rc
 }
 
+fn parse_level(s: &str) -> CompressionLevel {
+    match s.to_ascii_lowercase().as_str() {
+        "fast" | "f" | "1" => CompressionLevel::Fast,
+        "best" | "max" | "b" | "3" => CompressionLevel::Best,
+        _ => CompressionLevel::Default,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_compress(
     input: PathBuf,
@@ -402,6 +423,7 @@ fn cmd_compress(
     enable_msn: bool,
     msn_confidence: f64,
     msn_domain: Option<String>,
+    level: CompressionLevel,
     streaming: bool,
     stream_block: usize,
 ) {
@@ -437,6 +459,7 @@ fn cmd_compress(
             enable_msn,
             msn_confidence,
             msn_domain: msn_domain.clone(),
+            level,
             ..Default::default()
         };
 
@@ -572,7 +595,7 @@ fn cmd_decompress(
 
     // Detect streaming format by filename or explicit flag.
     let is_stream = streaming
-        || input.extension().map(|e| e == "cpac-stream").unwrap_or(false);
+        || input.extension().is_some_and(|e| e == "cpac-stream");
 
     let decompressed_data = if is_stream {
         let data = read_input(&input);
@@ -666,7 +689,7 @@ fn cmd_info(input: Option<PathBuf>, host: bool) {
         println!();
     }
 
-    let path = if let Some(p) = input { p } else {
+    let Some(path) = input else {
         eprintln!("Error: provide an input file or use --host");
         process::exit(1);
     };
@@ -1303,11 +1326,12 @@ fn main() {
             enable_msn,
             msn_confidence,
             msn_domain,
+            level,
             streaming,
             stream_block,
         } => cmd_compress(
             input, output, backend, force, keep, recursive, verbose, threads, max_memory, mmap,
-            enable_msn, msn_confidence, msn_domain, streaming, stream_block,
+            enable_msn, msn_confidence, msn_domain, parse_level(&level), streaming, stream_block,
         ),
         Commands::Decompress {
             input,

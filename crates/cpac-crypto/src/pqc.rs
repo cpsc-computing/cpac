@@ -73,7 +73,7 @@ pub fn pqc_sign(message: &[u8], secret_key: &[u8], algo: PqcAlgorithm) -> CpacRe
         PqcAlgorithm::SlhDsaSha2128s => {
             Err(CpacError::Encryption("SLH-DSA not yet available".into()))
         }
-        _ => Err(CpacError::Encryption(format!(
+        PqcAlgorithm::MlKem768 => Err(CpacError::Encryption(format!(
             "{algo:?} does not support signing"
         ))),
     }
@@ -91,7 +91,7 @@ pub fn pqc_verify(
         PqcAlgorithm::SlhDsaSha2128s => {
             Err(CpacError::Encryption("SLH-DSA not yet available".into()))
         }
-        _ => Err(CpacError::Encryption(format!(
+        PqcAlgorithm::MlKem768 => Err(CpacError::Encryption(format!(
             "{algo:?} does not support verification"
         ))),
     }
