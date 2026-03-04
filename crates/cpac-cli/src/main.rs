@@ -161,6 +161,10 @@ enum Commands {
         /// Output results as JSON (machine-readable).
         #[arg(long)]
         json: bool,
+        /// Also benchmark Track 1: SSR auto-routing (no MSN) and SSR+MSN.
+        /// Shows what CPAC actually does in production vs. the individual backends above.
+        #[arg(long)]
+        track1: bool,
     },
     /// Analyze file with Auto-CAS constraint inference.
     #[command(alias = "cas")]
@@ -817,6 +821,7 @@ fn cmd_benchmark(
     full: bool,
     skip_baselines: bool,
     json: bool,
+    track1: bool,
 ) {
     use cpac_engine::{BaselineEngine, BenchProfile, BenchmarkRunner};
 
@@ -900,6 +905,27 @@ fn cmd_benchmark(
                     all_results.push(result);
                 }
                 Err(e) => eprintln!("  {:12}  ERROR: {}", engine.label(), e),
+            }
+        }
+    }
+
+    // Track 1: SSR auto-routing and SSR+MSN
+    if track1 {
+        println!();
+        for enable_msn in [false, true] {
+            match runner.bench_file_auto(&input, enable_msn) {
+                Ok(result) => {
+                    println!(
+                        "  {:20}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  verified: {}",
+                        result.engine_label,
+                        result.ratio,
+                        result.compress_throughput_mbs,
+                        result.decompress_throughput_mbs,
+                        if result.lossless_verified { "YES" } else { "NO" }
+                    );
+                    all_results.push(result);
+                }
+                Err(e) => eprintln!("  Track1({})  ERROR: {}", if enable_msn { "MSN" } else { "SSR" }, e),
             }
         }
     }
@@ -1432,7 +1458,8 @@ fn main() {
             full,
             skip_baselines,
             json,
-        } => cmd_benchmark(input, iterations, quick, full, skip_baselines, json),
+            track1,
+        } => cmd_benchmark(input, iterations, quick, full, skip_baselines, json, track1),
         Commands::AutoCas { input, compress } => cmd_auto_cas(input, compress),
         Commands::Encrypt {
             input,

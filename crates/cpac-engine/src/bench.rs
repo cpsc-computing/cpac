@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! Benchmarking framework: `BenchmarkRunner`, `CorpusManager`, report generation.
 
-use cpac_types::{Backend, CompressConfig, CpacError, CpacResult};
+use cpac_types::{Backend, CompressConfig, CpacError, CpacResult, Track};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -235,6 +235,75 @@ impl BenchmarkRunner {
             compress_throughput_mbs: compress_mbs,
             decompress_throughput_mbs: decompress_mbs,
             peak_memory_bytes,
+            lossless_verified,
+        })
+    }
+
+    /// Benchmark a file using SSR auto-routing, optionally with MSN (Track 1).
+    ///
+    /// Unlike [`bench_file`](Self::bench_file) which forces a specific backend,
+    /// this lets SSR select the backend automatically — matching the production
+    /// `cpac compress` path. The result label reflects the actual track + backend
+    /// chosen by SSR, e.g. `"T1(SSR/Brotli)"` or `"T1(MSN/Zstd)"`.
+    pub fn bench_file_auto(&self, path: &Path, enable_msn: bool) -> CpacResult<BenchResult> {
+        let data = std::fs::read(path)
+            .map_err(|e| CpacError::IoError(format!("{}: {e}", path.display())))?;
+        let original_size = data.len();
+        let iterations = self.profile.iterations();
+        let config = CompressConfig {
+            backend: None, // SSR auto-selects
+            enable_msn,
+            msn_confidence: 0.5,
+            ..Default::default()
+        };
+
+        let mut total_compress = Duration::ZERO;
+        let mut compressed_data = Vec::new();
+        let mut selected_backend = Backend::Zstd;
+        let mut selected_track = Track::Track2;
+
+        for _ in 0..iterations {
+            let start = Instant::now();
+            let result = crate::compress(&data, &config)?;
+            total_compress += start.elapsed();
+            selected_backend = result.backend;
+            selected_track = result.track;
+            compressed_data = result.data;
+        }
+        let avg_compress = total_compress / iterations as u32;
+        let compressed_size = compressed_data.len();
+
+        // Lossless verification
+        let decompressed = crate::decompress(&compressed_data)?;
+        let lossless_verified = decompressed.data == data;
+
+        // Decompress timing
+        let mut total_decompress = Duration::ZERO;
+        for _ in 0..iterations {
+            let start = Instant::now();
+            let _r = crate::decompress(&compressed_data)?;
+            total_decompress += start.elapsed();
+        }
+        let avg_decompress = total_decompress / iterations as u32;
+
+        let track_str = match selected_track {
+            Track::Track1 => "T1",
+            Track::Track2 => "T2",
+        };
+        let mode_str = if enable_msn { "MSN" } else { "SSR" };
+        let engine_label = format!("{track_str}({mode_str}/{selected_backend:?})");
+
+        Ok(BenchResult {
+            file: path.to_path_buf(),
+            engine_label,
+            original_size,
+            compressed_size,
+            ratio: calc_ratio(original_size, compressed_size),
+            compress_time: avg_compress,
+            decompress_time: avg_decompress,
+            compress_throughput_mbs: calc_throughput(original_size, &avg_compress),
+            decompress_throughput_mbs: calc_throughput(original_size, &avg_decompress),
+            peak_memory_bytes: original_size + compressed_size + original_size,
             lossless_verified,
         })
     }
