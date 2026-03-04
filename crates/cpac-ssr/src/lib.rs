@@ -145,17 +145,17 @@ fn detect_domain(data: &[u8]) -> Option<DomainHint> {
         return None;
     }
 
-    // JSON detection
-    if trimmed[0] == b'{' || trimmed[0] == b'[' {
+    // JSON detection: must check before log (some logs start with '[')
+    if trimmed[0] == b'{' {
         return Some(DomainHint::Json);
     }
 
     // XML detection
-    if trimmed.starts_with(b"<?xml") || trimmed.starts_with(b"<") {
+    if trimmed.starts_with(b"<?xml") || trimmed.starts_with(b"<!") {
         return Some(DomainHint::Xml);
     }
 
-    // CSV detection: check first line for commas or tabs
+    // CSV detection: check first line for commas
     if let Some(first_line_end) = data.iter().position(|&b| b == b'\n') {
         let first_line = &data[..first_line_end];
         let comma_count = first_line.iter().filter(|&&b| b == b',').count();
@@ -164,7 +164,67 @@ fn detect_domain(data: &[u8]) -> Option<DomainHint> {
         }
     }
 
+    // Log detection: BSD syslog, Apache error log, or structured log with levels
+    if detect_log(data) {
+        return Some(DomainHint::Log);
+    }
+
+    // JSON array or XML element — checked after log to avoid misclassifying
+    // Apache error logs ('[Mon ...') as JSON arrays.
+    if trimmed[0] == b'[' {
+        return Some(DomainHint::Json);
+    }
+    if trimmed[0] == b'<' {
+        return Some(DomainHint::Xml);
+    }
+
     None
+}
+
+/// Content-based log format detection.
+///
+/// Recognises:
+/// - BSD syslog:    `Mon DD HH:MM:SS hostname app[pid]: msg`
+/// - Apache error:  `[Day Mon DD HH:MM:SS YYYY] [level] msg`
+/// - Structured:    ISO date + log-level keyword (OpenStack, Nova, etc.)
+fn detect_log(data: &[u8]) -> bool {
+    // Sample at most 4 KB so this stays O(1) for large files.
+    let sample = &data[..data.len().min(4096)];
+    let text = std::str::from_utf8(sample).unwrap_or("");
+    if text.is_empty() {
+        return false;
+    }
+
+    const BSD_MONTHS: &[&str] = &[
+        "Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ",
+        "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec ",
+    ];
+    const WEEKDAYS: &[&str] = &[
+        "[Mon ", "[Tue ", "[Wed ", "[Thu ", "[Fri ", "[Sat ", "[Sun ",
+    ];
+    const LOG_LEVELS: &[&str] = &[
+        " INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL ",
+    ];
+
+    let mut bsd = 0usize;
+    let mut apache_err = 0usize;
+    let mut structured = 0usize;
+
+    for line in text.lines().take(10) {
+        if BSD_MONTHS.iter().any(|m| line.starts_with(m)) {
+            bsd += 1;
+        }
+        if WEEKDAYS.iter().any(|d| line.starts_with(d)) {
+            apache_err += 1;
+        }
+        if line.contains('-') && line.contains(':') &&
+            LOG_LEVELS.iter().any(|lvl| line.contains(lvl))
+        {
+            structured += 1;
+        }
+    }
+
+    bsd > 5 || apache_err > 5 || structured > 5
 }
 
 #[cfg(test)]
@@ -206,5 +266,52 @@ mod tests {
     fn detect_csv() {
         let r = analyze(b"name,age,city\nAlice,30,NYC\n");
         assert_eq!(r.domain_hint, Some(DomainHint::Csv));
+    }
+
+    #[test]
+    fn detect_bsd_syslog() {
+        // Minimal 10-line BSD syslog sample (>5 lines must match)
+        let data = b"Jun 14 15:16:01 host sshd[1]: msg\n\
+Jun 14 15:16:02 host sshd[2]: msg\n\
+Jun 14 15:16:03 host sshd[3]: msg\n\
+Jun 14 15:16:04 host sshd[4]: msg\n\
+Jun 14 15:16:05 host sshd[5]: msg\n\
+Jun 14 15:16:06 host sshd[6]: msg\n\
+Jun 14 15:16:07 host sshd[7]: msg\n";
+        let r = analyze(data);
+        assert_eq!(r.domain_hint, Some(DomainHint::Log));
+    }
+
+    #[test]
+    fn detect_apache_error_log() {
+        let data = b"[Sun Dec 04 04:47:44 2005] [notice] msg1\n\
+[Sun Dec 04 04:47:45 2005] [error] msg2\n\
+[Sun Dec 04 04:47:46 2005] [notice] msg3\n\
+[Sun Dec 04 04:47:47 2005] [notice] msg4\n\
+[Sun Dec 04 04:47:48 2005] [error] msg5\n\
+[Sun Dec 04 04:47:49 2005] [notice] msg6\n\
+[Mon Dec 05 04:47:50 2005] [notice] msg7\n";
+        let r = analyze(data);
+        assert_eq!(r.domain_hint, Some(DomainHint::Log));
+    }
+
+    #[test]
+    fn detect_structured_log() {
+        let data = b"svc.log 2017-05-16 00:00:00.001 123 INFO ns.api: request\n\
+svc.log 2017-05-16 00:00:01.002 123 INFO ns.api: response\n\
+svc.log 2017-05-16 00:00:02.003 123 ERROR ns.api: fail\n\
+svc.log 2017-05-16 00:00:03.004 123 INFO ns.api: request\n\
+svc.log 2017-05-16 00:00:04.005 123 INFO ns.api: response\n\
+svc.log 2017-05-16 00:00:05.006 123 INFO ns.api: ok\n\
+svc.log 2017-05-16 00:00:06.007 123 INFO ns.api: ok\n";
+        let r = analyze(data);
+        assert_eq!(r.domain_hint, Some(DomainHint::Log));
+    }
+
+    #[test]
+    fn json_not_misdetected_as_log() {
+        // JSON arrays start with '['; must not be classified as log
+        let r = analyze(b"[{\"a\": 1}, {\"b\": 2}]");
+        assert_eq!(r.domain_hint, Some(DomainHint::Json));
     }
 }

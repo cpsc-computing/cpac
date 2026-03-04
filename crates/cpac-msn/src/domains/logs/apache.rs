@@ -32,8 +32,23 @@ impl Domain for ApacheDomain {
 
         let text = std::str::from_utf8(data).unwrap_or("");
 
-        // Look for Apache log patterns: IP - - [timestamp] "METHOD /path HTTP/..."
-        let has_apache_pattern = text
+        // Apache error log pattern: "[Day Mon DD HH:MM:SS YYYY] [level] message"
+        // e.g. "[Sun Dec 04 04:47:44 2005] [notice] workerEnv.init()..."
+        const WEEKDAYS: &[&str] = &[
+            "[Mon ", "[Tue ", "[Wed ", "[Thu ", "[Fri ", "[Sat ", "[Sun ",
+        ];
+        let error_log_count = text
+            .lines()
+            .take(10)
+            .filter(|line| WEEKDAYS.iter().any(|d| line.starts_with(d)))
+            .count();
+
+        if error_log_count > 5 {
+            return 0.85;
+        }
+
+        // Apache access log pattern: IP - - [timestamp] "METHOD /path HTTP/..."
+        let has_access_pattern = text
             .lines()
             .take(10)
             .filter(|line| {
@@ -45,7 +60,7 @@ impl Domain for ApacheDomain {
             .count()
             > 5;
 
-        if has_apache_pattern {
+        if has_access_pattern {
             return 0.8;
         }
 
@@ -56,17 +71,145 @@ impl Domain for ApacheDomain {
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("Apache log decode: {e}")))?;
 
+        if Self::is_error_log(text) {
+            Self::extract_error_log(text)
+        } else {
+            Self::extract_access_log(text)
+        }
+    }
+
+    fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
+        let format = result
+            .fields
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("access");
+
+        let mut reconstructed = std::str::from_utf8(&result.residual)
+            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?
+            .to_string();
+
+        if format == "error" {
+            // Apache error log: expand level placeholders
+            let levels = Self::get_str_vec(&result.fields, "levels")?;
+            for (idx, level) in levels.iter().enumerate() {
+                reconstructed = reconstructed.replace(&format!("@L{idx}"), level);
+            }
+        } else {
+            // Apache access log: expand IP, method, user-agent placeholders
+            let ips = Self::get_str_vec(&result.fields, "ips")?;
+            let methods = Self::get_str_vec(&result.fields, "methods")?;
+            let uas = Self::get_str_vec(&result.fields, "user_agents")?;
+            for (idx, ip) in ips.iter().enumerate() {
+                reconstructed = reconstructed.replace(&format!("@I{idx}"), ip);
+            }
+            for (idx, method) in methods.iter().enumerate() {
+                reconstructed = reconstructed.replace(&format!("@M{idx}"), method);
+            }
+            for (idx, ua) in uas.iter().enumerate() {
+                reconstructed = reconstructed.replace(&format!("@U{idx}"), ua);
+            }
+        }
+
+        Ok(reconstructed.into_bytes())
+    }
+}
+
+impl ApacheDomain {
+    /// True when `text` looks like an Apache error log (`[Day Mon DD ...]` lines).
+    fn is_error_log(text: &str) -> bool {
+        const WEEKDAYS: &[&str] = &[
+            "[Mon ", "[Tue ", "[Wed ", "[Thu ", "[Fri ", "[Sat ", "[Sun ",
+        ];
+        text.lines()
+            .take(10)
+            .filter(|line| WEEKDAYS.iter().any(|d| line.starts_with(d)))
+            .count()
+            > 5
+    }
+
+    /// Extract Apache error-log fields: log levels → `@L{n}` placeholders.
+    fn extract_error_log(text: &str) -> CpacResult<ExtractionResult> {
+        let mut level_freq: HashMap<String, usize> = HashMap::new();
+
+        for line in text.lines() {
+            // Log level is the second bracketed token: [...] [level] ...
+            // Find the second '['
+            let mut bracket_count = 0usize;
+            let mut in_bracket = false;
+            let mut level_start = 0usize;
+            let mut level_end = 0usize;
+            for (i, ch) in line.char_indices() {
+                match ch {
+                    '[' => {
+                        bracket_count += 1;
+                        if bracket_count == 2 {
+                            in_bracket = true;
+                            level_start = i;
+                        }
+                    }
+                    ']' if in_bracket => {
+                        level_end = i + 1;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            if level_end > level_start {
+                let level = &line[level_start..level_end];
+                *level_freq.entry(level.to_string()).or_insert(0) += 1;
+            }
+        }
+
+        let mut repeated_levels: Vec<(String, usize)> = level_freq
+            .into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .collect();
+        repeated_levels.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let mut level_map: HashMap<String, String> = HashMap::new();
+        for (idx, (level, _)) in repeated_levels.iter().enumerate() {
+            level_map.insert(level.clone(), format!("@L{idx}"));
+        }
+
+        let mut compacted = text.to_string();
+        for (orig, replacement) in &level_map {
+            compacted = compacted.replace(orig, replacement);
+        }
+
+        let mut fields = HashMap::new();
+        fields.insert(
+            "format".to_string(),
+            serde_json::Value::String("error".to_string()),
+        );
+        fields.insert(
+            "levels".to_string(),
+            serde_json::Value::Array(
+                repeated_levels
+                    .iter()
+                    .map(|(l, _)| serde_json::Value::String(l.clone()))
+                    .collect(),
+            ),
+        );
+
+        Ok(ExtractionResult {
+            fields,
+            residual: compacted.into_bytes(),
+            metadata: HashMap::new(),
+            domain_id: "log.apache".to_string(),
+        })
+    }
+
+    /// Extract Apache access-log fields: IPs, methods, user agents → placeholders.
+    fn extract_access_log(text: &str) -> CpacResult<ExtractionResult> {
         let mut ip_freq: HashMap<String, usize> = HashMap::new();
         let mut ua_freq: HashMap<String, usize> = HashMap::new();
         let mut method_freq: HashMap<String, usize> = HashMap::new();
 
         for line in text.lines() {
-            // Parse IP (first field)
             if let Some(ip) = line.split_whitespace().next() {
                 *ip_freq.entry(ip.to_string()).or_insert(0) += 1;
             }
-
-            // Parse method (in quotes)
             if let Some(start) = line.find('"') {
                 if let Some(end) = line[start + 1..].find('"') {
                     let request = &line[start + 1..start + 1 + end];
@@ -75,8 +218,6 @@ impl Domain for ApacheDomain {
                     }
                 }
             }
-
-            // Parse user agent (last quoted string in Combined format)
             let quote_positions: Vec<_> = line.match_indices('"').collect();
             if quote_positions.len() >= 4 {
                 let ua_start = quote_positions[quote_positions.len() - 2].0 + 1;
@@ -88,7 +229,6 @@ impl Domain for ApacheDomain {
             }
         }
 
-        // Extract repeated values
         let mut repeated_ips: Vec<(String, usize)> = ip_freq
             .into_iter()
             .filter(|(_, count)| *count >= 2)
@@ -107,23 +247,19 @@ impl Domain for ApacheDomain {
             .collect();
         repeated_uas.sort_by(|a, b| b.1.cmp(&a.1));
 
-        // Build replacement maps
         let mut ip_map: HashMap<String, String> = HashMap::new();
         for (idx, (ip, _)) in repeated_ips.iter().enumerate() {
             ip_map.insert(ip.clone(), format!("@I{idx}"));
         }
-
         let mut method_map: HashMap<String, String> = HashMap::new();
         for (idx, (method, _)) in repeated_methods.iter().enumerate() {
             method_map.insert(method.clone(), format!("@M{idx}"));
         }
-
         let mut ua_map: HashMap<String, String> = HashMap::new();
         for (idx, (ua, _)) in repeated_uas.iter().enumerate() {
             ua_map.insert(ua.clone(), format!("@U{idx}"));
         }
 
-        // Compact log
         let mut compacted = text.to_string();
         for (orig, replacement) in &ip_map {
             compacted = compacted.replace(orig, replacement);
@@ -136,6 +272,10 @@ impl Domain for ApacheDomain {
         }
 
         let mut fields = HashMap::new();
+        fields.insert(
+            "format".to_string(),
+            serde_json::Value::String("access".to_string()),
+        );
         fields.insert(
             "ips".to_string(),
             serde_json::Value::Array(
@@ -172,62 +312,19 @@ impl Domain for ApacheDomain {
         })
     }
 
-    fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
-        let ips_value = result
-            .fields
-            .get("ips")
-            .ok_or_else(|| CpacError::DecompressFailed("Missing ips".into()))?;
-        let methods_value = result
-            .fields
-            .get("methods")
-            .ok_or_else(|| CpacError::DecompressFailed("Missing methods".into()))?;
-        let uas_value = result
-            .fields
-            .get("user_agents")
-            .ok_or_else(|| CpacError::DecompressFailed("Missing user_agents".into()))?;
-
-        let ips: Vec<String> = if let serde_json::Value::Array(arr) = ips_value {
-            arr.iter()
+    /// Helper: extract a `Vec<String>` from a named field (returns empty vec if missing/wrong type).
+    fn get_str_vec(
+        fields: &HashMap<String, serde_json::Value>,
+        key: &str,
+    ) -> CpacResult<Vec<String>> {
+        match fields.get(key) {
+            Some(serde_json::Value::Array(arr)) => Ok(arr
+                .iter()
                 .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        } else {
-            return Err(CpacError::DecompressFailed("Invalid ips format".into()));
-        };
-
-        let methods: Vec<String> = if let serde_json::Value::Array(arr) = methods_value {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        } else {
-            return Err(CpacError::DecompressFailed("Invalid methods format".into()));
-        };
-
-        let uas: Vec<String> = if let serde_json::Value::Array(arr) = uas_value {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        } else {
-            return Err(CpacError::DecompressFailed(
-                "Invalid user_agents format".into(),
-            ));
-        };
-
-        let mut reconstructed = std::str::from_utf8(&result.residual)
-            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?
-            .to_string();
-
-        // Expand placeholders
-        for (idx, ip) in ips.iter().enumerate() {
-            reconstructed = reconstructed.replace(&format!("@I{idx}"), ip);
+                .collect()),
+            None => Ok(Vec::new()), // field absent = nothing to expand
+            _ => Err(CpacError::DecompressFailed(format!("Invalid {key} format"))),
         }
-        for (idx, method) in methods.iter().enumerate() {
-            reconstructed = reconstructed.replace(&format!("@M{idx}"), method);
-        }
-        for (idx, ua) in uas.iter().enumerate() {
-            reconstructed = reconstructed.replace(&format!("@U{idx}"), ua);
-        }
-
-        Ok(reconstructed.into_bytes())
     }
 }
 
@@ -236,13 +333,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn apache_domain_roundtrip() {
+    fn apache_access_log_roundtrip() {
         let domain = ApacheDomain;
-        let data = b"192.168.1.1 - - [01/Jan/2021:12:00:00 +0000] \"GET /index.html HTTP/1.1\" 200 1234\n192.168.1.1 - - [01/Jan/2021:12:00:01 +0000] \"GET /about.html HTTP/1.1\" 200 5678";
-
+        let data = b"*********** - - [01/Jan/2021:12:00:00 +0000] \"GET /index.html HTTP/1.1\" 200 1234\n192.168.1.1 - - [01/Jan/2021:12:00:01 +0000] \"GET /about.html HTTP/1.1\" 200 5678";
         let result = domain.extract(data).unwrap();
         let reconstructed = domain.reconstruct(&result).unwrap();
+        assert_eq!(data.as_slice(), reconstructed.as_slice());
+    }
 
+    #[test]
+    fn apache_error_log_detect() {
+        let domain = ApacheDomain;
+        let data = b"[Sun Dec 04 04:47:44 2005] [notice] msg1\n\
+[Sun Dec 04 04:47:45 2005] [error] msg2\n\
+[Sun Dec 04 04:47:46 2005] [notice] msg3\n\
+[Sun Dec 04 04:47:47 2005] [notice] msg4\n\
+[Sun Dec 04 04:47:48 2005] [error] msg5\n\
+[Sun Dec 04 04:47:49 2005] [notice] msg6\n\
+[Mon Dec 05 04:47:50 2005] [notice] msg7\n";
+        let confidence = domain.detect(data, None);
+        assert!(confidence >= 0.8, "Apache error log confidence={confidence}");
+    }
+
+    #[test]
+    fn apache_error_log_roundtrip() {
+        let domain = ApacheDomain;
+        let data = b"[Sun Dec 04 04:47:44 2005] [notice] workerEnv.init() ok\n\
+[Sun Dec 04 04:47:44 2005] [error] mod_jk child in error state 6\n\
+[Sun Dec 04 04:51:08 2005] [notice] jk2_init() Found child 6725\n\
+[Mon Dec 05 04:47:44 2005] [notice] jk2_init() Found child 6726\n";
+        let result = domain.extract(data).unwrap();
+        // Should compact: [notice] and [error] replaced with placeholders
+        assert!(
+            result.residual.len() < data.len(),
+            "error log should compress: residual={} vs input={}",
+            result.residual.len(), data.len()
+        );
+        let reconstructed = domain.reconstruct(&result).unwrap();
         assert_eq!(data.as_slice(), reconstructed.as_slice());
     }
 }

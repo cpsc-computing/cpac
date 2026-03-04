@@ -112,6 +112,7 @@ pub fn extract(
         DomainHint::Json => ".json",
         DomainHint::Xml => ".xml",
         DomainHint::Csv => ".csv",
+        DomainHint::Log => ".log",
         _ => "",
     });
 
