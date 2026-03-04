@@ -5,6 +5,8 @@
 //! Computes entropy, ASCII ratio, domain hints and determines the
 //! compression track (Track 1 domain-aware vs Track 2 generic).
 
+#![allow(clippy::cast_precision_loss, clippy::naive_bytecount)]
+
 use cpac_types::{DomainHint, Track};
 
 /// Default viability threshold for Track 1.
@@ -48,6 +50,7 @@ pub struct SSRResult {
 /// let result = analyze(&random);
 /// assert_eq!(result.track, Track::Track2);
 /// ```
+#[must_use]
 pub fn analyze(data: &[u8]) -> SSRResult {
     let data_size = data.len();
 

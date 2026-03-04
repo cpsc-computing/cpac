@@ -1,6 +1,8 @@
 // Copyright (c) 2026 BitConcepts, LLC
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! C/C++ FFI bindings for the CPAC compression engine.
+
+#![allow(clippy::missing_panics_doc)]
 //!
 //! This crate provides a C-compatible API for compressing and decompressing
 //! data using CPAC. All types are C-compatible and can be used from any
@@ -14,7 +16,7 @@
 //! cbindgen --config cbindgen.toml --crate cpac-ffi --output cpac.h
 //! ```
 //!
-//! For CMake integration, see `CMakeLists.txt` in this directory.
+//! For `CMake` integration, see `CMakeLists.txt` in this directory.
 
 use cpac_engine::{compress, decompress};
 use cpac_streaming::stream::{StreamingCompressor, StreamingDecompressor};
@@ -58,15 +60,17 @@ pub enum CpacErrorCode {
 impl From<CpacError> for CpacErrorCode {
     fn from(err: CpacError) -> Self {
         match err {
-            CpacError::Io(_) => CpacErrorCode::Io,
+            CpacError::Io(_) | CpacError::IoError(_) => CpacErrorCode::Io,
             CpacError::InvalidFrame(_) => CpacErrorCode::InvalidFrame,
             CpacError::UnsupportedBackend(_) => CpacErrorCode::UnsupportedBackend,
             CpacError::DecompressFailed(_) => CpacErrorCode::DecompressFailed,
-            CpacError::CompressFailed(_) => CpacErrorCode::CompressFailed,
+            CpacError::CompressFailed(_) | CpacError::DomainError { .. } => {
+                CpacErrorCode::CompressFailed
+            }
             CpacError::Transform(_) => CpacErrorCode::Transform,
             CpacError::Encryption(_) => CpacErrorCode::Encryption,
-            CpacError::IoError(_) => CpacErrorCode::Io,
             CpacError::Other(_) => CpacErrorCode::Other,
+            CpacError::AlreadyFinalized => CpacErrorCode::InvalidArg,
         }
     }
 }
@@ -167,6 +171,10 @@ impl From<CpacCompressConfig> for CompressConfig {
             resources,
             dictionary: None,
             disable_parallel: false,
+            enable_msn: false, // FFI defaults to MSN disabled
+            msn_confidence: 0.5,
+            msn_domain: None,
+            level: cpac_types::CompressionLevel::Default,
         }
     }
 }
@@ -193,7 +201,9 @@ pub struct CpacDecompressor(StreamingDecompressor);
 /// Do not free it.
 #[no_mangle]
 pub unsafe extern "C" fn cpac_version() -> *const c_char {
-    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const c_char
+    concat!(env!("CARGO_PKG_VERSION"), "\0")
+        .as_ptr()
+        .cast::<c_char>()
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +413,7 @@ pub unsafe extern "C" fn cpac_compressor_finish(compressor: *mut CpacCompressor)
     let comp = &mut (*compressor).0;
 
     match comp.flush() {
-        Ok(_) => CpacErrorCode::Ok,
+        Ok(()) => CpacErrorCode::Ok,
         Err(e) => CpacErrorCode::from(e),
     }
 }
@@ -527,7 +537,7 @@ pub unsafe extern "C" fn cpac_decompressor_feed(
     let input_slice = slice::from_raw_parts(input, input_size);
 
     match decomp.feed(input_slice) {
-        Ok(_) => CpacErrorCode::Ok,
+        Ok(()) => CpacErrorCode::Ok,
         Err(e) => CpacErrorCode::from(e),
     }
 }
@@ -595,11 +605,7 @@ pub unsafe extern "C" fn cpac_decompressor_is_done(decompressor: *const CpacDeco
     }
 
     let decomp = &(*decompressor).0;
-    if decomp.is_done() {
-        1
-    } else {
-        0
-    }
+    i32::from(decomp.is_done())
 }
 
 /// Free streaming decompressor.

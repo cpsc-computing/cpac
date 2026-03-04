@@ -30,6 +30,7 @@ pub struct ProfileCache {
 
 impl ProfileCache {
     /// Create a new cache with the given registry.
+    #[must_use]
     pub fn new(registry: TransformRegistry) -> Self {
         Self {
             profiles: HashMap::new(),
@@ -38,6 +39,7 @@ impl ProfileCache {
     }
 
     /// Create a cache pre-loaded with built-in profiles.
+    #[must_use]
     pub fn with_builtins() -> Self {
         let registry = TransformRegistry::with_builtins();
         let mut cache = Self::new(registry);
@@ -86,6 +88,7 @@ impl ProfileCache {
     }
 
     /// Get a profile by name.
+    #[must_use]
     pub fn get_profile(&self, name: &str) -> Option<&Profile> {
         self.profiles.get(name)
     }
@@ -99,21 +102,30 @@ impl ProfileCache {
         if profile.transforms.is_empty() {
             return Ok(TransformDAG::passthrough());
         }
-        let names: Vec<&str> = profile.transforms.iter().map(|s| s.as_str()).collect();
+        let names: Vec<&str> = profile
+            .transforms
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         TransformDAG::compile(&self.registry, &names)
     }
 
     /// List all profile names.
+    #[must_use]
     pub fn profile_names(&self) -> Vec<&str> {
-        self.profiles.keys().map(|s| s.as_str()).collect()
+        self.profiles
+            .keys()
+            .map(std::string::String::as_str)
+            .collect()
     }
 
     /// Get the underlying registry.
+    #[must_use]
     pub fn registry(&self) -> &TransformRegistry {
         &self.registry
     }
 
-    /// Save all profiles to a directory as MessagePack files.
+    /// Save all profiles to a directory as `MessagePack` files.
     pub fn save_to_dir(&self, dir: &Path) -> CpacResult<()> {
         std::fs::create_dir_all(dir).map_err(|e| CpacError::Other(format!("create dir: {e}")))?;
         for (name, profile) in &self.profiles {
@@ -126,7 +138,7 @@ impl ProfileCache {
         Ok(())
     }
 
-    /// Load profiles from a directory of MessagePack files.
+    /// Load profiles from a directory of `MessagePack` files.
     pub fn load_from_dir(&mut self, dir: &Path) -> CpacResult<usize> {
         let rd = std::fs::read_dir(dir).map_err(|e| CpacError::Other(format!("read dir: {e}")))?;
         let mut count = 0;

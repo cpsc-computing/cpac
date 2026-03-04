@@ -21,12 +21,14 @@ pub fn generate_ed25519_keypair() -> Ed25519KeyPair {
 }
 
 /// Sign a message with Ed25519.
+#[must_use]
 pub fn ed25519_sign(key: &SigningKey, message: &[u8]) -> Vec<u8> {
     let sig: Signature = key.sign(message);
     sig.to_bytes().to_vec()
 }
 
 /// Verify an Ed25519 signature.
+#[must_use]
 pub fn ed25519_verify(key: &VerifyingKey, message: &[u8], signature: &[u8]) -> bool {
     if signature.len() != 64 {
         return false;

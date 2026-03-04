@@ -14,6 +14,7 @@ cpac-engine = { workspace = true }
 cpac-types = { workspace = true }
 cpac-ssr = { workspace = true }
 cpac-dag = { workspace = true }
+cpac-msn = { workspace = true }
 cpac-crypto = { workspace = true, features = ["pqc"] }
 cpac-streaming = { workspace = true }
 cpac-cas = { workspace = true }

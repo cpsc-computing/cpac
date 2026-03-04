@@ -37,6 +37,7 @@ fn common_prefix(strings: &[String]) -> String {
 }
 
 /// Encode strings by extracting common prefix.
+#[must_use]
 pub fn prefix_encode(values: &[String]) -> Vec<u8> {
     let mut out = Vec::from(MAGIC.as_slice());
     out.push(VERSION);
@@ -68,7 +69,6 @@ pub fn prefix_decode(data: &[u8]) -> CpacResult<Vec<String>> {
     if data[2] != VERSION {
         return Err(CpacError::Transform("prefix: unsupported version".into()));
     }
-    let _mode = data[3];
     let mut offset = 4;
     let (prefix_len, c) = decode_varint(&data[offset..])?;
     offset += c;
@@ -91,7 +91,7 @@ pub fn prefix_decode(data: &[u8]) -> CpacResult<Vec<String>> {
 pub struct PrefixTransform;
 
 impl TransformNode for PrefixTransform {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "prefix"
     }
     fn id(&self) -> u8 {
@@ -132,7 +132,7 @@ impl TransformNode for PrefixTransform {
         match input {
             CpacType::Serial(data) => {
                 let values = prefix_decode(&data)?;
-                let total_bytes: usize = values.iter().map(|s| s.len()).sum();
+                let total_bytes: usize = values.iter().map(std::string::String::len).sum();
                 Ok(CpacType::StringColumn {
                     values,
                     total_bytes,

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! Shared types and error definitions for the CPAC engine.
 
+#![allow(clippy::cast_precision_loss)]
+
 use thiserror::Error;
 
 /// Unified error type for all CPAC operations.
@@ -33,6 +35,17 @@ pub enum CpacError {
 
     #[error("{0}")]
     Other(String),
+
+    /// Compressor or decompressor used after it was already finalized.
+    #[error("already finalized")]
+    AlreadyFinalized,
+
+    /// Domain-specific detection or extraction failure.
+    #[error("domain error ({domain}): {message}")]
+    DomainError {
+        domain: &'static str,
+        message: String,
+    },
 }
 
 /// Result type alias for CPAC operations.
@@ -108,6 +121,25 @@ impl CpacType {
             CpacType::ColumnSet { .. } => TypeTag::ColumnSet,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Compression level
+// ---------------------------------------------------------------------------
+
+/// Compression quality preset.
+///
+/// Controls the trade-off between compression ratio and speed.
+/// `Default` preserves the historical CPAC behaviour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CompressionLevel {
+    /// Fast: optimise for throughput (brotli-6 / zstd-1).
+    Fast,
+    /// Default: brotli-11 / zstd-3 — matches industry baselines for fair comparison.
+    #[default]
+    Default,
+    /// Best: brotli-11 / zstd-9 — same brotli quality as Default, higher zstd level.
+    Best,
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +253,7 @@ impl ResourceConfig {
     pub fn effective_threads(&self) -> usize {
         if self.max_threads == 0 {
             std::thread::available_parallelism()
-                .map(|n| n.get())
+                .map(std::num::NonZero::get)
                 .unwrap_or(1)
         } else {
             self.max_threads
@@ -244,7 +276,7 @@ impl ResourceConfig {
 }
 
 /// Configuration for compression.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct CompressConfig {
     /// Force a specific backend (None = auto-select via SSR).
     pub backend: Option<Backend>,
@@ -256,9 +288,41 @@ pub struct CompressConfig {
     pub resources: Option<ResourceConfig>,
     /// Optional pre-trained dictionary (raw zstd dict format).
     pub dictionary: Option<Vec<u8>>,
+    /// Enable Multi-Scale Normalization (MSN) for domain-specific semantic extraction.
+    /// When enabled, extracts repeated structure from JSON, CSV, XML, logs, etc.
+    /// Default: false.
+    pub enable_msn: bool,
+    /// MSN minimum confidence threshold for auto-detection (0.0-1.0).
+    /// Higher values require more certainty before applying MSN.
+    /// Default: 0.5.
+    pub msn_confidence: f64,
+    /// Force a specific MSN domain (overrides auto-detection).
+    /// Format: "category.type" (e.g., "text.json", "log.apache").
+    /// None = auto-detect based on content.
+    pub msn_domain: Option<String>,
+    /// Compression quality preset.
+    /// Controls brotli quality and zstd level. `Default` preserves previous behaviour.
+    pub level: CompressionLevel,
     /// Internal: disable parallel compression (prevents recursive parallel calls).
     #[doc(hidden)]
     pub disable_parallel: bool,
+}
+
+impl Default for CompressConfig {
+    fn default() -> Self {
+        Self {
+            backend: None,
+            force_track: None,
+            filename: None,
+            resources: None,
+            dictionary: None,
+            enable_msn: false,
+            msn_confidence: 0.5,
+            msn_domain: None,
+            level: CompressionLevel::Default,
+            disable_parallel: false,
+        }
+    }
 }
 
 /// Result of compression.

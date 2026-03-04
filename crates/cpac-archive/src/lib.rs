@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! Multi-file archive format (.cpar) for CPAC.
 
+#![allow(clippy::cast_possible_truncation, clippy::missing_errors_doc)]
+
 use cpac_types::{CompressConfig, CpacError, CpacResult};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -113,7 +115,10 @@ pub fn list_archive(archive: &[u8]) -> CpacResult<Vec<ArchiveEntry>> {
         .collect())
 }
 
-/// Returns Vec of (entry, data_offset) pairs.
+/// Sanity cap: prevent OOM from malicious/corrupted input.
+const MAX_ENTRIES: usize = 1_000_000;
+
+/// Returns Vec of (entry, `data_offset`) pairs.
 fn parse_entries(data: &[u8]) -> CpacResult<Vec<(ArchiveEntry, usize)>> {
     if data.len() < 10 || &data[0..4] != CPAR_MAGIC {
         return Err(CpacError::InvalidFrame("not a CPAR archive".into()));
@@ -122,12 +127,9 @@ fn parse_entries(data: &[u8]) -> CpacResult<Vec<(ArchiveEntry, usize)>> {
         return Err(CpacError::InvalidFrame("unsupported CPAR version".into()));
     }
     let n = u32::from_le_bytes([data[6], data[7], data[8], data[9]]) as usize;
-    // Sanity check: prevent OOM from malicious/corrupted input
-    const MAX_ENTRIES: usize = 1_000_000;
     if n > MAX_ENTRIES {
         return Err(CpacError::InvalidFrame(format!(
-            "archive claims {} entries (max {})",
-            n, MAX_ENTRIES
+            "archive claims {n} entries (max {MAX_ENTRIES})"
         )));
     }
     let mut off = 10usize;

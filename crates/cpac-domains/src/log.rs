@@ -14,10 +14,10 @@ const LOG_LEVELS: &[&str] = &[
 ];
 
 /// Detect log-style content.
+#[must_use]
 pub fn detect_log(data: &[u8]) -> bool {
-    let text = match std::str::from_utf8(&data[..data.len().min(1024)]) {
-        Ok(s) => s,
-        Err(_) => return false,
+    let Ok(text) = std::str::from_utf8(&data[..data.len().min(1024)]) else {
+        return false;
     };
     let mut log_lines = 0;
     let mut total = 0;
@@ -40,7 +40,7 @@ pub fn detect_log(data: &[u8]) -> bool {
 pub struct LogHandler;
 
 impl DomainHandler for LogHandler {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "log"
     }
     fn domain_hint(&self) -> DomainHint {
@@ -74,9 +74,9 @@ impl DomainHandler for LogHandler {
             levels.push(level);
             messages.push(msg);
         }
-        let ts_bytes: usize = timestamps.iter().map(|s| s.len()).sum();
-        let lv_bytes: usize = levels.iter().map(|s| s.len()).sum();
-        let msg_bytes: usize = messages.iter().map(|s| s.len()).sum();
+        let ts_bytes: usize = timestamps.iter().map(std::string::String::len).sum();
+        let lv_bytes: usize = levels.iter().map(std::string::String::len).sum();
+        let msg_bytes: usize = messages.iter().map(std::string::String::len).sum();
         Ok(CpacType::ColumnSet {
             columns: vec![
                 (
@@ -108,17 +108,14 @@ impl DomainHandler for LogHandler {
             CpacType::ColumnSet { columns } if columns.len() == 3 => columns,
             _ => return Err(CpacError::Other("log: expected 3-column ColumnSet".into())),
         };
-        let ts = match &cols[0].1 {
-            CpacType::StringColumn { values, .. } => values,
-            _ => return Err(CpacError::Other("bad col".into())),
+        let CpacType::StringColumn { values: ts, .. } = &cols[0].1 else {
+            return Err(CpacError::Other("bad col".into()));
         };
-        let lv = match &cols[1].1 {
-            CpacType::StringColumn { values, .. } => values,
-            _ => return Err(CpacError::Other("bad col".into())),
+        let CpacType::StringColumn { values: lv, .. } = &cols[1].1 else {
+            return Err(CpacError::Other("bad col".into()));
         };
-        let msg = match &cols[2].1 {
-            CpacType::StringColumn { values, .. } => values,
-            _ => return Err(CpacError::Other("bad col".into())),
+        let CpacType::StringColumn { values: msg, .. } = &cols[2].1 else {
+            return Err(CpacError::Other("bad col".into()));
         };
         let mut out = String::new();
         for i in 0..ts.len() {

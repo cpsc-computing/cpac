@@ -8,13 +8,24 @@
 //! 3. Entropy coding (Zstd/Brotli/Raw)
 //! 4. Frame encoding (self-describing wire format)
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc
+)]
+
 pub mod bench;
 pub mod corpus;
 pub mod host;
 pub mod parallel;
 pub mod pool;
 
-pub use bench::{BaselineEngine, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary};
+pub use bench::{check_regressions, load_baseline, save_baseline};
+pub use bench::{
+    BaselineEngine, BaselineEntry, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary,
+    RegressionKind, RegressionViolation,
+};
 pub use cpac_dag::{ProfileCache, TransformDAG, TransformRegistry};
 pub use cpac_types::{
     Backend, CompressConfig, CompressResult, CpacError, CpacResult, DecompressResult,
@@ -28,6 +39,9 @@ pub use parallel::{
 
 /// Engine version string.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Minimum input size (in bytes) below which preprocessing is skipped.
+const PREPROCESS_THRESHOLD: usize = 4096;
 
 /// Compress data using the CPAC pipeline.
 ///
@@ -81,25 +95,48 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // 1. SSR analysis
     let ssr = cpac_ssr::analyze(data);
 
-    // 2. Select backend with size awareness
+    // 2. MSN (Multi-Scale Normalization) - Track 1 only, if enabled
+    let (msn_data, msn_metadata) = if config.enable_msn && ssr.track == Track::Track1 {
+        // Use confidence threshold from config
+        match cpac_msn::extract(data, None, config.msn_confidence) {
+            Ok(result) if result.applied => {
+                // MSN succeeded - use residual as input, store metadata (without residual)
+                // Encode as compact MessagePack (~30-40% smaller than JSON).
+                let metadata = cpac_msn::encode_metadata_compact(&result.metadata())?;
+                (result.residual, metadata)
+            }
+            _ => {
+                // MSN failed or not applicable - passthrough
+                (data.to_vec(), Vec::new())
+            }
+        }
+    } else {
+        // MSN disabled or Track 2 - passthrough
+        (data.to_vec(), Vec::new())
+    };
+
+    let data_to_compress = &msn_data;
+
+    // 3. Select backend with size awareness
     let backend = config.backend.unwrap_or_else(|| {
         cpac_entropy::auto_select_backend_with_size(ssr.entropy_estimate, original_size)
     });
 
-    // 3. Check if we should use parallel compression for large files
+    // 4. Check if we should use parallel compression for large files
     // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel)
-    const PARALLEL_THRESHOLD: usize = 1_048_576; // 1MB
-    if !config.disable_parallel && original_size >= PARALLEL_THRESHOLD && backend != Backend::Raw {
+    if !config.disable_parallel
+        && original_size >= parallel::PARALLEL_THRESHOLD
+        && backend != Backend::Raw
+    {
         // Use default 1MB block size and auto-detect thread count
         let num_threads = rayon::current_num_threads();
         return compress_parallel(data, config, DEFAULT_BLOCK_SIZE, num_threads);
     }
 
-    // 4. Adaptive preprocessing
+    // 5. Adaptive preprocessing
     // Skip preprocessing for:
     // - Raw backend (passthrough mode)
     // - Small files (< 4KB) where overhead exceeds benefit
-    const PREPROCESS_THRESHOLD: usize = 4096;
     let should_preprocess = backend != Backend::Raw && original_size >= PREPROCESS_THRESHOLD;
 
     let preprocessed = if should_preprocess {
@@ -109,21 +146,37 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
             data_size: ssr.data_size,
         };
         // Use SSR-guided TP preprocess (generic profile / default)
-        let (preprocessed, _transform_meta) = cpac_transforms::preprocess(data, &transform_ctx);
+        let (preprocessed, _transform_meta) =
+            cpac_transforms::preprocess(data_to_compress, &transform_ctx);
         preprocessed
     } else {
-        data.to_vec()
+        data_to_compress.clone()
     };
 
-    // 5. Entropy coding (with optional dictionary for Zstd)
-    let compressed_payload = if backend == Backend::Zstd && config.dictionary.is_some() {
-        cpac_entropy::compress_with_dict(&preprocessed, backend, config.dictionary.as_deref())?
+    // 6. Entropy coding (level-aware, with optional dictionary for Zstd)
+    let compressed_payload = cpac_entropy::compress_at_level(
+        &preprocessed,
+        backend,
+        config.level,
+        if backend == Backend::Zstd {
+            config.dictionary.as_deref()
+        } else {
+            None
+        },
+    )?;
+
+    // 7. Frame encoding (CP2 if MSN enabled, CP otherwise)
+    let frame = if msn_metadata.is_empty() {
+        cpac_frame::encode_frame(&compressed_payload, backend, original_size, &[])
     } else {
-        cpac_entropy::compress(&preprocessed, backend)?
+        cpac_frame::encode_frame_cp2(
+            &compressed_payload,
+            backend,
+            original_size,
+            &[],
+            &msn_metadata,
+        )
     };
-
-    // 5. Frame encoding (empty DAG descriptor — preprocess metadata embedded in TP frame)
-    let frame = cpac_frame::encode_frame(&compressed_payload, backend, original_size, &[]);
 
     let compressed_size = frame.len();
 
@@ -187,7 +240,10 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
     let decompressed_payload = cpac_entropy::decompress(payload, header.backend)?;
 
     // 3. Reverse transforms
-    let result = if !header.dag_descriptor.is_empty() {
+    let mut result = if header.dag_descriptor.is_empty() {
+        // TP-frame based decompression (generic/default)
+        cpac_transforms::unpreprocess(&decompressed_payload, &[])
+    } else {
         // DAG-based decompression: deserialize descriptor and execute backward
         let (ids, metas, _consumed) = cpac_dag::deserialize_dag_descriptor(&header.dag_descriptor)?;
         let registry = TransformRegistry::with_builtins();
@@ -205,12 +261,17 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
                 ))
             }
         }
-    } else {
-        // TP-frame based decompression (generic/default)
-        cpac_transforms::unpreprocess(&decompressed_payload, &[])
     };
 
-    // Verify size if available
+    // 4. MSN reconstruction (if metadata present in CP2 frame)
+    if !header.msn_metadata.is_empty() {
+        // Auto-detect encoding: 0x01 prefix = MessagePack (new), '{' prefix = JSON (legacy).
+        let msn_metadata = cpac_msn::decode_metadata_compact(&header.msn_metadata)?;
+        let msn_result = msn_metadata.with_residual(result);
+        result = cpac_msn::reconstruct(&msn_result)?;
+    }
+
+    // 5. Verify size
     if result.len() != header.original_size as usize {
         return Err(CpacError::DecompressFailed(format!(
             "size mismatch: expected {}, got {}",
@@ -286,5 +347,61 @@ mod tests {
         let compressed = compress(&data, &config).unwrap();
         let decompressed = decompress(&compressed.data).unwrap();
         assert_eq!(decompressed.data, data);
+    }
+
+    #[test]
+    fn roundtrip_with_msn_json() {
+        // Repetitive JSON data - ideal for MSN
+        let json_data = r#"{"name":"Alice","age":30,"city":"NYC"}
+{"name":"Bob","age":25,"city":"LA"}
+{"name":"Charlie","age":35,"city":"SF"}
+{"name":"Diana","age":28,"city":"NYC"}
+{"name":"Eve","age":32,"city":"LA"}"#;
+
+        let data = json_data.as_bytes();
+
+        // Compress with MSN enabled
+        let config_msn = CompressConfig {
+            enable_msn: true,
+            ..Default::default()
+        };
+        let compressed_msn = compress(data, &config_msn).unwrap();
+
+        // Compress without MSN
+        let config_no_msn = CompressConfig {
+            enable_msn: false,
+            ..Default::default()
+        };
+        let compressed_no_msn = compress(data, &config_no_msn).unwrap();
+
+        // MSN should achieve better compression on this structured data
+        // (though results may vary based on SSR track selection)
+
+        // Decompress and verify (compare JSON semantically, not byte-for-byte)
+        let decompressed_msn = decompress(&compressed_msn.data).unwrap();
+        let decompressed_no_msn = decompress(&compressed_no_msn.data).unwrap();
+
+        // Parse both as JSON to verify semantic equivalence
+        let orig_lines: Vec<serde_json::Value> = std::str::from_utf8(data)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        let msn_lines: Vec<serde_json::Value> = std::str::from_utf8(&decompressed_msn.data)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        let no_msn_lines: Vec<serde_json::Value> = std::str::from_utf8(&decompressed_no_msn.data)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+
+        assert_eq!(orig_lines, msn_lines, "MSN roundtrip semantic mismatch");
+        assert_eq!(
+            orig_lines, no_msn_lines,
+            "No-MSN roundtrip semantic mismatch"
+        );
     }
 }

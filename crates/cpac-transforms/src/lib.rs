@@ -9,6 +9,16 @@
 //! The preprocessed output uses a self-describing `TP` frame so the
 //! decompressor can reverse transforms automatically.
 
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::cast_ptr_alignment,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc
+)]
+
 pub mod bwt;
 pub mod dedup;
 pub mod delta;
@@ -53,7 +63,7 @@ const TP_VERSION: u8 = 1;
 /// Minimum data size to attempt preprocessing (avoid overhead on tiny data).
 const MIN_PREPROCESS_SIZE: usize = 128;
 
-/// Transform IDs (matching Python TransformID enum).
+/// Transform IDs (matching Python `TransformID` enum).
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransformID {
@@ -85,6 +95,7 @@ impl TransformID {
 /// Returns `(data, metadata)` where `data` is the TP-framed output
 /// (or raw bytes if no transform was applied) and `metadata` is empty
 /// (all info is embedded in the TP frame).
+#[must_use]
 pub fn preprocess(data: &[u8], ctx: &TransformContext) -> (Vec<u8>, Vec<u8>) {
     let n = data.len();
     if n < MIN_PREPROCESS_SIZE {
@@ -187,6 +198,7 @@ pub fn preprocess(data: &[u8], ctx: &TransformContext) -> (Vec<u8>, Vec<u8>) {
 /// Checks for the `TP` magic header in `data`. If found, reverses the
 /// embedded transforms. The `_metadata` parameter is unused (all info
 /// is embedded in the TP frame).
+#[must_use]
 pub fn unpreprocess(data: &[u8], _metadata: &[u8]) -> Vec<u8> {
     if data.len() < 4 || &data[0..2] != TP_MAGIC {
         return data.to_vec();

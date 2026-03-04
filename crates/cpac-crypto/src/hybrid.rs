@@ -182,6 +182,7 @@ fn derive_hybrid_key(x25519_ss: &[u8; 32], mlkem_ss: &[u8]) -> CpacResult<[u8; 3
 }
 
 /// Check whether data starts with the CPHE magic.
+#[must_use]
 pub fn is_cphe(data: &[u8]) -> bool {
     data.len() >= 4 && &data[..4] == CPHE_MAGIC
 }

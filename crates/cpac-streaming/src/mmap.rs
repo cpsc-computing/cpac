@@ -53,6 +53,7 @@ pub fn mmap_decompress(path: &Path) -> CpacResult<DecompressResult> {
 
 /// Returns `true` if the file size exceeds [`MMAP_THRESHOLD`] and
 /// mmap should be preferred over a normal `std::fs::read`.
+#[must_use]
 pub fn should_use_mmap(path: &Path) -> bool {
     path.metadata()
         .map(|m| m.len() >= MMAP_THRESHOLD)

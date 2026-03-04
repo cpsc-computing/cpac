@@ -27,10 +27,11 @@ pub const DEFAULT_BLOCK_SIZE: usize = 1 << 20;
 /// Minimum input size to trigger parallel compression (256 KiB).
 pub const PARALLEL_THRESHOLD: usize = 256 * 1024;
 
-/// CPBL header: magic(4) + version(1) + block_count(4) + original_size(8) = 17 bytes.
+/// CPBL header: magic(4) + version(1) + `block_count(4)` + `original_size(8)` = 17 bytes.
 const CPBL_HEADER_SIZE: usize = 4 + 1 + 4 + 8;
 
 /// Check whether the given data starts with the CPBL magic.
+#[must_use]
 pub fn is_cpbl(data: &[u8]) -> bool {
     data.len() >= 4 && &data[..4] == CPBL_MAGIC
 }
@@ -85,7 +86,7 @@ pub fn compress_parallel(
 
     // Encode CPBL wire format
     let block_sizes: Vec<u32> = block_data.iter().map(|b| b.len() as u32).collect();
-    let payload_size: usize = block_data.iter().map(|b| b.len()).sum();
+    let payload_size: usize = block_data.iter().map(std::vec::Vec::len).sum();
     let total = CPBL_HEADER_SIZE + block_count * 4 + payload_size;
     let mut out = Vec::with_capacity(total);
 

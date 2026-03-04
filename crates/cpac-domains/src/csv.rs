@@ -7,6 +7,7 @@ use cpac_types::{CpacError, CpacResult, CpacType, DomainHint};
 use crate::DomainHandler;
 
 /// Detect if data looks like CSV.
+#[must_use]
 pub fn detect_csv(data: &[u8]) -> bool {
     let sample = &data[..data.len().min(4096)];
     let text = String::from_utf8_lossy(sample);
@@ -72,7 +73,7 @@ fn detect_delimiter(text: &str) -> char {
 pub struct CsvHandler;
 
 impl DomainHandler for CsvHandler {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "csv"
     }
     fn domain_hint(&self) -> DomainHint {
@@ -87,7 +88,7 @@ impl DomainHandler for CsvHandler {
             .into_iter()
             .zip(columns)
             .map(|(name, values)| {
-                let total_bytes: usize = values.iter().map(|s| s.len()).sum();
+                let total_bytes: usize = values.iter().map(std::string::String::len).sum();
                 (
                     name,
                     CpacType::StringColumn {

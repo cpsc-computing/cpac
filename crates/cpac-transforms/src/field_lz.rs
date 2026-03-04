@@ -142,6 +142,7 @@ pub fn field_lz_decode(data: &[u8]) -> CpacResult<Vec<u8>> {
 }
 
 /// Detect repeating field patterns (for preprocess heuristic).
+#[must_use]
 pub fn detect_repeating_fields(data: &[u8], width: usize) -> f64 {
     let n = data.len();
     if n < width * 8 {
@@ -157,14 +158,14 @@ pub fn detect_repeating_fields(data: &[u8], width: usize) -> f64 {
         }
         seen.insert(field, true);
     }
-    repeats as f64 / num_fields as f64
+    f64::from(repeats) / num_fields as f64
 }
 
 /// Field LZ transform node.
 pub struct FieldLzTransform;
 
 impl TransformNode for FieldLzTransform {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "field_lz"
     }
     fn id(&self) -> u8 {

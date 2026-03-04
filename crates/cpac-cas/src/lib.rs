@@ -1,10 +1,19 @@
 // Copyright (c) 2026 BitConcepts, LLC
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
-//! Constraint-based Auto-CAS: inference, cost model, DoF extraction.
+//! Constraint-based Auto-CAS: inference, cost model, `DoF` extraction.
 //!
 //! Analyzes structured data to discover constraints (ranges, enumerations,
-//! functional dependencies) that reduce the Degrees of Freedom (DoF)
+//! functional dependencies) that reduce the Degrees of Freedom (`DoF`)
 //! and improve compression.
+
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::no_effect_underscore_binding,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc
+)]
 
 use std::collections::HashSet;
 
@@ -56,6 +65,7 @@ pub struct CasAnalysis {
 }
 
 /// Infer constraints from integer column data.
+#[must_use]
 pub fn infer_int_constraints(_name: &str, values: &[i64]) -> Vec<Constraint> {
     let mut constraints = Vec::new();
     if values.is_empty() {
@@ -79,7 +89,10 @@ pub fn infer_int_constraints(_name: &str, values: &[i64]) -> Vec<Constraint> {
     // Enumeration (if few unique values)
     let unique: HashSet<i64> = values.iter().copied().collect();
     if unique.len() <= 32 && unique.len() < values.len() / 2 {
-        let mut vals: Vec<String> = unique.iter().map(|v| v.to_string()).collect();
+        let mut vals: Vec<String> = unique
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         vals.sort();
         constraints.push(Constraint::Enumeration { values: vals });
     }
@@ -99,6 +112,7 @@ pub fn infer_int_constraints(_name: &str, values: &[i64]) -> Vec<Constraint> {
 }
 
 /// Infer constraints from string column data.
+#[must_use]
 pub fn infer_string_constraints(_name: &str, values: &[String]) -> Vec<Constraint> {
     let mut constraints = Vec::new();
     if values.is_empty() {
@@ -115,9 +129,12 @@ pub fn infer_string_constraints(_name: &str, values: &[String]) -> Vec<Constrain
     }
 
     // Enumeration
-    let unique: HashSet<&str> = values.iter().map(|s| s.as_str()).collect();
+    let unique: HashSet<&str> = values.iter().map(std::string::String::as_str).collect();
     if unique.len() <= 64 && unique.len() < values.len() / 2 {
-        let mut vals: Vec<String> = unique.iter().map(|s| s.to_string()).collect();
+        let mut vals: Vec<String> = unique
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         vals.sort();
         constraints.push(Constraint::Enumeration { values: vals });
     }
@@ -126,6 +143,7 @@ pub fn infer_string_constraints(_name: &str, values: &[String]) -> Vec<Constrain
 }
 
 /// Infer additional structural constraints on integer data.
+#[must_use]
 pub fn infer_structural_constraints(values: &[i64]) -> Vec<Constraint> {
     let mut constraints = Vec::new();
     if values.len() < 2 {
@@ -180,6 +198,7 @@ pub fn infer_structural_constraints(values: &[i64]) -> Vec<Constraint> {
 }
 
 /// Full column analysis returning a `CasAnalysis`.
+#[must_use]
 pub fn analyze_columns(columns: &[(String, Vec<i64>)]) -> CasAnalysis {
     let mut all_constraints = Vec::new();
     let mut total_dof = 0.0;
@@ -219,9 +238,10 @@ const CAS_VERSION: u8 = 1;
 /// Compress data with CAS header prepended.
 ///
 /// Format: `[CAS][version][num_constraints:u16 LE][constraint_table][residual_data]`
+#[must_use]
 pub fn cas_compress(data: &[u8]) -> Vec<u8> {
     // For raw bytes, we treat each byte as an i64 value in a single column
-    let values: Vec<i64> = data.iter().map(|&b| b as i64).collect();
+    let values: Vec<i64> = data.iter().map(|&b| i64::from(b)).collect();
     let analysis = analyze_columns(&[("data".into(), values)]);
     let num_c = analysis
         .constraints
@@ -250,6 +270,7 @@ pub fn cas_decompress(data: &[u8]) -> cpac_types::CpacResult<Vec<u8>> {
 }
 
 /// Estimate degrees of freedom for a column.
+#[must_use]
 pub fn estimate_dof(
     values_count: usize,
     unique_count: usize,
@@ -258,20 +279,18 @@ pub fn estimate_dof(
     if values_count == 0 {
         return 0.0;
     }
-    match value_range {
-        Some((min, max)) => {
-            let range_bits = ((max - min + 1) as f64).log2().max(0.0);
-            range_bits * values_count as f64
-        }
-        None => {
-            // String: entropy-based estimate
-            let diversity = unique_count as f64 / values_count as f64;
-            (diversity * 8.0) * values_count as f64
-        }
+    if let Some((min, max)) = value_range {
+        let range_bits = ((max - min + 1) as f64).log2().max(0.0);
+        range_bits * values_count as f64
+    } else {
+        // String: entropy-based estimate
+        let diversity = unique_count as f64 / values_count as f64;
+        (diversity * 8.0) * values_count as f64
     }
 }
 
-/// Compute constrained DoF after applying constraints.
+/// Compute constrained `DoF` after applying constraints.
+#[must_use]
 pub fn constrained_dof(total_dof: f64, constraints: &[Constraint], values_count: usize) -> f64 {
     let mut reduction = 0.0;
     for constraint in constraints {

@@ -15,6 +15,7 @@ pub const TRANSFORM_ID: u8 = 7;
 /// Range-pack a slice of i64 values.
 ///
 /// Returns `(packed_bytes, min_value, pack_width)`.
+#[must_use]
 pub fn range_pack_encode(values: &[i64]) -> (Vec<u8>, i64, u8) {
     if values.is_empty() {
         return (Vec::new(), 0, 0);
@@ -47,19 +48,20 @@ pub fn range_pack_encode(values: &[i64]) -> (Vec<u8>, i64, u8) {
 }
 
 /// Decode range-packed integers.
+#[must_use]
 pub fn range_pack_decode(data: &[u8], count: usize, min_value: i64, pack_width: u8) -> Vec<i64> {
     let mut values = Vec::with_capacity(count);
     for i in 0..count {
         let offset = i * pack_width as usize;
         let v: u64 = match pack_width {
-            1 => data[offset] as u64,
-            2 => u16::from_le_bytes([data[offset], data[offset + 1]]) as u64,
-            4 => u32::from_le_bytes([
+            1 => u64::from(data[offset]),
+            2 => u64::from(u16::from_le_bytes([data[offset], data[offset + 1]])),
+            4 => u64::from(u32::from_le_bytes([
                 data[offset],
                 data[offset + 1],
                 data[offset + 2],
                 data[offset + 3],
-            ]) as u64,
+            ])),
             _ => u64::from_le_bytes([
                 data[offset],
                 data[offset + 1],
@@ -77,6 +79,7 @@ pub fn range_pack_decode(data: &[u8], count: usize, min_value: i64, pack_width: 
 }
 
 /// Framed encode: `[count:4 LE][min_value:8 LE signed][pack_width:1][packed]`.
+#[must_use]
 pub fn range_pack_encode_framed(values: &[i64]) -> Vec<u8> {
     let (packed, min_val, pack_width) = range_pack_encode(values);
     let mut out = Vec::with_capacity(13 + packed.len());
@@ -106,7 +109,7 @@ pub fn range_pack_decode_framed(data: &[u8]) -> CpacResult<Vec<i64>> {
 pub struct RangePackTransform;
 
 impl TransformNode for RangePackTransform {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "range_pack"
     }
     fn id(&self) -> u8 {
@@ -140,7 +143,7 @@ impl TransformNode for RangePackTransform {
                     8
                 };
                 if pack_w < *original_width {
-                    Some((*original_width - pack_w) as f64)
+                    Some(f64::from(*original_width - pack_w))
                 } else {
                     None
                 }

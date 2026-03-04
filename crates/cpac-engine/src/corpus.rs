@@ -72,8 +72,7 @@ pub fn list_corpus_configs(config_dir: &Path) -> io::Result<Vec<CorpusConfig>> {
             && path
                 .file_name()
                 .and_then(|s| s.to_str())
-                .map(|s| s.starts_with("corpus_"))
-                .unwrap_or(false)
+                .is_some_and(|s| s.starts_with("corpus_"))
         {
             if let Ok(config) = load_corpus_config(&path) {
                 configs.push(config);

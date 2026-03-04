@@ -9,7 +9,7 @@ use cpac_types::{CpacError, CpacResult, CpacType};
 
 use crate::registry::TransformRegistry;
 
-/// Metadata chain produced during forward execution: (transform_id, metadata_bytes) per step.
+/// Metadata chain produced during forward execution: (`transform_id`, `metadata_bytes`) per step.
 pub type MetaChain = Vec<(u8, Vec<u8>)>;
 
 /// A compiled DAG: an ordered list of transform nodes.
@@ -24,11 +24,13 @@ pub struct TransformDAG {
 
 impl TransformDAG {
     /// Create an empty (passthrough) DAG.
+    #[must_use]
     pub fn passthrough() -> Self {
         Self { steps: Vec::new() }
     }
 
     /// Create a DAG from an explicit list of transforms.
+    #[must_use]
     pub fn from_steps(steps: Vec<Arc<dyn TransformNode>>) -> Self {
         Self { steps }
     }
@@ -59,7 +61,7 @@ impl TransformDAG {
 
     /// Execute the DAG in the forward (compression) direction.
     ///
-    /// Returns the final output and a list of (transform_id, metadata) pairs
+    /// Returns the final output and a list of (`transform_id`, metadata) pairs
     /// for the decoder.
     pub fn execute_forward(
         &self,
@@ -102,6 +104,7 @@ impl TransformDAG {
     ///
     /// Tries each transform in the registry, keeping those with positive gain.
     /// Returns a new DAG with the selected transforms.
+    #[must_use]
     pub fn auto_select(
         registry: &TransformRegistry,
         input: &CpacType,
@@ -125,21 +128,25 @@ impl TransformDAG {
     }
 
     /// Number of steps in the DAG.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.steps.len()
     }
 
     /// Whether the DAG is empty (passthrough).
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.steps.is_empty()
     }
 
     /// Get the ordered list of transform IDs.
+    #[must_use]
     pub fn transform_ids(&self) -> Vec<u8> {
         self.steps.iter().map(|s| s.id()).collect()
     }
 
     /// Get the ordered list of transform names.
+    #[must_use]
     pub fn transform_names(&self) -> Vec<&str> {
         self.steps.iter().map(|s| s.name()).collect()
     }
@@ -148,6 +155,7 @@ impl TransformDAG {
 /// Serialize a DAG descriptor to bytes for the frame.
 ///
 /// Format: `[count:1][ids...][per-step: meta_len:2 LE + meta_bytes]`.
+#[must_use]
 pub fn serialize_dag_descriptor(meta_chain: &[(u8, Vec<u8>)]) -> Vec<u8> {
     let mut out = Vec::new();
     out.push(meta_chain.len() as u8);

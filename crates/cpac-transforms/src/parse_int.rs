@@ -3,18 +3,19 @@
 //! Parse int: converts ASCII numeric string columns to typed integer columns.
 //!
 //! This is a text→binary transform that enables delta, zigzag, and
-//! range_pack to work on data that was originally textual CSV/TSV.
+//! `range_pack` to work on data that was originally textual CSV/TSV.
 
 use cpac_types::{CpacError, CpacResult, CpacType, TypeTag};
 
 use crate::traits::{TransformContext, TransformNode};
 
-/// Transform ID for parse_int (wire format).
+/// Transform ID for `parse_int` (wire format).
 pub const TRANSFORM_ID: u8 = 11;
 
 /// Try to parse a list of strings as integers.
 ///
 /// Returns `(success, values)`. Empty strings map to 0.
+#[must_use]
 pub fn parse_int_column(strings: &[String]) -> (bool, Vec<i64>) {
     let mut values = Vec::with_capacity(strings.len());
     for s in strings {
@@ -52,7 +53,7 @@ fn detect_width(values: &[i64]) -> u8 {
 pub struct ParseIntTransform;
 
 impl TransformNode for ParseIntTransform {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "parse_int"
     }
     fn id(&self) -> u8 {
@@ -109,8 +110,11 @@ impl TransformNode for ParseIntTransform {
     fn decode(&self, input: CpacType, _metadata: &[u8]) -> CpacResult<CpacType> {
         match input {
             CpacType::IntColumn { values, .. } => {
-                let strings: Vec<String> = values.iter().map(|v| v.to_string()).collect();
-                let total_bytes: usize = strings.iter().map(|s| s.len()).sum();
+                let strings: Vec<String> = values
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect();
+                let total_bytes: usize = strings.iter().map(std::string::String::len).sum();
                 Ok(CpacType::StringColumn {
                     values: strings,
                     total_bytes,

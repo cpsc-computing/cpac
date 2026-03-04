@@ -5,6 +5,12 @@
 //! Provides Zstd dictionary generation from corpus files, storage format,
 //! and integration with compression pipeline.
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc
+)]
+
 use cpac_types::{CpacError, CpacResult};
 use std::path::Path;
 
@@ -49,10 +55,10 @@ impl CpacDictionary {
             return Err(CpacError::Other("no samples provided for training".into()));
         }
 
-        let corpus_size: usize = samples.iter().map(|s| s.len()).sum();
+        let corpus_size: usize = samples.iter().map(std::vec::Vec::len).sum();
 
         // Convert samples to slice of slices for zstd
-        let sample_refs: Vec<&[u8]> = samples.iter().map(|s| s.as_slice()).collect();
+        let sample_refs: Vec<&[u8]> = samples.iter().map(std::vec::Vec::as_slice).collect();
 
         // Train dictionary using zstd
         let dict_data = zstd::dict::from_samples(&sample_refs, max_size)
@@ -101,6 +107,7 @@ impl CpacDictionary {
     /// Serialize dictionary to binary format.
     ///
     /// Format: `[magic:4][version:1][dict_id:8][size:4][samples:4][corpus_size:8][created_at:8][data]`
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(37 + self.data.len());
         bytes.extend_from_slice(b"CPDI"); // Magic: CPAC Dictionary

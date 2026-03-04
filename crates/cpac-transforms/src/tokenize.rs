@@ -19,6 +19,7 @@ const MAGIC: &[u8; 2] = b"TK";
 const VERSION: u8 = 1;
 
 /// Encode a list of strings using dictionary tokenization.
+#[must_use]
 pub fn tokenize_encode(values: &[String]) -> Vec<u8> {
     if values.is_empty() {
         let mut out = Vec::from(MAGIC.as_slice());
@@ -92,7 +93,7 @@ pub fn tokenize_decode(data: &[u8]) -> CpacResult<Vec<String>> {
 pub struct TokenizeTransform;
 
 impl TransformNode for TokenizeTransform {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "tokenize"
     }
     fn id(&self) -> u8 {
@@ -111,7 +112,7 @@ impl TransformNode for TokenizeTransform {
                     return None;
                 }
                 let unique: std::collections::HashSet<&str> =
-                    values.iter().map(|s| s.as_str()).collect();
+                    values.iter().map(std::string::String::as_str).collect();
                 let ratio = unique.len() as f64 / values.len() as f64;
                 if ratio < 0.8 {
                     Some((1.0 - ratio) * 5.0)
@@ -135,7 +136,7 @@ impl TransformNode for TokenizeTransform {
         match input {
             CpacType::Serial(data) => {
                 let values = tokenize_decode(&data)?;
-                let total_bytes: usize = values.iter().map(|s| s.len()).sum();
+                let total_bytes: usize = values.iter().map(std::string::String::len).sum();
                 Ok(CpacType::StringColumn {
                     values,
                     total_bytes,

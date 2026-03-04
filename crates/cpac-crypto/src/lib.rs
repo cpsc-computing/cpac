@@ -6,6 +6,13 @@
 //! key exchange (X25519), digital signatures (Ed25519),
 //! key derivation (HKDF, Argon2), and a high-level encrypt/decrypt API.
 
+#![allow(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::cast_possible_truncation,
+    clippy::unnecessary_wraps
+)]
+
 pub mod aead;
 #[cfg(feature = "pqc")]
 pub mod hybrid;
