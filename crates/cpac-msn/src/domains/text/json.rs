@@ -61,15 +61,10 @@ impl JsonDomain {
             Value::Object(map) => {
                 let mut new_map = serde_json::Map::new();
                 for (key, val) in map {
-                    let new_key = if key.starts_with('$') {
-                        if let Ok(idx) = key[1..].parse::<usize>() {
-                            field_names.get(idx).cloned().unwrap_or_else(|| key.clone())
-                        } else {
-                            key.clone()
-                        }
-                    } else {
-                        key.clone()
-                    };
+                    let new_key = key.strip_prefix('$')
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .and_then(|idx| field_names.get(idx).cloned())
+                        .unwrap_or_else(|| key.clone());
                     new_map.insert(new_key, Self::expand_json(val, field_names));
                 }
                 Value::Object(new_map)

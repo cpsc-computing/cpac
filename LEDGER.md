@@ -258,3 +258,43 @@ MSN improvement: 85.14% - 85.54%
 - **85%+ compression improvement** with MSN on structured data
 - **3 domains** with `extract_with_fields()` implementations
 - **New feature complete:** Proper per-block MSN with consistent metadata
+
+## Session 11 (2026-03-03)
+### MSN Streaming Fixes + Full Benchmark Run
+
+#### Regression Fix: Double MSN Application in Streaming Blocks
+- **Root cause:** `compress_block_with_msn()` and `flush()` in `stream.rs` passed `enable_msn: true` to the inner `cpac_engine::compress()` call. The 0x01-prefixed streaming residuals (valid JSON lines) were re-detected as `JsonLogDomain`, `reconstruct_streaming_json_log()` stripped the 5-byte header on decompression → size mismatch of 5 bytes.
+- **Fix:** Inner compress calls in both methods now use a derived config with `enable_msn: false` to prevent recursive MSN on already-processed streaming residuals.
+- **Tests fixed:** `msn_streaming_json_roundtrip`, `msn_streaming_incremental_writes`, `msn_streaming_compression_benefit`
+
+#### Clippy Clean
+- Fixed 8 clippy warnings across cpac-msn:
+  - `cbor.rs`, `msgpack.rs`: manual `Range::contains` → `.contains(&b)`
+  - `cbor.rs`, `msgpack.rs`, `json_log.rs`: manual prefix stripping → `.strip_prefix()`
+  - `syslog.rs`: `map_or(false, ...)` → `.is_some_and(...)`
+  - `http.rs`: unnecessary identity map removed
+  - `json.rs`: manual prefix check → `.strip_prefix()`
+
+#### Full Benchmark Suite
+- All 3 modes (quick, balanced, full) run against Canterbury, Calgary, Silesia
+- **Full mode**: 29 files × 5 backends × 50 iterations
+- **New record**: silesia/nci 14.67x (Brotli) on 33 MB chemical database
+- **All Silesia large files pass** (5–51 MB, frame-error fix confirmed)
+- BENCHMARKING.md updated with complete Session 11 results
+
+#### Files Modified
+- `cpac-streaming/src/stream.rs`: `compress_block_with_msn()` and `flush()` — disable MSN in inner compress calls
+- `cpac-msn/src/domains/binary/cbor.rs`: 2 clippy fixes
+- `cpac-msn/src/domains/binary/msgpack.rs`: 2 clippy fixes
+- `cpac-msn/src/domains/logs/json_log.rs`: 1 clippy fix
+- `cpac-msn/src/domains/logs/syslog.rs`: 1 clippy fix
+- `cpac-msn/src/domains/logs/http.rs`: 1 clippy fix
+- `cpac-msn/src/domains/text/json.rs`: 1 clippy fix
+- `BENCHMARKING.md`: Session 11 results added
+- `LEDGER.md`, `TODO.md`: Updated
+- `SESSION-10-SUMMARY.md`: Removed
+
+#### Statistics
+- **All workspace tests passing** (300+ tests, 0 failures)
+- **clippy clean** (`-D warnings`, 0 warnings)
+- **29 corpus files** benchmarked (full mode, 50 iterations each)

@@ -193,7 +193,17 @@ impl StreamingCompressor {
     /// Compress one block with MSN extraction using consistent metadata.
     fn compress_block_with_msn(&mut self) -> CpacResult<()> {
         let block_data: Vec<u8> = self.input_buffer.drain(..self.block_size).collect();
-        
+
+        // MSN is handled externally (extract_with_metadata above).  Disable
+        // enable_msn in the inner compress() call so that the streaming residual
+        // is never passed through a second round of MSN extraction, which would
+        // corrupt the 0x01-prefixed wire format and cause size mismatches on
+        // decompression.
+        let inner_config = cpac_types::CompressConfig {
+            enable_msn: false,
+            ..self.config.clone()
+        };
+
         // Extract MSN using consistent metadata from detection phase
         if let Some(ref metadata) = self.msn_metadata {
             let msn_result = cpac_msn::extract_with_metadata(&block_data, metadata)?;
@@ -202,11 +212,11 @@ impl StreamingCompressor {
             } else {
                 &block_data
             };
-            let result = cpac_engine::compress(residual, &self.config)?;
+            let result = cpac_engine::compress(residual, &inner_config)?;
             self.compressed_blocks.push(result.data);
         } else {
             // No metadata - compress raw
-            let result = cpac_engine::compress(&block_data, &self.config)?;
+            let result = cpac_engine::compress(&block_data, &inner_config)?;
             self.compressed_blocks.push(result.data);
         }
         Ok(())
@@ -223,8 +233,15 @@ impl StreamingCompressor {
                 self.detect_msn()?;
             }
             
-            let block_data = self.input_buffer.drain(..).collect::<Vec<u8>>();
-            
+        let block_data = self.input_buffer.drain(..).collect::<Vec<u8>>();
+
+            // Same rationale as compress_block_with_msn: disable internal MSN
+            // to prevent double-application on the already-processed residual.
+            let inner_config = cpac_types::CompressConfig {
+                enable_msn: false,
+                ..self.config.clone()
+            };
+
             // Extract and compress with consistent metadata
             if let Some(ref metadata) = self.msn_metadata {
                 let msn_result = cpac_msn::extract_with_metadata(&block_data, metadata)?;
@@ -233,11 +250,11 @@ impl StreamingCompressor {
                 } else {
                     &block_data
                 };
-                let result = cpac_engine::compress(residual, &self.config)?;
+                let result = cpac_engine::compress(residual, &inner_config)?;
                 self.compressed_blocks.push(result.data);
             } else {
                 // No metadata - compress raw
-                let result = cpac_engine::compress(&block_data, &self.config)?;
+                let result = cpac_engine::compress(&block_data, &inner_config)?;
                 self.compressed_blocks.push(result.data);
             }
         }

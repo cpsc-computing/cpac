@@ -34,7 +34,7 @@ impl Domain for SyslogDomain {
         
         // Look for RFC 5424 priority pattern: <NUMBER>
         let has_priority = text.lines().take(10).filter(|line| {
-            line.starts_with('<') && line.chars().nth(1).map_or(false, |c| c.is_ascii_digit())
+            line.starts_with('<') && line.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
         }).count() > 5;
 
         if has_priority {

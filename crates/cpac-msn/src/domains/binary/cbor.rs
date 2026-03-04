@@ -33,7 +33,7 @@ impl Domain for CborDomain {
 
         // CBOR detection must be strict to avoid false positives
         // Check if it's mostly ASCII text (indicates not CBOR)
-        let ascii_ratio = data.iter().filter(|&&b| b.is_ascii() && b >= 32 && b < 127).count() as f64 / data.len() as f64;
+        let ascii_ratio = data.iter().filter(|&&b| (32u8..127u8).contains(&b)).count() as f64 / data.len() as f64;
         if ascii_ratio > 0.9 {
             // Likely plain text, not CBOR
             return 0.0;
@@ -237,12 +237,10 @@ fn expand_value(value: &Value, keys: &[String]) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let orig_key = if k.starts_with("$C") {
-                        let idx = k[2..].parse::<usize>().unwrap_or(0);
-                        keys.get(idx).cloned().unwrap_or_else(|| k.clone())
-                    } else {
-                        k.clone()
-                    };
+                    let orig_key = k.strip_prefix("$C")
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .and_then(|idx| keys.get(idx).cloned())
+                        .unwrap_or_else(|| k.clone());
                     (orig_key, expand_value(v, keys))
                 })
                 .collect();

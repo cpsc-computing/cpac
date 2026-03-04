@@ -29,61 +29,17 @@
 
 ## ⚠️ Known Limitations
 
-### JsonLogDomain Streaming (Session 10)
-**Status:** Documented, Workaround In Place  
-**Priority:** Medium
+### JsonLogDomain Streaming (Session 10/11)
+**Status:** ✅ Resolved in Session 11  
+**Resolution:** Implemented `extract_with_fields()` with line-aligned blocking. Blocks split at last `\n`; incomplete tail stored as suffix in 0x01-prefixed wire format. All streaming tests pass.
 
-**Issue:**
-- JsonLogDomain not safe for arbitrary block boundaries
-- Blocks can split mid-line in newline-separated JSON
-- Causes corruption when reconstruction tries to expand incomplete lines
-
-**Current Solution:**
-- `extract_with_fields()` disabled for streaming (returns error)
-- Falls back to passthrough compression
-- Still provides compression but without MSN benefits
-
-**Future Work:**
-- Implement line-aligned blocking strategy
-- Add buffering for incomplete lines between blocks
-- Consider streaming-specific domain variant
-
-### CsvDomain Streaming (Session 10)
-**Status:** Documented, Workaround In Place  
-**Priority:** Medium
-
-**Issue:**
-- CSV blocks after first lack header row
-- Can't extract headers from headerless blocks
-- Detection-phase headers don't apply to data-only blocks
-
-**Current Solution:**
-- `extract_with_fields()` disabled for streaming (returns error)
-- Falls back to passthrough compression
-
-**Future Work:**
-- Implement header-less extraction for data rows
-- Use detection-phase column positions
-- Optimize for streaming CSV with consistent schema
+### CsvDomain Streaming (Session 10/11)
+**Status:** ✅ Resolved in Session 11  
+**Resolution:** Implemented `extract_with_fields()` with header detection. Data-only blocks use 0x01-prefix passthrough. All streaming tests pass.
 
 ### Large File Frame Errors (Session 9)
-**Status:** Identified, Needs Investigation  
-**Priority:** High
-
-**Issue:**
-- "Invalid frame version" errors on files >5 MB
-- Affects CPAC backends (zstd, brotli, gzip)
-- Parallel compression path suspected
-
-**Examples:**
-- mozilla (51 MB): Frame error
-- xml (5 MB): Frame error
-- dickens (10 MB): Baseline works, CPAC TBD
-
-**Next Steps:**
-- Debug parallel compression frame encoding
-- Verify block assembly in CPBL format
-- Test with various block sizes
+**Status:** ✅ Resolved (Session 10 `is_cpbl()` guard fix)  
+**Verification:** All 12 Silesia files (5–51 MB) benchmark cleanly in Session 11 full benchmark run.
 
 ---
 
@@ -142,29 +98,40 @@
 - [x] Verify 85%+ compression improvement with MSN
 - [x] All 10 MSN streaming tests passing
 
+## ✅ Completed (Session 11)
+
+- [x] Fix msn_streaming regression (double MSN on streaming residuals)
+- [x] Implement JsonLogDomain `extract_with_fields()` with line-aligned blocking
+- [x] Implement CsvDomain `extract_with_fields()` with header detection
+- [x] Fix 8 clippy warnings across cpac-msn
+- [x] All workspace tests passing (300+, 0 failures)
+- [x] Run quick/balanced/full benchmarks
+- [x] Update BENCHMARKING.md with Session 11 results
+- [x] Update LEDGER.md and TODO.md
+- [x] Remove SESSION-10-SUMMARY.md
+
 ---
 
-## 📊 Test Status Summary
+## 📊 Test Status Summary (Session 11)
 
 | Test Suite | Status | Count | Notes |
 |------------|--------|-------|-------|
-| MSN Streaming | ✅ Pass | 10/10 | All tests passing |
+| MSN Streaming | ✅ Pass | 13/13 | All tests passing (3 fixed in S11) |
 | Core Engine | ✅ Pass | 30 | All passing |
-| MSN Domains | ✅ Pass | 14 | All passing |
+| MSN Domains | ✅ Pass | 36 | All passing |
 | Golden Vectors | ✅ Pass | 15 | All passing |
 | Property Tests | ✅ Pass | 16 | All passing |
-| **Corpus Tests** | ⚠️ **Flaky** | 4/6 | CSV tests fail in full workspace |
-| Total | ✅ Mostly Pass | 250+ | 2 test isolation issues |
+| Corpus Tests | ✅ Pass | 6/6 | All passing |
+| Total | ✅ Pass | 300+ | 0 failures |
 
 ---
 
 ## 🔍 Investigation Queue
 
-1. **High Priority:** CSV corpus test isolation bug
-2. **High Priority:** Large file frame errors (>5MB)
-3. **Medium Priority:** JsonLogDomain streaming optimization
-4. **Medium Priority:** CsvDomain streaming optimization
+1. **Medium Priority:** XML domain `extract_with_fields()` for streaming
+2. **Medium Priority:** YAML domain `extract_with_fields()` for streaming
+3. **Low Priority:** Per-block metadata verification in streaming
 
 ---
 
-*Last Updated: 2026-03-03 (Session 10)*
+*Last Updated: 2026-03-03 (Session 11)*

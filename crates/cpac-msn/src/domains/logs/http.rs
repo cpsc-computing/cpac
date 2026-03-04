@@ -88,7 +88,6 @@ impl Domain for HttpDomain {
         if !common_headers.is_empty() {
             fields.insert("common_headers".to_string(), serde_json::Value::Object(
                 common_headers.into_iter()
-                    .map(|(k, v)| (k, v))
                     .collect()
             ));
         }
