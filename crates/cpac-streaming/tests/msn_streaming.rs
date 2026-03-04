@@ -62,6 +62,30 @@ fn msn_streaming_csv_roundtrip() {
 }
 
 #[test]
+fn msn_streaming_yaml_roundtrip() {
+    let yaml_data = "host: server1\nport: 8080\nregion: us-east\n".repeat(200);
+
+    let config = CompressConfig {
+        enable_msn: true,
+        msn_confidence: 0.7,
+        ..Default::default()
+    };
+    let msn_config = MsnConfig::default();
+
+    let mut compressor =
+        StreamingCompressor::with_msn(config, msn_config, 512, 16 * 1024 * 1024).unwrap();
+    compressor.write(yaml_data.as_bytes()).unwrap();
+    let compressed_frame = compressor.finish().unwrap();
+
+    let mut decompressor = StreamingDecompressor::new().unwrap();
+    decompressor.feed(&compressed_frame).unwrap();
+    let decompressed = decompressor.read_output();
+
+    assert_eq!(decompressed, yaml_data.as_bytes());
+    assert!(decompressor.is_done());
+}
+
+#[test]
 fn msn_streaming_xml_roundtrip() {
     let xml_data = r#"<person><name>Alice</name><age>30</age></person>
 <person><name>Bob</name><age>25</age></person>
@@ -242,6 +266,57 @@ fn msn_streaming_compression_benefit() {
     
     // JsonLogDomain isn't safe for streaming yet, so verify byte-for-byte
     assert_eq!(decompressed, json_data.as_bytes());
+}
+
+#[test]
+fn msn_streaming_throughput_report() {
+    use std::time::Instant;
+
+    // Measure streaming compression throughput for MSN vs non-MSN on structured JSON.
+    let json_data = r#"{"host":"srv1","level":"info","code":200,"latency_ms":42}
+{"host":"srv2","level":"warn","code":404,"latency_ms":13}
+{"host":"srv3","level":"error","code":500,"latency_ms":99}"#
+        .repeat(500);
+    let input = json_data.as_bytes();
+    let input_len = input.len();
+
+    // --- With MSN ---
+    let cfg_msn = CompressConfig { enable_msn: true, msn_confidence: 0.7, ..Default::default() };
+    let t0 = Instant::now();
+    let mut c = StreamingCompressor::with_msn(cfg_msn, MsnConfig::default(), 4096, 64 << 20).unwrap();
+    c.write(input).unwrap();
+    let frame_msn = c.finish().unwrap();
+    let msn_compress_ms = t0.elapsed().as_millis();
+
+    let t1 = Instant::now();
+    let mut d = StreamingDecompressor::new().unwrap();
+    d.feed(&frame_msn).unwrap();
+    let out_msn = d.read_output();
+    let msn_decompress_ms = t1.elapsed().as_millis();
+    assert_eq!(out_msn.len(), input_len, "MSN roundtrip size mismatch");
+
+    // --- Without MSN ---
+    let cfg_raw = CompressConfig { enable_msn: false, ..Default::default() };
+    let t2 = Instant::now();
+    let mut c2 = StreamingCompressor::with_msn(cfg_raw, MsnConfig::disabled(), 4096, 64 << 20).unwrap();
+    c2.write(input).unwrap();
+    let frame_raw = c2.finish().unwrap();
+    let raw_compress_ms = t2.elapsed().as_millis();
+
+    let improvement = (1.0 - frame_msn.len() as f64 / frame_raw.len() as f64) * 100.0;
+    let msn_compress_mbs = input_len as f64 / 1_048_576.0 / (msn_compress_ms.max(1) as f64 / 1000.0);
+    let msn_decompress_mbs = input_len as f64 / 1_048_576.0 / (msn_decompress_ms.max(1) as f64 / 1000.0);
+
+    println!("\n=== MSN Streaming Throughput ===");
+    println!("Input:           {:.1} KB", input_len as f64 / 1024.0);
+    println!("With MSN:        {} bytes ({:.1} MB/s compress, {:.1} MB/s decompress)",
+        frame_msn.len(), msn_compress_mbs, msn_decompress_mbs);
+    println!("Without MSN:     {} bytes ({:.1} MB/s compress)",
+        frame_raw.len(), input_len as f64 / 1_048_576.0 / (raw_compress_ms.max(1) as f64 / 1000.0));
+    println!("MSN improvement: {:.1}%", improvement);
+
+    // MSN should improve ratio for structured JSON logs.
+    assert!(improvement > 0.0, "MSN should improve compression for structured JSON logs");
 }
 
 #[test]

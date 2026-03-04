@@ -18,6 +18,7 @@ const VERSION: u8 = 1;
 /// Deduplicate a list of column byte slices.
 ///
 /// Returns `(encoded, had_duplicates)`.
+#[must_use] 
 pub fn dedup_columns(columns: &[Vec<u8>]) -> (Vec<u8>, bool) {
     let mut out = Vec::from(MAGIC.as_slice());
     out.push(VERSION);
@@ -89,6 +90,7 @@ pub fn dedup_columns_decode(data: &[u8]) -> CpacResult<Vec<(Vec<usize>, Vec<u8>)
 }
 
 /// Reconstruct full column list from deduped groups.
+#[must_use] 
 pub fn reconstruct_columns(groups: &[(Vec<usize>, Vec<u8>)], num_columns: usize) -> Vec<Vec<u8>> {
     let mut result: Vec<Option<Vec<u8>>> = vec![None; num_columns];
     for (indices, col_data) in groups {
@@ -98,14 +100,14 @@ pub fn reconstruct_columns(groups: &[(Vec<usize>, Vec<u8>)], num_columns: usize)
             }
         }
     }
-    result.into_iter().map(|c| c.unwrap_or_default()).collect()
+    result.into_iter().map(std::option::Option::unwrap_or_default).collect()
 }
 
 /// Dedup transform node.
 pub struct DedupTransform;
 
 impl TransformNode for DedupTransform {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "dedup"
     }
     fn id(&self) -> u8 {

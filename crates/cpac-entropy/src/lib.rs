@@ -145,11 +145,13 @@ pub fn decompress_with_dict(
 /// - Large files + medium entropy → Zstd (speed matters)
 /// - Medium files + high entropy → Brotli (ratio matters)
 /// - Small files + high entropy → Brotli (ratio critical)
+#[must_use] 
 pub fn auto_select_backend(entropy: f64) -> Backend {
     auto_select_backend_with_size(entropy, 0)
 }
 
 /// Auto-select backend with size awareness.
+#[must_use] 
 pub fn auto_select_backend_with_size(entropy: f64, data_size: usize) -> Backend {
     // Raw for essentially incompressible data
     if entropy < 1.0 {

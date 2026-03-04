@@ -32,10 +32,10 @@ pub const VERSION_CP2: u8 = 2;
 /// Current default version.
 pub const VERSION: u8 = VERSION_CP;
 
-/// Minimum header size for CP (magic + version + flags + backend + orig_size + dag_len).
+/// Minimum header size for CP (magic + version + flags + backend + `orig_size` + `dag_len`).
 const MIN_HEADER_CP: usize = 2 + 1 + 2 + 1 + 4 + 2; // 12 bytes
 
-/// Minimum header size for CP2 (adds msn_metadata_len).
+/// Minimum header size for CP2 (adds `msn_metadata_len`).
 const MIN_HEADER_CP2: usize = MIN_HEADER_CP + 2; // 14 bytes
 
 /// Frame header parsed from wire format.
@@ -51,6 +51,7 @@ pub struct FrameHeader {
 }
 
 /// Encode a frame using CP format (version 1).
+#[must_use] 
 pub fn encode_frame(
     payload: &[u8],
     backend: Backend,
@@ -61,6 +62,7 @@ pub fn encode_frame(
 }
 
 /// Encode a frame using CP2 format (version 2) with MSN metadata.
+#[must_use] 
 pub fn encode_frame_cp2(
     payload: &[u8],
     backend: Backend,

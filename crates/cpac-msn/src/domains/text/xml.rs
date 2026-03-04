@@ -50,7 +50,7 @@ impl Domain for XmlDomain {
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         let text = std::str::from_utf8(data)
-            .map_err(|e| CpacError::CompressFailed(format!("XML decode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("XML decode: {e}")))?;
 
         // Extract all tag names (simple parser)
         let mut tag_freq: HashMap<String, usize> = HashMap::new();
@@ -110,12 +110,12 @@ impl Domain for XmlDomain {
         
         let mut compacted = text.to_string();
         for (tag, idx) in tag_vec {
-            let placeholder = format!("@T{}", idx);
+            let placeholder = format!("@T{idx}");
             // Use word boundaries to avoid partial replacements
-            compacted = compacted.replace(&format!("<{}", tag), &format!("<{}", placeholder));
-            compacted = compacted.replace(&format!("</{}", tag), &format!("</{}", placeholder));
-            compacted = compacted.replace(&format!("<{} ", tag), &format!("<{} ", placeholder));
-            compacted = compacted.replace(&format!("<{}>", tag), &format!("<{}>", placeholder));
+            compacted = compacted.replace(&format!("<{tag}"), &format!("<{placeholder}"));
+            compacted = compacted.replace(&format!("</{tag}"), &format!("</{placeholder}"));
+            compacted = compacted.replace(&format!("<{tag} "), &format!("<{placeholder} "));
+            compacted = compacted.replace(&format!("<{tag}>"), &format!("<{placeholder}>"));
         }
 
         let mut fields = HashMap::new();
@@ -125,6 +125,52 @@ impl Domain for XmlDomain {
 
         Ok(ExtractionResult {
             fields,
+            residual: compacted.into_bytes(),
+            metadata: HashMap::new(),
+            domain_id: "text.xml".to_string(),
+        })
+    }
+
+    fn extract_with_fields(
+        &self,
+        data: &[u8],
+        fields: &HashMap<String, serde_json::Value>,
+    ) -> CpacResult<ExtractionResult> {
+        // Apply XML tag compaction using the detection-phase tag list so that
+        // every streaming block uses the same @T{idx} ↔ tag mapping.
+        let text = std::str::from_utf8(data)
+            .map_err(|e| CpacError::CompressFailed(format!("XML decode: {e}")))?;
+
+        let tags: Vec<String> = match fields.get("tags") {
+            Some(serde_json::Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        // Build tag_map from detection-phase list (same stable indices).
+        let tag_map: HashMap<String, u32> = tags
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.clone(), i as u32))
+            .collect();
+
+        // Replace longest tags first to avoid partial matches.
+        let mut tag_vec: Vec<(&String, &u32)> = tag_map.iter().collect();
+        tag_vec.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+
+        let mut compacted = text.to_string();
+        for (tag, idx) in &tag_vec {
+            let placeholder = format!("@T{idx}");
+            compacted = compacted.replace(&format!("<{tag} "), &format!("<{placeholder} "));
+            compacted = compacted.replace(&format!("<{tag}>"), &format!("<{placeholder}>"));
+            compacted = compacted.replace(&format!("</{tag}"), &format!("</{placeholder}"));
+            compacted = compacted.replace(&format!("<{tag}"), &format!("<{placeholder}"));
+        }
+
+        Ok(ExtractionResult {
+            fields: fields.clone(),
             residual: compacted.into_bytes(),
             metadata: HashMap::new(),
             domain_id: "text.xml".to_string(),
@@ -142,19 +188,19 @@ impl Domain for XmlDomain {
         };
 
         let mut reconstructed = std::str::from_utf8(&result.residual)
-            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {}", e)))?
+            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?
             .to_string();
 
         // Expand placeholders back to original tags
         // CRITICAL: Replace in REVERSE order (highest index first) to avoid placeholder interference
         // E.g., if we have @T1 and @T10, replacing @T1 first would corrupt @T10 → @Ttag0
         for (idx, tag) in tags.iter().enumerate().rev() {
-            let placeholder = format!("@T{}", idx);
+            let placeholder = format!("@T{idx}");
             // Replace all forms of the tag
-            reconstructed = reconstructed.replace(&format!("<{} ", placeholder), &format!("<{} ", tag));
-            reconstructed = reconstructed.replace(&format!("<{}>", placeholder), &format!("<{}>", tag));
-            reconstructed = reconstructed.replace(&format!("<{}", placeholder), &format!("<{}", tag));
-            reconstructed = reconstructed.replace(&format!("</{}", placeholder), &format!("</{}", tag));
+            reconstructed = reconstructed.replace(&format!("<{placeholder} "), &format!("<{tag} "));
+            reconstructed = reconstructed.replace(&format!("<{placeholder}>"), &format!("<{tag}>"));
+            reconstructed = reconstructed.replace(&format!("<{placeholder}"), &format!("<{tag}"));
+            reconstructed = reconstructed.replace(&format!("</{placeholder}"), &format!("</{tag}"));
         }
 
         Ok(reconstructed.into_bytes())
@@ -182,5 +228,48 @@ mod tests {
         let reconstructed = domain.reconstruct(&result).unwrap();
 
         assert_eq!(data.as_slice(), reconstructed.as_slice());
+    }
+
+    /// extract_with_fields() uses detection-phase indices (stable across blocks).
+    #[test]
+    fn xml_streaming_consistent_indices() {
+        let domain = XmlDomain;
+        let block1 = b"<person><name>Alice</name><age>30</age></person>\n<person><name>Bob</name><age>25</age></person>\n";
+        let block2 = b"<person><name>Charlie</name><age>35</age></person>\n";
+
+        // Simulate detection from block1
+        let detection = domain.extract(block1).unwrap();
+
+        // Compress block1 with detection fields
+        let r1 = domain.extract_with_fields(block1, &detection.fields).unwrap();
+        // Compress block2 with SAME detection fields
+        let r2 = domain.extract_with_fields(block2, &detection.fields).unwrap();
+
+        // Both use detection-phase fields for reconstruction
+        let recon1 = domain.reconstruct(&r1).unwrap();
+        let recon2 = domain.reconstruct(&r2).unwrap();
+
+        assert_eq!(recon1, block1.to_vec());
+        assert_eq!(recon2, block2.to_vec());
+    }
+
+    /// Two-block streaming produces the same output as the original concatenation.
+    #[test]
+    fn xml_streaming_two_block_roundtrip() {
+        let domain = XmlDomain;
+        let block1 = b"<?xml version=\"1.0\"?>\n<records>\n<item><id>1</id><name>A</name></item>\n";
+        let block2 = b"<item><id>2</id><name>B</name></item>\n<item><id>3</id><name>C</name></item>\n</records>\n";
+        let original: Vec<u8> = [block1.as_slice(), block2.as_slice()].concat();
+
+        let detection = domain.extract(block1).unwrap();
+        let fields = detection.fields;
+
+        let r1 = domain.extract_with_fields(block1, &fields).unwrap();
+        let r2 = domain.extract_with_fields(block2, &fields).unwrap();
+
+        let mut combined = domain.reconstruct(&r1).unwrap();
+        combined.extend_from_slice(&domain.reconstruct(&r2).unwrap());
+
+        assert_eq!(combined, original, "XML two-block streaming roundtrip failed");
     }
 }

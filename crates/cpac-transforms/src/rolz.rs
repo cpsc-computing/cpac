@@ -59,6 +59,7 @@ fn bucket_push(bucket: &mut Vec<usize>, pos: usize) {
 /// Output format: `[original_len: 4 LE][token_count: 4 LE][tokens...]`
 /// - Literal token: `[0][byte]`
 /// - Match token:   `[1][bucket_idx][length]`
+#[must_use] 
 pub fn rolz_encode(data: &[u8]) -> Vec<u8> {
     let n = data.len();
     if n == 0 {
@@ -251,7 +252,7 @@ enum Token {
 pub struct RolzTransform;
 
 impl TransformNode for RolzTransform {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "rolz"
     }
 

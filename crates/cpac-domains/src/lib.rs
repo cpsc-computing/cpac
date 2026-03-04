@@ -24,14 +24,15 @@ pub trait DomainHandler: Send + Sync {
     /// Check if this handler can process the given data.
     fn can_handle(&self, data: &[u8]) -> bool;
 
-    /// Decompose raw data into a ColumnSet for optimized compression.
+    /// Decompose raw data into a `ColumnSet` for optimized compression.
     fn decompose(&self, data: &[u8]) -> CpacResult<CpacType>;
 
-    /// Reconstruct raw data from a ColumnSet.
+    /// Reconstruct raw data from a `ColumnSet`.
     fn reconstruct(&self, columns: &CpacType) -> CpacResult<Vec<u8>>;
 }
 
 /// Detect the domain of the given data.
+#[must_use] 
 pub fn detect_domain(data: &[u8]) -> Option<DomainHint> {
     if data.is_empty() {
         return None;
@@ -39,7 +40,7 @@ pub fn detect_domain(data: &[u8]) -> Option<DomainHint> {
     // Check first non-whitespace byte
     let first_non_ws = data.iter().find(|b| !b.is_ascii_whitespace());
     match first_non_ws {
-        Some(b'{') | Some(b'[') => Some(DomainHint::Json),
+        Some(b'{' | b'[') => Some(DomainHint::Json),
         Some(b'<') => {
             // Could be XML or HTML
             let start = String::from_utf8_lossy(&data[..data.len().min(200)]);
@@ -65,6 +66,7 @@ pub fn detect_domain(data: &[u8]) -> Option<DomainHint> {
 }
 
 /// Registry of all built-in domain handlers.
+#[must_use] 
 pub fn builtin_handlers() -> Vec<Box<dyn DomainHandler>> {
     vec![
         Box::new(csv::CsvHandler),

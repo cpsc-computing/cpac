@@ -40,7 +40,7 @@ impl JsonDomain {
                 for (key, val) in map {
                     // Replace field name with index if it appears multiple times
                     let new_key = if let Some(&idx) = field_map.get(key) {
-                        format!("${}", idx)
+                        format!("${idx}")
                     } else {
                         key.clone()
                     };
@@ -97,6 +97,13 @@ impl Domain for JsonDomain {
         }
 
         // Check magic bytes
+        // SIMD opportunity: skipping leading ASCII whitespace can be
+        // accelerated with a SIMD all-zero comparison on 16-/32-byte
+        // chunks (SSE4.1 `_mm_cmpeq_epi8` or AVX2 equivalent).  For the
+        // typical case (no leading whitespace) it reduces to a single
+        // check; for padded input it avoids per-byte branching.  Use the
+        // `memchr` crate or `std::arch` intrinsics after profiling confirms
+        // this function is on the critical path.
         let trimmed = data.iter().skip_while(|b| b.is_ascii_whitespace()).copied().take(10).collect::<Vec<_>>();
         if trimmed.is_empty() {
             return 0.0;
@@ -116,7 +123,7 @@ impl Domain for JsonDomain {
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         // Parse JSON
         let value: Value = serde_json::from_slice(data)
-            .map_err(|e| CpacError::CompressFailed(format!("JSON parse error: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("JSON parse error: {e}")))?;
 
         // Extract all field names
         let mut field_names = Vec::new();
@@ -144,7 +151,7 @@ impl Domain for JsonDomain {
         // Compact JSON with field indices
         let compacted = Self::compact_json(&value, &field_map);
         let residual = serde_json::to_vec(&compacted)
-            .map_err(|e| CpacError::CompressFailed(format!("JSON serialize error: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("JSON serialize error: {e}")))?;
 
         // Store repeated field names in extraction result
         let mut fields = HashMap::new();
@@ -168,7 +175,7 @@ impl Domain for JsonDomain {
     ) -> CpacResult<ExtractionResult> {
         // Parse JSON
         let value: Value = serde_json::from_slice(data)
-            .map_err(|e| CpacError::CompressFailed(format!("JSON parse error: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("JSON parse error: {e}")))?;
 
         // Extract field_names from provided fields
         let field_names_value = fields.get("field_names")
@@ -189,7 +196,7 @@ impl Domain for JsonDomain {
         // Compact JSON with consistent field indices
         let compacted = Self::compact_json(&value, &field_map);
         let residual = serde_json::to_vec(&compacted)
-            .map_err(|e| CpacError::CompressFailed(format!("JSON serialize error: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("JSON serialize error: {e}")))?;
 
         // Return same fields structure as detection phase
         let mut result_fields = HashMap::new();
@@ -217,14 +224,14 @@ impl Domain for JsonDomain {
 
         // Parse compacted JSON
         let compacted: Value = serde_json::from_slice(&result.residual)
-            .map_err(|e| CpacError::DecompressFailed(format!("JSON parse error: {}", e)))?;
+            .map_err(|e| CpacError::DecompressFailed(format!("JSON parse error: {e}")))?;
 
         // Expand JSON with original field names
         let expanded = Self::expand_json(&compacted, &field_names);
 
         // Serialize back to bytes
         serde_json::to_vec(&expanded)
-            .map_err(|e| CpacError::DecompressFailed(format!("JSON serialize error: {}", e)))
+            .map_err(|e| CpacError::DecompressFailed(format!("JSON serialize error: {e}")))
     }
 }
 

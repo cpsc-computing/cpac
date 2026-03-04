@@ -55,11 +55,11 @@ impl Domain for CborDomain {
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         let cbor_value: ciborium::Value = ciborium::from_reader(data)
-            .map_err(|e| CpacError::CompressFailed(format!("CBOR decode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("CBOR decode: {e}")))?;
 
         // Convert to JSON Value for easier key extraction
         let json_value = cbor_to_json(&cbor_value)
-            .map_err(|e| CpacError::CompressFailed(format!("CBOR to JSON: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("CBOR to JSON: {e}")))?;
 
         // Extract all keys recursively
         let mut key_freq: HashMap<String, usize> = HashMap::new();
@@ -81,12 +81,12 @@ impl Domain for CborDomain {
         // Compact value by replacing keys
         let compacted = compact_value(&json_value, &key_map);
         let compacted_cbor = json_to_cbor(&compacted)
-            .map_err(|e| CpacError::CompressFailed(format!("JSON to CBOR: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("JSON to CBOR: {e}")))?;
 
         // Serialize compacted value
         let mut residual = Vec::new();
         ciborium::into_writer(&compacted_cbor, &mut residual)
-            .map_err(|e| CpacError::CompressFailed(format!("CBOR encode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("CBOR encode: {e}")))?;
 
         let mut fields = HashMap::new();
         fields.insert("keys".to_string(), Value::Array(
@@ -112,18 +112,18 @@ impl Domain for CborDomain {
         };
 
         let compacted_cbor: ciborium::Value = ciborium::from_reader(&result.residual[..])
-            .map_err(|e| CpacError::DecompressFailed(format!("CBOR decode: {}", e)))?;
+            .map_err(|e| CpacError::DecompressFailed(format!("CBOR decode: {e}")))?;
 
         let compacted = cbor_to_json(&compacted_cbor)
-            .map_err(|e| CpacError::DecompressFailed(format!("CBOR to JSON: {}", e)))?;
+            .map_err(|e| CpacError::DecompressFailed(format!("CBOR to JSON: {e}")))?;
 
         let expanded = expand_value(&compacted, &keys);
         let expanded_cbor = json_to_cbor(&expanded)
-            .map_err(|e| CpacError::DecompressFailed(format!("JSON to CBOR: {}", e)))?;
+            .map_err(|e| CpacError::DecompressFailed(format!("JSON to CBOR: {e}")))?;
 
         let mut output = Vec::new();
         ciborium::into_writer(&expanded_cbor, &mut output)
-            .map_err(|e| CpacError::DecompressFailed(format!("CBOR encode: {}", e)))?;
+            .map_err(|e| CpacError::DecompressFailed(format!("CBOR encode: {e}")))?;
 
         Ok(output)
     }
@@ -216,9 +216,7 @@ fn compact_value(value: &Value, key_map: &HashMap<String, u32>) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let new_key = key_map.get(k)
-                        .map(|idx| format!("$C{}", idx))
-                        .unwrap_or_else(|| k.clone());
+                    let new_key = key_map.get(k).map_or_else(|| k.clone(), |idx| format!("$C{idx}"));
                     (new_key, compact_value(v, key_map))
                 })
                 .collect();

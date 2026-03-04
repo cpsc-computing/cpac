@@ -7,6 +7,7 @@ use cpac_types::{CpacError, CpacResult, CpacType, DomainHint};
 use crate::DomainHandler;
 
 /// Detect YAML content (starts with `---` or `key: value` patterns).
+#[must_use] 
 pub fn detect_yaml(data: &[u8]) -> bool {
     if data.len() < 4 {
         return false;
@@ -36,7 +37,7 @@ pub fn detect_yaml(data: &[u8]) -> bool {
 pub struct YamlHandler;
 
 impl DomainHandler for YamlHandler {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "yaml"
     }
     fn domain_hint(&self) -> DomainHint {
@@ -63,8 +64,8 @@ impl DomainHandler for YamlHandler {
                 values.push(String::new());
             }
         }
-        let key_bytes: usize = keys.iter().map(|s| s.len()).sum();
-        let val_bytes: usize = values.iter().map(|s| s.len()).sum();
+        let key_bytes: usize = keys.iter().map(std::string::String::len).sum();
+        let val_bytes: usize = values.iter().map(std::string::String::len).sum();
         Ok(CpacType::ColumnSet {
             columns: vec![
                 (

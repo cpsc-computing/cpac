@@ -14,7 +14,11 @@ pub mod host;
 pub mod parallel;
 pub mod pool;
 
-pub use bench::{BaselineEngine, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary};
+pub use bench::{
+    BaselineEntry, BaselineEngine, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary,
+    RegressionKind, RegressionViolation,
+};
+pub use bench::{check_regressions, load_baseline, save_baseline};
 pub use cpac_dag::{ProfileCache, TransformDAG, TransformRegistry};
 pub use cpac_types::{
     Backend, CompressConfig, CompressResult, CpacError, CpacResult, DecompressResult,
@@ -87,8 +91,8 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         match cpac_msn::extract(data, None, config.msn_confidence) {
             Ok(result) if result.applied => {
                 // MSN succeeded - use residual as input, store metadata (without residual)
-                let metadata = serde_json::to_vec(&result.metadata())
-                    .map_err(|e| CpacError::CompressFailed(format!("MSN metadata serialize: {}", e)))?;
+                // Encode as compact MessagePack (~30-40% smaller than JSON).
+                let metadata = cpac_msn::encode_metadata_compact(&result.metadata())?;
                 (result.residual, metadata)
             }
             _ => {
@@ -134,7 +138,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         let (preprocessed, _transform_meta) = cpac_transforms::preprocess(data_to_compress, &transform_ctx);
         preprocessed
     } else {
-        data_to_compress.to_vec()
+        data_to_compress.clone()
     };
 
     // 6. Entropy coding (with optional dictionary for Zstd)
@@ -145,10 +149,10 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     };
 
     // 7. Frame encoding (CP2 if MSN enabled, CP otherwise)
-    let frame = if !msn_metadata.is_empty() {
-        cpac_frame::encode_frame_cp2(&compressed_payload, backend, original_size, &[], &msn_metadata)
-    } else {
+    let frame = if msn_metadata.is_empty() {
         cpac_frame::encode_frame(&compressed_payload, backend, original_size, &[])
+    } else {
+        cpac_frame::encode_frame_cp2(&compressed_payload, backend, original_size, &[], &msn_metadata)
     };
 
     let compressed_size = frame.len();
@@ -213,7 +217,10 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
     let decompressed_payload = cpac_entropy::decompress(payload, header.backend)?;
 
     // 3. Reverse transforms
-    let mut result = if !header.dag_descriptor.is_empty() {
+    let mut result = if header.dag_descriptor.is_empty() {
+        // TP-frame based decompression (generic/default)
+        cpac_transforms::unpreprocess(&decompressed_payload, &[])
+    } else {
         // DAG-based decompression: deserialize descriptor and execute backward
         let (ids, metas, _consumed) = cpac_dag::deserialize_dag_descriptor(&header.dag_descriptor)?;
         let registry = TransformRegistry::with_builtins();
@@ -231,15 +238,12 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
                 ))
             }
         }
-    } else {
-        // TP-frame based decompression (generic/default)
-        cpac_transforms::unpreprocess(&decompressed_payload, &[])
     };
 
     // 4. MSN reconstruction (if metadata present in CP2 frame)
     if !header.msn_metadata.is_empty() {
-        let msn_metadata: cpac_msn::MsnMetadata = serde_json::from_slice(&header.msn_metadata)
-            .map_err(|e| CpacError::DecompressFailed(format!("MSN metadata deserialize: {}", e)))?;
+        // Auto-detect encoding: 0x01 prefix = MessagePack (new), '{' prefix = JSON (legacy).
+        let msn_metadata = cpac_msn::decode_metadata_compact(&header.msn_metadata)?;
         let msn_result = msn_metadata.with_residual(result);
         result = cpac_msn::reconstruct(&msn_result)?;
     }

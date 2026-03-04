@@ -3,7 +3,7 @@
 //! SIMD-accelerated transform kernels.
 //!
 //! Runtime dispatch hierarchy (highest → lowest):
-//! **x86_64** — AVX-512 → AVX2 → SSE4.1 → SSE2 → scalar
+//! **`x86_64`** — AVX-512 → AVX2 → SSE4.1 → SSE2 → scalar
 //! **aarch64** — NEON → scalar
 //!
 //! Each public `*_fast` function probes CPU features once per call
@@ -16,6 +16,7 @@
 /// SIMD-accelerated byte-level delta encode.
 ///
 /// Dispatch: AVX-512 (64 B) → AVX2 (32 B) → SSE2 (16 B) → NEON → scalar.
+#[must_use] 
 pub fn delta_encode_fast(data: &[u8]) -> Vec<u8> {
     #[cfg(target_arch = "x86_64")]
     {
@@ -45,6 +46,7 @@ pub fn delta_encode_fast(data: &[u8]) -> Vec<u8> {
 ///
 /// Delta decode has a serial prefix-sum dependency so SIMD only helps
 /// marginally.  Delegates to scalar for correctness.
+#[must_use] 
 pub fn delta_decode_fast(data: &[u8]) -> Vec<u8> {
     crate::delta::delta_decode(data)
 }
@@ -92,6 +94,7 @@ pub fn transpose_decode_fast(data: &[u8], element_width: usize) -> cpac_types::C
 ///
 /// Dispatch: AVX-512 (64 B) → AVX2 (32 B) → SSE4.1 (16 B) → SSE2 (16 B)
 ///           → NEON → scalar.
+#[must_use] 
 pub fn zigzag_encode_fast(data: &[u8]) -> Vec<u8> {
     #[cfg(target_arch = "x86_64")]
     {
@@ -121,6 +124,7 @@ pub fn zigzag_encode_fast(data: &[u8]) -> Vec<u8> {
 }
 
 /// SIMD-accelerated zigzag decode.
+#[must_use] 
 pub fn zigzag_decode_fast(data: &[u8]) -> Vec<u8> {
     #[cfg(target_arch = "x86_64")]
     {
@@ -175,7 +179,7 @@ fn zigzag_decode_scalar(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 unsafe fn delta_encode_sse2(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm_loadu_si128, __m128i, _mm_storeu_si128, _mm_sub_epi8};
     let n = data.len();
     let mut out = vec![0u8; n];
     if n == 0 {
@@ -184,10 +188,10 @@ unsafe fn delta_encode_sse2(data: &[u8]) -> Vec<u8> {
     out[0] = data[0];
     let mut i = 1usize;
     while i + 16 <= n {
-        let cur = _mm_loadu_si128(data.as_ptr().add(i) as *const __m128i);
-        let prev = _mm_loadu_si128(data.as_ptr().add(i - 1) as *const __m128i);
+        let cur = _mm_loadu_si128(data.as_ptr().add(i).cast::<__m128i>());
+        let prev = _mm_loadu_si128(data.as_ptr().add(i - 1).cast::<__m128i>());
         _mm_storeu_si128(
-            out.as_mut_ptr().add(i) as *mut __m128i,
+            out.as_mut_ptr().add(i).cast::<__m128i>(),
             _mm_sub_epi8(cur, prev),
         );
         i += 16;
@@ -206,7 +210,7 @@ unsafe fn delta_encode_sse2(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn delta_encode_avx2(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm256_loadu_si256, __m256i, _mm256_storeu_si256, _mm256_sub_epi8};
     let n = data.len();
     let mut out = vec![0u8; n];
     if n == 0 {
@@ -215,10 +219,10 @@ unsafe fn delta_encode_avx2(data: &[u8]) -> Vec<u8> {
     out[0] = data[0];
     let mut i = 1usize;
     while i + 32 <= n {
-        let cur = _mm256_loadu_si256(data.as_ptr().add(i) as *const __m256i);
-        let prev = _mm256_loadu_si256(data.as_ptr().add(i - 1) as *const __m256i);
+        let cur = _mm256_loadu_si256(data.as_ptr().add(i).cast::<__m256i>());
+        let prev = _mm256_loadu_si256(data.as_ptr().add(i - 1).cast::<__m256i>());
         _mm256_storeu_si256(
-            out.as_mut_ptr().add(i) as *mut __m256i,
+            out.as_mut_ptr().add(i).cast::<__m256i>(),
             _mm256_sub_epi8(cur, prev),
         );
         i += 32;
@@ -237,7 +241,7 @@ unsafe fn delta_encode_avx2(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512bw")]
 unsafe fn delta_encode_avx512(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm512_loadu_si512, __m512i, _mm512_storeu_si512, _mm512_sub_epi8};
     let n = data.len();
     let mut out = vec![0u8; n];
     if n == 0 {
@@ -246,10 +250,10 @@ unsafe fn delta_encode_avx512(data: &[u8]) -> Vec<u8> {
     out[0] = data[0];
     let mut i = 1usize;
     while i + 64 <= n {
-        let cur = _mm512_loadu_si512(data.as_ptr().add(i) as *const __m512i);
-        let prev = _mm512_loadu_si512(data.as_ptr().add(i - 1) as *const __m512i);
+        let cur = _mm512_loadu_si512(data.as_ptr().add(i).cast::<__m512i>());
+        let prev = _mm512_loadu_si512(data.as_ptr().add(i - 1).cast::<__m512i>());
         _mm512_storeu_si512(
-            out.as_mut_ptr().add(i) as *mut __m512i,
+            out.as_mut_ptr().add(i).cast::<__m512i>(),
             _mm512_sub_epi8(cur, prev),
         );
         i += 64;
@@ -304,17 +308,17 @@ unsafe fn transpose_decode_avx2(data: &[u8], element_width: usize) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 unsafe fn zigzag_encode_sse2(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm_setzero_si128, _mm_loadu_si128, __m128i, _mm_add_epi8, _mm_cmpgt_epi8, _mm_storeu_si128, _mm_xor_si128};
     let n = data.len();
     let mut out = vec![0u8; n];
     let mut i = 0usize;
     let zeros = _mm_setzero_si128();
     while i + 16 <= n {
-        let v = _mm_loadu_si128(data.as_ptr().add(i) as *const __m128i);
+        let v = _mm_loadu_si128(data.as_ptr().add(i).cast::<__m128i>());
         let shifted_left = _mm_add_epi8(v, v);
         let sign = _mm_cmpgt_epi8(zeros, v);
         _mm_storeu_si128(
-            out.as_mut_ptr().add(i) as *mut __m128i,
+            out.as_mut_ptr().add(i).cast::<__m128i>(),
             _mm_xor_si128(shifted_left, sign),
         );
         i += 16;
@@ -330,17 +334,17 @@ unsafe fn zigzag_encode_sse2(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 unsafe fn zigzag_decode_sse2(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm_set1_epi8, _mm_loadu_si128, __m128i, _mm_and_si128, _mm_srli_epi16, _mm_sub_epi8, _mm_setzero_si128, _mm_storeu_si128, _mm_xor_si128};
     let n = data.len();
     let mut out = vec![0u8; n];
     let mut i = 0usize;
     let ones = _mm_set1_epi8(1);
     while i + 16 <= n {
-        let v = _mm_loadu_si128(data.as_ptr().add(i) as *const __m128i);
+        let v = _mm_loadu_si128(data.as_ptr().add(i).cast::<__m128i>());
         let shr = _mm_and_si128(_mm_srli_epi16(v, 1), _mm_set1_epi8(0x7F));
         let neg_low = _mm_sub_epi8(_mm_setzero_si128(), _mm_and_si128(v, ones));
         _mm_storeu_si128(
-            out.as_mut_ptr().add(i) as *mut __m128i,
+            out.as_mut_ptr().add(i).cast::<__m128i>(),
             _mm_xor_si128(shr, neg_low),
         );
         i += 16;
@@ -360,18 +364,18 @@ unsafe fn zigzag_decode_sse2(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse4.1")]
 unsafe fn zigzag_encode_sse41(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm_setzero_si128, _mm_loadu_si128, __m128i, _mm_add_epi8, _mm_blendv_epi8, _mm_set1_epi8, _mm_storeu_si128, _mm_xor_si128};
     let n = data.len();
     let mut out = vec![0u8; n];
     let mut i = 0usize;
     let zeros = _mm_setzero_si128();
     while i + 16 <= n {
-        let v = _mm_loadu_si128(data.as_ptr().add(i) as *const __m128i);
+        let v = _mm_loadu_si128(data.as_ptr().add(i).cast::<__m128i>());
         let shifted_left = _mm_add_epi8(v, v);
         // SSE4.1 blendv: sign = 0xFF where v < 0 (signed), 0x00 otherwise
         let sign = _mm_blendv_epi8(zeros, _mm_set1_epi8(-1), v);
         _mm_storeu_si128(
-            out.as_mut_ptr().add(i) as *mut __m128i,
+            out.as_mut_ptr().add(i).cast::<__m128i>(),
             _mm_xor_si128(shifted_left, sign),
         );
         i += 16;
@@ -387,17 +391,17 @@ unsafe fn zigzag_encode_sse41(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse4.1")]
 unsafe fn zigzag_decode_sse41(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm_set1_epi8, _mm_loadu_si128, __m128i, _mm_and_si128, _mm_srli_epi16, _mm_sub_epi8, _mm_setzero_si128, _mm_storeu_si128, _mm_xor_si128};
     let n = data.len();
     let mut out = vec![0u8; n];
     let mut i = 0usize;
     let ones = _mm_set1_epi8(1);
     while i + 16 <= n {
-        let v = _mm_loadu_si128(data.as_ptr().add(i) as *const __m128i);
+        let v = _mm_loadu_si128(data.as_ptr().add(i).cast::<__m128i>());
         let shr = _mm_and_si128(_mm_srli_epi16(v, 1), _mm_set1_epi8(0x7F));
         let neg_low = _mm_sub_epi8(_mm_setzero_si128(), _mm_and_si128(v, ones));
         _mm_storeu_si128(
-            out.as_mut_ptr().add(i) as *mut __m128i,
+            out.as_mut_ptr().add(i).cast::<__m128i>(),
             _mm_xor_si128(shr, neg_low),
         );
         i += 16;
@@ -417,17 +421,17 @@ unsafe fn zigzag_decode_sse41(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn zigzag_encode_avx2(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm256_setzero_si256, _mm256_loadu_si256, __m256i, _mm256_add_epi8, _mm256_cmpgt_epi8, _mm256_storeu_si256, _mm256_xor_si256};
     let n = data.len();
     let mut out = vec![0u8; n];
     let mut i = 0usize;
     let zeros = _mm256_setzero_si256();
     while i + 32 <= n {
-        let v = _mm256_loadu_si256(data.as_ptr().add(i) as *const __m256i);
+        let v = _mm256_loadu_si256(data.as_ptr().add(i).cast::<__m256i>());
         let shifted_left = _mm256_add_epi8(v, v);
         let sign = _mm256_cmpgt_epi8(zeros, v);
         _mm256_storeu_si256(
-            out.as_mut_ptr().add(i) as *mut __m256i,
+            out.as_mut_ptr().add(i).cast::<__m256i>(),
             _mm256_xor_si256(shifted_left, sign),
         );
         i += 32;
@@ -443,18 +447,18 @@ unsafe fn zigzag_encode_avx2(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn zigzag_decode_avx2(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm256_set1_epi8, _mm256_loadu_si256, __m256i, _mm256_and_si256, _mm256_srli_epi16, _mm256_sub_epi8, _mm256_setzero_si256, _mm256_storeu_si256, _mm256_xor_si256};
     let n = data.len();
     let mut out = vec![0u8; n];
     let mut i = 0usize;
     let ones = _mm256_set1_epi8(1);
     let mask_7f = _mm256_set1_epi8(0x7F);
     while i + 32 <= n {
-        let v = _mm256_loadu_si256(data.as_ptr().add(i) as *const __m256i);
+        let v = _mm256_loadu_si256(data.as_ptr().add(i).cast::<__m256i>());
         let shr = _mm256_and_si256(_mm256_srli_epi16(v, 1), mask_7f);
         let neg_low = _mm256_sub_epi8(_mm256_setzero_si256(), _mm256_and_si256(v, ones));
         _mm256_storeu_si256(
-            out.as_mut_ptr().add(i) as *mut __m256i,
+            out.as_mut_ptr().add(i).cast::<__m256i>(),
             _mm256_xor_si256(shr, neg_low),
         );
         i += 32;
@@ -474,19 +478,19 @@ unsafe fn zigzag_decode_avx2(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512bw")]
 unsafe fn zigzag_encode_avx512(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm512_setzero_si512, _mm512_loadu_si512, __m512i, _mm512_add_epi8, _mm512_cmpgt_epi8_mask, _mm512_movm_epi8, _mm512_storeu_si512, _mm512_xor_si512};
     let n = data.len();
     let mut out = vec![0u8; n];
     let mut i = 0usize;
     let zeros = _mm512_setzero_si512();
     while i + 64 <= n {
-        let v = _mm512_loadu_si512(data.as_ptr().add(i) as *const __m512i);
+        let v = _mm512_loadu_si512(data.as_ptr().add(i).cast::<__m512i>());
         let shifted_left = _mm512_add_epi8(v, v);
         // Arithmetic sign: cmp > 0 gives mask of negative bytes
         let sign_mask = _mm512_cmpgt_epi8_mask(zeros, v);
         let sign = _mm512_movm_epi8(sign_mask);
         _mm512_storeu_si512(
-            out.as_mut_ptr().add(i) as *mut __m512i,
+            out.as_mut_ptr().add(i).cast::<__m512i>(),
             _mm512_xor_si512(shifted_left, sign),
         );
         i += 64;
@@ -502,18 +506,18 @@ unsafe fn zigzag_encode_avx512(data: &[u8]) -> Vec<u8> {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512bw")]
 unsafe fn zigzag_decode_avx512(data: &[u8]) -> Vec<u8> {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{_mm512_set1_epi8, _mm512_loadu_si512, __m512i, _mm512_and_si512, _mm512_srli_epi16, _mm512_sub_epi8, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_xor_si512};
     let n = data.len();
     let mut out = vec![0u8; n];
     let mut i = 0usize;
     let ones = _mm512_set1_epi8(1);
     let mask_7f = _mm512_set1_epi8(0x7F);
     while i + 64 <= n {
-        let v = _mm512_loadu_si512(data.as_ptr().add(i) as *const __m512i);
+        let v = _mm512_loadu_si512(data.as_ptr().add(i).cast::<__m512i>());
         let shr = _mm512_and_si512(_mm512_srli_epi16(v, 1), mask_7f);
         let neg_low = _mm512_sub_epi8(_mm512_setzero_si512(), _mm512_and_si512(v, ones));
         _mm512_storeu_si512(
-            out.as_mut_ptr().add(i) as *mut __m512i,
+            out.as_mut_ptr().add(i).cast::<__m512i>(),
             _mm512_xor_si512(shr, neg_low),
         );
         i += 64;

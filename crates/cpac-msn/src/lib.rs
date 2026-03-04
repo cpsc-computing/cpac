@@ -51,6 +51,7 @@ fn default_msn_version() -> u8 {
 
 impl MsnResult {
     /// Create a passthrough result (MSN not applied).
+    #[must_use] 
     pub fn passthrough(data: &[u8]) -> Self {
         Self {
             fields: std::collections::HashMap::new(),
@@ -62,6 +63,7 @@ impl MsnResult {
     }
 
     /// Extract metadata for frame storage (without residual).
+    #[must_use] 
     pub fn metadata(&self) -> MsnMetadata {
         MsnMetadata {
             version: 1,
@@ -74,7 +76,8 @@ impl MsnResult {
 }
 
 impl MsnMetadata {
-    /// Convert to MsnResult by adding residual.
+    /// Convert to `MsnResult` by adding residual.
+    #[must_use] 
     pub fn with_residual(self, residual: Vec<u8>) -> MsnResult {
         MsnResult {
             fields: self.fields,
@@ -135,6 +138,31 @@ pub fn extract(
 /// consistent indices across multiple extractions (e.g., streaming per-block).
 ///
 /// If metadata was not applied or domain not found, falls back to passthrough.
+///
+/// # Examples
+///
+/// Compressing a stream of YAML blocks with consistent key indices:
+/// ```
+/// use cpac_msn::{extract, extract_with_metadata};
+///
+/// let block1 = b"host: srv1\nport: 8080\nhost: srv2\nport: 9090\n";
+/// let block2 = b"host: srv3\nport: 7070\n";
+///
+/// // Detection phase: extract from first block to build field map.
+/// let result1 = extract(block1, None, 0.7).unwrap();
+///
+/// // Subsequent blocks use the same field map for consistent indices.
+/// if result1.applied {
+///     let meta = result1.metadata();
+///     let result2 = extract_with_metadata(block2, &meta).unwrap();
+///     // Both residuals can be independently decompressed with the same metadata.
+///     assert!(result2.residual.len() <= block2.len());
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Returns [`cpac_types::CpacError::CompressFailed`] if the domain extraction fails.
 pub fn extract_with_metadata(
     data: &[u8],
     metadata: &MsnMetadata,
@@ -150,7 +178,7 @@ pub fn extract_with_metadata(
 
     let registry = global_registry();
     let domain = registry.get(domain_id).ok_or_else(|| {
-        cpac_types::CpacError::CompressFailed(format!("Domain not found: {}", domain_id))
+        cpac_types::CpacError::CompressFailed(format!("Domain not found: {domain_id}"))
     })?;
 
     // Use extract_with_fields to apply consistent field mappings
@@ -169,6 +197,69 @@ pub fn extract_with_metadata(
     }
 }
 
+/// Encode [`MsnMetadata`] to a compact binary representation.
+///
+/// Uses MessagePack (via `rmp-serde`) prefixed with a `0x01` discriminator byte.
+/// This is ~30-40% smaller than JSON for typical metadata payloads and avoids
+/// UTF-8 parsing overhead on the hot decompression path.
+///
+/// The `decode_metadata_compact` function is forward-compatible: if the first
+/// byte is `{` (0x7B) it falls back to JSON for frames compressed by older
+/// versions of CPAC.
+///
+/// # Examples
+///
+/// ```
+/// use cpac_msn::{encode_metadata_compact, decode_metadata_compact, MsnMetadata};
+///
+/// let meta = MsnMetadata {
+///     version: 1,
+///     fields: std::collections::HashMap::new(),
+///     applied: true,
+///     domain_id: Some("text.yaml".to_string()),
+///     confidence: 0.9,
+/// };
+///
+/// let compact = encode_metadata_compact(&meta).unwrap();
+/// let decoded = decode_metadata_compact(&compact).unwrap();
+/// assert_eq!(decoded.domain_id, meta.domain_id);
+/// assert_eq!(decoded.applied, true);
+/// ```
+///
+/// # Errors
+///
+/// Returns [`cpac_types::CpacError::CompressFailed`] if MessagePack serialization fails.
+pub fn encode_metadata_compact(meta: &MsnMetadata) -> CpacResult<Vec<u8>> {
+    let mut out = vec![0x01u8]; // discriminator: 0x01 = MessagePack
+    let msgpack = rmp_serde::to_vec(meta)
+        .map_err(|e| cpac_types::CpacError::CompressFailed(format!("MSN metadata encode: {e}")))?
+        ;
+    out.extend_from_slice(&msgpack);
+    Ok(out)
+}
+
+/// Decode [`MsnMetadata`] from the compact representation produced by
+/// [`encode_metadata_compact`], or from legacy JSON.
+///
+/// Auto-detects format from the first byte:
+/// - `0x01` → `MessagePack` (new format)
+/// - `{` (0x7B) → JSON (legacy)
+pub fn decode_metadata_compact(bytes: &[u8]) -> CpacResult<MsnMetadata> {
+    if bytes.is_empty() {
+        return Err(cpac_types::CpacError::DecompressFailed(
+            "empty MSN metadata".into(),
+        ));
+    }
+    if bytes[0] == 0x01 {
+        rmp_serde::from_slice(&bytes[1..])
+            .map_err(|e| cpac_types::CpacError::DecompressFailed(format!("MSN metadata msgpack: {e}")))
+    } else {
+        // Legacy JSON path (first byte is '{' = 0x7B or whitespace)
+        serde_json::from_slice(bytes)
+            .map_err(|e| cpac_types::CpacError::DecompressFailed(format!("MSN metadata json: {e}")))
+    }
+}
+
 /// Reconstruct original data from MSN result.
 pub fn reconstruct(result: &MsnResult) -> CpacResult<Vec<u8>> {
     if !result.applied {
@@ -182,7 +273,7 @@ pub fn reconstruct(result: &MsnResult) -> CpacResult<Vec<u8>> {
     
     let registry = global_registry();
     let domain = registry.get(domain_id).ok_or_else(|| {
-        cpac_types::CpacError::DecompressFailed(format!("Domain not found: {}", domain_id))
+        cpac_types::CpacError::DecompressFailed(format!("Domain not found: {domain_id}"))
     })?;
     
     let extraction = ExtractionResult {

@@ -40,6 +40,8 @@ cpac-cas = { workspace = true }
 cpac-archive = { workspace = true }
 cpac-transforms = { workspace = true }
 cpac-types = { workspace = true }
+cpac-streaming = { workspace = true }
+cpac-msn = { workspace = true }
 
 [[bench]]
 name = "compress"

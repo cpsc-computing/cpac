@@ -17,7 +17,7 @@ pub const TRANSFORM_ID: u8 = 2;
 // float32 split (matches Python float32_split_encode / decode)
 // ---------------------------------------------------------------------------
 
-/// Split float32 array into (exponent, sign_fraction) streams.
+/// Split float32 array into (exponent, `sign_fraction`) streams.
 pub fn float32_split_encode(data: &[u8]) -> CpacResult<(Vec<u8>, Vec<u8>)> {
     let n = data.len();
     if !n.is_multiple_of(4) {
@@ -55,10 +55,10 @@ pub fn float32_split_decode(exponents: &[u8], sign_fracs: &[u8]) -> CpacResult<V
     }
     let mut out = vec![0u8; count * 4];
     for i in 0..count {
-        let rotated: u32 = sign_fracs[i * 3] as u32
-            | ((sign_fracs[i * 3 + 1] as u32) << 8)
-            | ((sign_fracs[i * 3 + 2] as u32) << 16)
-            | ((exponents[i] as u32) << 24);
+        let rotated: u32 = u32::from(sign_fracs[i * 3])
+            | (u32::from(sign_fracs[i * 3 + 1]) << 8)
+            | (u32::from(sign_fracs[i * 3 + 2]) << 16)
+            | (u32::from(exponents[i]) << 24);
         let f32_bits = ((rotated >> 1) & 0x7FFF_FFFF) | ((rotated & 1) << 31);
         out[i * 4..i * 4 + 4].copy_from_slice(&f32_bits.to_le_bytes());
     }
@@ -125,6 +125,7 @@ pub fn float_split_decode_framed(data: &[u8]) -> CpacResult<Vec<u8>> {
 // ---------------------------------------------------------------------------
 
 /// Detect if data is primarily float32 values. Returns float width or None.
+#[must_use] 
 pub fn detect_float_data(data: &[u8]) -> Option<u8> {
     let n = data.len();
     if n < 32 || !n.is_multiple_of(4) {
@@ -155,7 +156,7 @@ pub fn detect_float_data(data: &[u8]) -> Option<u8> {
 pub struct FloatSplitTransform;
 
 impl TransformNode for FloatSplitTransform {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "float_split"
     }
     fn id(&self) -> u8 {

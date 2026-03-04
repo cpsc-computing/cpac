@@ -34,6 +34,11 @@ impl Domain for CsvDomain {
         }
 
         // Check if first line looks like CSV header
+        // SIMD opportunity: both scans below (`take_while(b != '\n')` and
+        // counting `,` / `\n` bytes) are trivially vectorisable.  Replacing
+        // with `memchr::memchr` (which uses SIMD internally) would be a
+        // low-risk, high-reward optimisation for large CSV files, where
+        // `detect()` is called repeatedly on multi-MB chunks.
         let first_line = data.iter().take_while(|&&b| b != b'\n').copied().collect::<Vec<_>>();
         if first_line.is_empty() {
             return 0.0;
@@ -70,7 +75,7 @@ impl Domain for CsvDomain {
         // We do NOT trim so that reconstruct produces the byte-exact original.
         let header_bytes = &data[..header_content_end];
         let header_str = std::str::from_utf8(header_bytes)
-            .map_err(|e| CpacError::CompressFailed(format!("CSV header decode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("CSV header decode: {e}")))?;
         let headers: Vec<&str> = header_str.split(',').collect();
 
         // Body = every byte after the first newline, stored verbatim.

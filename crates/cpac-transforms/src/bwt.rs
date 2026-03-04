@@ -6,7 +6,7 @@ use cpac_types::{CpacError, CpacResult};
 
 /// Burrows-Wheeler Transform forward.
 ///
-/// Returns (transformed_data, original_index).
+/// Returns (`transformed_data`, `original_index`).
 pub fn bwt_encode(data: &[u8]) -> CpacResult<(Vec<u8>, usize)> {
     if data.is_empty() {
         return Ok((Vec::new(), 0));

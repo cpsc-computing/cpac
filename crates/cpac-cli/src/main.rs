@@ -508,7 +508,7 @@ fn cmd_compress(
                 // -vvv = debug info
                 println!("Threads:    {}", resources.max_threads);
                 println!("Memory:     {} MB", resources.max_memory_mb);
-                println!("MMap:       {}", use_mmap);
+                println!("MMap:       {use_mmap}");
             }
             if files.len() > 1 {
                 println!();
@@ -584,10 +584,10 @@ fn cmd_decompress(
 
     if verbose >= 2 {
         // -vv = detailed output
-        let input_size = if input.to_str() != Some("-") {
-            input.metadata().map(|m| m.len() as usize).unwrap_or(0)
-        } else {
+        let input_size = if input.to_str() == Some("-") {
             0
+        } else {
+            input.metadata().map(|m| m.len() as usize).unwrap_or(0)
         };
         println!("Input:       {}", input.display());
         println!("Output:      {}", out_path.display());
@@ -597,7 +597,7 @@ fn cmd_decompress(
             // -vvv = debug info
             let resources = build_resources(threads, 0);
             println!("Threads:     {}", resources.max_threads);
-            println!("MMap:        {}", use_mmap);
+            println!("MMap:        {use_mmap}");
             println!("Block-level: {}", cpac_engine::is_cpbl(&read_input(&input)));
         }
     } else {
@@ -624,12 +624,9 @@ fn cmd_info(input: Option<PathBuf>, host: bool) {
         println!();
     }
 
-    let path = match input {
-        Some(p) => p,
-        None => {
-            eprintln!("Error: provide an input file or use --host");
-            process::exit(1);
-        }
+    let path = if let Some(p) = input { p } else {
+        eprintln!("Error: provide an input file or use --host");
+        process::exit(1);
     };
 
     let data = read_input(&path);
@@ -650,7 +647,7 @@ fn cmd_list_profiles() {
     let cache = cpac_engine::ProfileCache::with_builtins();
     println!("Available profiles:");
     let mut names: Vec<&str> = cache.profile_names();
-    names.sort();
+    names.sort_unstable();
     for name in names {
         if let Some(profile) = cache.get_profile(name) {
             println!("  {:<16} {}", name, profile.description);
@@ -736,8 +733,7 @@ fn cmd_benchmark(
     };
 
     println!(
-        "CPAC Benchmark ({} mode, {} iterations)",
-        mode_label, actual_iterations
+        "CPAC Benchmark ({mode_label} mode, {actual_iterations} iterations)"
     );
     println!("File: {}\n", input.display());
 
@@ -814,7 +810,7 @@ fn cmd_benchmark(
 
 fn cmd_auto_cas(input: PathBuf, compress: bool) {
     let data = read_input(&input);
-    let values: Vec<i64> = data.iter().map(|&b| b as i64).collect();
+    let values: Vec<i64> = data.iter().map(|&b| i64::from(b)).collect();
     let analysis = cpac_cas::analyze_columns(&[("data".into(), values)]);
 
     println!("Auto-CAS analysis for {}", input.display());
@@ -918,7 +914,7 @@ fn cmd_decrypt(input: PathBuf, output: Option<PathBuf>, algorithm: String) {
     }
 
     let salt_len = data[0] as usize;
-    let salt = &data[1..1 + salt_len];
+    let salt = &data[1..=salt_len];
     let nonce_len = data[1 + salt_len] as usize;
     let nonce = &data[2 + salt_len..2 + salt_len + nonce_len];
     let ciphertext = &data[2 + salt_len + nonce_len..];

@@ -1,8 +1,8 @@
 // Copyright (c) 2026 BitConcepts, LLC
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
-//! Benchmarking framework: BenchmarkRunner, CorpusManager, report generation.
+//! Benchmarking framework: `BenchmarkRunner`, `CorpusManager`, report generation.
 
-use cpac_types::{Backend, CompressConfig, CpacResult};
+use cpac_types::{Backend, CompressConfig, CpacResult, CpacError};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -43,6 +43,7 @@ pub enum BaselineEngine {
 }
 
 impl BaselineEngine {
+    #[must_use] 
     pub fn label(self) -> &'static str {
         match self {
             BaselineEngine::Gzip9 => "gzip-9",
@@ -52,6 +53,7 @@ impl BaselineEngine {
         }
     }
 
+    #[must_use] 
     pub fn all() -> &'static [BaselineEngine] {
         &[
             BaselineEngine::Gzip9,
@@ -87,6 +89,7 @@ pub enum BenchProfile {
 }
 
 impl BenchProfile {
+    #[must_use] 
     pub fn iterations(self) -> usize {
         match self {
             BenchProfile::Quick => 1,
@@ -105,6 +108,7 @@ pub struct CorpusManager;
 
 impl CorpusManager {
     /// Scan a directory recursively, returning files up to `max_size_mb`.
+    #[must_use] 
     pub fn scan_directory(dir: &Path, max_size_mb: Option<u64>) -> Vec<PathBuf> {
         let max_bytes = max_size_mb.map(|mb| mb * 1024 * 1024);
         let mut files = Vec::new();
@@ -168,6 +172,7 @@ impl Default for BenchmarkRunner {
 }
 
 impl BenchmarkRunner {
+    #[must_use] 
     pub fn new(profile: BenchProfile) -> Self {
         Self {
             profile,
@@ -283,6 +288,7 @@ impl BenchmarkRunner {
     }
 
     /// Benchmark all files in a directory with CPAC backends + baselines.
+    #[must_use] 
     pub fn bench_directory(&self, dir: &Path, max_size_mb: Option<u64>) -> Vec<BenchResult> {
         let files = CorpusManager::scan_directory(dir, max_size_mb);
         let mut results = Vec::new();
@@ -304,6 +310,7 @@ impl BenchmarkRunner {
     }
 
     /// Summarize results into a corpus summary.
+    #[must_use] 
     pub fn summarize(corpus_name: &str, results: &[BenchResult]) -> CorpusSummary {
         let total_original: usize = results.iter().map(|r| r.original_size).sum();
         let total_compressed: usize = results.iter().map(|r| r.compressed_size).sum();
@@ -427,10 +434,167 @@ fn baseline_decompress(data: &[u8], engine: BaselineEngine) -> CpacResult<Vec<u8
 }
 
 // ---------------------------------------------------------------------------
+// Regression detection
+// ---------------------------------------------------------------------------
+
+/// A single entry in a stored regression baseline.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct BaselineEntry {
+    /// File name (stem only, for cross-machine portability).
+    pub file_name: String,
+    /// Engine/backend label.
+    pub engine_label: String,
+    /// Stored compression ratio.
+    pub ratio: f64,
+    /// Stored compress throughput (MB/s).
+    pub compress_mbs: f64,
+    /// Stored decompress throughput (MB/s).
+    pub decompress_mbs: f64,
+}
+
+/// A regression violation detected during a check.
+#[derive(Clone, Debug)]
+pub struct RegressionViolation {
+    pub file_name: String,
+    pub engine_label: String,
+    pub kind: RegressionKind,
+    pub baseline_value: f64,
+    pub current_value: f64,
+    pub drop_pct: f64,
+}
+
+/// Kind of regression.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RegressionKind {
+    Ratio,
+    CompressSpeed,
+    DecompressSpeed,
+}
+
+impl std::fmt::Display for RegressionViolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} [{}] {:?} regression: baseline={:.3} current={:.3} drop={:.1}%",
+            self.file_name,
+            self.engine_label,
+            self.kind,
+            self.baseline_value,
+            self.current_value,
+            self.drop_pct
+        )
+    }
+}
+
+/// Save benchmark results as a JSON regression baseline file.
+///
+/// Only stores the file stem (not full path) for cross-machine portability.
+pub fn save_baseline(path: &Path, results: &[BenchResult]) -> CpacResult<()> {
+    let entries: Vec<BaselineEntry> = results
+        .iter()
+        .map(|r| BaselineEntry {
+            file_name: r
+                .file
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            engine_label: r.engine_label.clone(),
+            ratio: r.ratio,
+            compress_mbs: r.compress_throughput_mbs,
+            decompress_mbs: r.decompress_throughput_mbs,
+        })
+        .collect();
+    let json = serde_json::to_string_pretty(&entries)
+        .map_err(|e| CpacError::IoError(format!("baseline serialize: {e}")))?;
+    std::fs::write(path, json).map_err(|e| CpacError::IoError(format!("baseline write: {e}")))
+}
+
+/// Load a regression baseline from a JSON file.
+pub fn load_baseline(path: &Path) -> CpacResult<Vec<BaselineEntry>> {
+    let json = std::fs::read_to_string(path)
+        .map_err(|e| CpacError::IoError(format!("baseline read: {e}")))?;
+    serde_json::from_str(&json)
+        .map_err(|e| CpacError::IoError(format!("baseline parse: {e}")))
+}
+
+/// Check current results against a stored baseline for regressions.
+///
+/// - `ratio_tolerance`: fraction drop allowed (e.g. `0.05` = 5% drop OK)
+/// - `speed_tolerance`: fraction drop allowed (e.g. `0.10` = 10% drop OK)
+///
+/// Returns a list of violations (empty = no regressions).
+#[must_use] 
+pub fn check_regressions(
+    baseline: &[BaselineEntry],
+    current: &[BenchResult],
+    ratio_tolerance: f64,
+    speed_tolerance: f64,
+) -> Vec<RegressionViolation> {
+    let mut violations = Vec::new();
+
+    for result in current {
+        let file_name = result
+            .file
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
+        let Some(entry) = baseline.iter().find(|e| {
+            e.file_name == file_name && e.engine_label == result.engine_label
+        }) else {
+            continue; // No baseline for this entry — skip
+        };
+
+        let check = |kind: RegressionKind, baseline_val: f64, current_val: f64, tol: f64| {
+            if baseline_val > 0.0 {
+                let drop = (baseline_val - current_val) / baseline_val;
+                if drop > tol {
+                    Some(RegressionViolation {
+                        file_name: file_name.clone(),
+                        engine_label: result.engine_label.clone(),
+                        kind,
+                        baseline_value: baseline_val,
+                        current_value: current_val,
+                        drop_pct: drop * 100.0,
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        if let Some(v) = check(RegressionKind::Ratio, entry.ratio, result.ratio, ratio_tolerance) {
+            violations.push(v);
+        }
+        if let Some(v) = check(
+            RegressionKind::CompressSpeed,
+            entry.compress_mbs,
+            result.compress_throughput_mbs,
+            speed_tolerance,
+        ) {
+            violations.push(v);
+        }
+        if let Some(v) = check(
+            RegressionKind::DecompressSpeed,
+            entry.decompress_mbs,
+            result.decompress_throughput_mbs,
+            speed_tolerance,
+        ) {
+            violations.push(v);
+        }
+    }
+
+    violations
+}
+
+// ---------------------------------------------------------------------------
 // Report generation
 // ---------------------------------------------------------------------------
 
 /// Generate a Markdown report from a corpus summary.
+#[must_use] 
 pub fn generate_markdown_report(summary: &CorpusSummary) -> String {
     let mut md = String::new();
     md.push_str(&format!(
@@ -482,6 +646,7 @@ pub fn generate_markdown_report(summary: &CorpusSummary) -> String {
 }
 
 /// Generate a CSV export from results.
+#[must_use] 
 pub fn generate_csv_export(results: &[BenchResult]) -> String {
     let mut csv = String::from(
         "file,engine,original_bytes,compressed_bytes,ratio,compress_ms,decompress_ms,compress_mbs,decompress_mbs,peak_memory_bytes,lossless\n",
@@ -615,5 +780,51 @@ mod tests {
         assert!(csv.starts_with("file,engine,"));
         let lines: Vec<&str> = csv.lines().collect();
         assert_eq!(lines.len(), 11); // header + 10 data rows
+    }
+
+    #[test]
+    fn regression_baseline_roundtrip() {
+        let dir = create_temp_corpus();
+        let mut runner = BenchmarkRunner::new(BenchProfile::Quick);
+        runner.skip_baselines = true;
+        let results = runner.bench_directory(dir.path(), None);
+
+        // Save baseline to a temp file.
+        let baseline_path = dir.path().join("baseline.json");
+        save_baseline(&baseline_path, &results).unwrap();
+
+        // Load it back and verify entry count.
+        let loaded = load_baseline(&baseline_path).unwrap();
+        assert_eq!(loaded.len(), results.len());
+
+        // Check that no regressions are detected against itself.
+        let violations = check_regressions(&loaded, &results, 0.05, 0.10);
+        assert!(
+            violations.is_empty(),
+            "Self-check should produce no regressions: {violations:?}"
+        );
+    }
+
+    #[test]
+    fn regression_detects_ratio_drop() {
+        let dir = create_temp_corpus();
+        let file = dir.path().join("text.txt");
+        let runner = BenchmarkRunner::new(BenchProfile::Quick);
+        let result = runner.bench_file(&file, Backend::Zstd).unwrap();
+
+        // Build a baseline with an artificially high ratio.
+        let baseline = vec![BaselineEntry {
+            file_name: "text".to_string(),
+            engine_label: result.engine_label.clone(),
+            ratio: result.ratio * 10.0, // Baseline claims 10x better ratio
+            compress_mbs: result.compress_throughput_mbs,
+            decompress_mbs: result.decompress_throughput_mbs,
+        }];
+
+        let violations = check_regressions(&baseline, &[result], 0.05, 0.10);
+        assert!(
+            violations.iter().any(|v| v.kind == RegressionKind::Ratio),
+            "Should detect ratio regression"
+        );
     }
 }

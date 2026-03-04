@@ -62,7 +62,7 @@ impl Domain for HttpDomain {
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         let text = std::str::from_utf8(data)
-            .map_err(|e| CpacError::CompressFailed(format!("HTTP decode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("HTTP decode: {e}")))?;
 
         // Extract common HTTP headers
         let mut common_headers = HashMap::new();

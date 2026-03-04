@@ -1,6 +1,6 @@
 // Copyright (c) 2026 BitConcepts, LLC
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
-//! MessagePack domain handler with structure extraction.
+//! `MessagePack` domain handler with structure extraction.
 
 use crate::domain::{Domain, DomainInfo, ExtractionResult};
 use cpac_types::{CpacError, CpacResult};
@@ -8,10 +8,10 @@ use rmp_serde::{decode, encode};
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// MessagePack domain handler.
+/// `MessagePack` domain handler.
 ///
-/// Extracts keys and structure from MessagePack data.
-/// Target compression: 30-60x on structured MessagePack.
+/// Extracts keys and structure from `MessagePack` data.
+/// Target compression: 30-60x on structured `MessagePack`.
 pub struct MsgPackDomain;
 
 impl Domain for MsgPackDomain {
@@ -60,7 +60,7 @@ impl Domain for MsgPackDomain {
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         let value: Value = decode::from_slice(data)
-            .map_err(|e| CpacError::CompressFailed(format!("MessagePack decode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("MessagePack decode: {e}")))?;
 
         // Extract all keys recursively
         let mut key_freq: HashMap<String, usize> = HashMap::new();
@@ -84,7 +84,7 @@ impl Domain for MsgPackDomain {
 
         // Serialize compacted value
         let residual = encode::to_vec(&compacted)
-            .map_err(|e| CpacError::CompressFailed(format!("MessagePack encode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("MessagePack encode: {e}")))?;
 
         let mut fields = HashMap::new();
         fields.insert("keys".to_string(), Value::Array(
@@ -110,12 +110,12 @@ impl Domain for MsgPackDomain {
         };
 
         let compacted: Value = decode::from_slice(&result.residual)
-            .map_err(|e| CpacError::DecompressFailed(format!("MessagePack decode: {}", e)))?;
+            .map_err(|e| CpacError::DecompressFailed(format!("MessagePack decode: {e}")))?;
 
         let expanded = expand_value(&compacted, &keys);
 
         encode::to_vec(&expanded)
-            .map_err(|e| CpacError::DecompressFailed(format!("MessagePack encode: {}", e)))
+            .map_err(|e| CpacError::DecompressFailed(format!("MessagePack encode: {e}")))
     }
 }
 
@@ -142,9 +142,7 @@ fn compact_value(value: &Value, key_map: &HashMap<String, u32>) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let new_key = key_map.get(k)
-                        .map(|idx| format!("$K{}", idx))
-                        .unwrap_or_else(|| k.clone());
+                    let new_key = key_map.get(k).map_or_else(|| k.clone(), |idx| format!("$K{idx}"));
                     (new_key, compact_value(v, key_map))
                 })
                 .collect();

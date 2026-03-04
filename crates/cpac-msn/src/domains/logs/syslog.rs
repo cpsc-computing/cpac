@@ -43,7 +43,7 @@ impl Domain for SyslogDomain {
 
         // Look for common syslog patterns
         let has_timestamp = text.lines().take(10).filter(|line| {
-            line.contains("T") && line.contains(":") && line.contains("-")
+            line.contains('T') && line.contains(':') && line.contains('-')
         }).count() > 5;
 
         if has_timestamp {
@@ -55,7 +55,7 @@ impl Domain for SyslogDomain {
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         let text = std::str::from_utf8(data)
-            .map_err(|e| CpacError::CompressFailed(format!("Syslog decode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("Syslog decode: {e}")))?;
 
         let mut hostname_freq: HashMap<String, usize> = HashMap::new();
         let mut appname_freq: HashMap<String, usize> = HashMap::new();
@@ -92,12 +92,12 @@ impl Domain for SyslogDomain {
         // Build replacement maps
         let mut hostname_map: HashMap<String, String> = HashMap::new();
         for (idx, (hostname, _)) in repeated_hostnames.iter().enumerate() {
-            hostname_map.insert(hostname.clone(), format!("@H{}", idx));
+            hostname_map.insert(hostname.clone(), format!("@H{idx}"));
         }
 
         let mut appname_map: HashMap<String, String> = HashMap::new();
         for (idx, (appname, _)) in repeated_appnames.iter().enumerate() {
-            appname_map.insert(appname.clone(), format!("@A{}", idx));
+            appname_map.insert(appname.clone(), format!("@A{idx}"));
         }
 
         // Compact log by replacing repeated values
@@ -144,15 +144,15 @@ impl Domain for SyslogDomain {
         };
 
         let mut reconstructed = std::str::from_utf8(&result.residual)
-            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {}", e)))?
+            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?
             .to_string();
 
         // Expand placeholders
         for (idx, hostname) in hostnames.iter().enumerate() {
-            reconstructed = reconstructed.replace(&format!("@H{}", idx), hostname);
+            reconstructed = reconstructed.replace(&format!("@H{idx}"), hostname);
         }
         for (idx, appname) in appnames.iter().enumerate() {
-            reconstructed = reconstructed.replace(&format!("@A{}", idx), appname);
+            reconstructed = reconstructed.replace(&format!("@A{idx}"), appname);
         }
 
         Ok(reconstructed.into_bytes())

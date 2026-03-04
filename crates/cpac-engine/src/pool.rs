@@ -15,6 +15,7 @@ pub struct BufferPool {
 
 impl BufferPool {
     /// Create a pool caching up to `max_cached` buffers.
+    #[must_use] 
     pub fn new(max_cached: usize) -> Self {
         Self {
             pool: Mutex::new(Vec::with_capacity(max_cached)),

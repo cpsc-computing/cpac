@@ -14,7 +14,7 @@ use crate::DomainHandler;
 pub struct XmlHandler;
 
 impl DomainHandler for XmlHandler {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "xml"
     }
     fn domain_hint(&self) -> DomainHint {
@@ -31,7 +31,7 @@ impl DomainHandler for XmlHandler {
         let typed_columns: Vec<(String, CpacType)> = columns
             .into_iter()
             .map(|(tag, values)| {
-                let total_bytes: usize = values.iter().map(|s| s.len()).sum();
+                let total_bytes: usize = values.iter().map(std::string::String::len).sum();
                 (
                     tag,
                     CpacType::StringColumn {
@@ -70,8 +70,7 @@ fn extract_element_columns(text: &str) -> Vec<(String, Vec<String>)> {
             let tag_start = pos + 1;
             let tag_end = text[tag_start..]
                 .find(['>', ' ', '/'])
-                .map(|i| tag_start + i)
-                .unwrap_or(bytes.len());
+                .map_or(bytes.len(), |i| tag_start + i);
             let tag = &text[tag_start..tag_end];
             if tag.is_empty() {
                 pos += 1;

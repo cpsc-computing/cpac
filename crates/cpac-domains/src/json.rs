@@ -11,7 +11,7 @@ use crate::DomainHandler;
 pub struct JsonHandler;
 
 impl DomainHandler for JsonHandler {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "json"
     }
     fn domain_hint(&self) -> DomainHint {
@@ -101,7 +101,7 @@ fn decompose_array(arr: &[serde_json::Value]) -> CpacResult<CpacType> {
     let typed_columns: Vec<(String, CpacType)> = keys
         .into_iter()
         .map(|(name, values)| {
-            let total_bytes: usize = values.iter().map(|s| s.len()).sum();
+            let total_bytes: usize = values.iter().map(std::string::String::len).sum();
             (
                 name,
                 CpacType::StringColumn {

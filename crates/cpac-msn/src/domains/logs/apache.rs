@@ -46,7 +46,7 @@ impl Domain for ApacheDomain {
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         let text = std::str::from_utf8(data)
-            .map_err(|e| CpacError::CompressFailed(format!("Apache log decode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("Apache log decode: {e}")))?;
 
         let mut ip_freq: HashMap<String, usize> = HashMap::new();
         let mut ua_freq: HashMap<String, usize> = HashMap::new();
@@ -102,17 +102,17 @@ impl Domain for ApacheDomain {
         // Build replacement maps
         let mut ip_map: HashMap<String, String> = HashMap::new();
         for (idx, (ip, _)) in repeated_ips.iter().enumerate() {
-            ip_map.insert(ip.clone(), format!("@I{}", idx));
+            ip_map.insert(ip.clone(), format!("@I{idx}"));
         }
 
         let mut method_map: HashMap<String, String> = HashMap::new();
         for (idx, (method, _)) in repeated_methods.iter().enumerate() {
-            method_map.insert(method.clone(), format!("@M{}", idx));
+            method_map.insert(method.clone(), format!("@M{idx}"));
         }
 
         let mut ua_map: HashMap<String, String> = HashMap::new();
         for (idx, (ua, _)) in repeated_uas.iter().enumerate() {
-            ua_map.insert(ua.clone(), format!("@U{}", idx));
+            ua_map.insert(ua.clone(), format!("@U{idx}"));
         }
 
         // Compact log
@@ -173,18 +173,18 @@ impl Domain for ApacheDomain {
         };
 
         let mut reconstructed = std::str::from_utf8(&result.residual)
-            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {}", e)))?
+            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?
             .to_string();
 
         // Expand placeholders
         for (idx, ip) in ips.iter().enumerate() {
-            reconstructed = reconstructed.replace(&format!("@I{}", idx), ip);
+            reconstructed = reconstructed.replace(&format!("@I{idx}"), ip);
         }
         for (idx, method) in methods.iter().enumerate() {
-            reconstructed = reconstructed.replace(&format!("@M{}", idx), method);
+            reconstructed = reconstructed.replace(&format!("@M{idx}"), method);
         }
         for (idx, ua) in uas.iter().enumerate() {
-            reconstructed = reconstructed.replace(&format!("@U{}", idx), ua);
+            reconstructed = reconstructed.replace(&format!("@U{idx}"), ua);
         }
 
         Ok(reconstructed.into_bytes())

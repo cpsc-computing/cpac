@@ -221,7 +221,7 @@ impl ResourceConfig {
     pub fn effective_threads(&self) -> usize {
         if self.max_threads == 0 {
             std::thread::available_parallelism()
-                .map(|n| n.get())
+                .map(std::num::NonZero::get)
                 .unwrap_or(1)
         } else {
             self.max_threads

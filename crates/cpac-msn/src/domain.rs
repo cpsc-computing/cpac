@@ -53,7 +53,7 @@ pub trait Domain: Send + Sync {
     /// Extract semantic fields from data.
     ///
     /// Returns extracted fields and residual bytes.
-    /// Must be losslessly reversible via reconstruct().
+    /// Must be losslessly reversible via `reconstruct()`.
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult>;
 
     /// Extract semantic fields using pre-computed field mappings.
@@ -63,7 +63,7 @@ pub trait Domain: Send + Sync {
     /// The fields parameter contains domain-specific field mappings
     /// from a previous extraction.
     ///
-    /// Default implementation falls back to normal extract().
+    /// Default implementation falls back to normal `extract()`.
     fn extract_with_fields(
         &self,
         data: &[u8],

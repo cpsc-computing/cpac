@@ -47,7 +47,7 @@ impl Domain for JsonLogDomain {
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         let text = std::str::from_utf8(data)
-            .map_err(|e| CpacError::CompressFailed(format!("JSON log decode: {}", e)))?;
+            .map_err(|e| CpacError::CompressFailed(format!("JSON log decode: {e}")))?;
 
         let mut key_freq: HashMap<String, usize> = HashMap::new();
 
@@ -137,8 +137,7 @@ impl Domain for JsonLogDomain {
         let split_pos = data
             .iter()
             .rposition(|&b| b == b'\n')
-            .map(|p| p + 1)
-            .unwrap_or(0);
+            .map_or(0, |p| p + 1);
         let complete_data = &data[..split_pos];
         let suffix = &data[split_pos..];
 
@@ -146,7 +145,7 @@ impl Domain for JsonLogDomain {
         let mut compacted_str = String::new();
         if !complete_data.is_empty() {
             let text = std::str::from_utf8(complete_data)
-                .map_err(|e| CpacError::CompressFailed(format!("JSON log decode: {}", e)))?;
+                .map_err(|e| CpacError::CompressFailed(format!("JSON log decode: {e}")))?;
             let has_trailing_newline = complete_data.ends_with(b"\n");
 
             let mut compacted_lines: Vec<String> = Vec::new();
@@ -203,10 +202,10 @@ impl Domain for JsonLogDomain {
         };
 
         let text = std::str::from_utf8(&result.residual)
-            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {}", e)))?;
+            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?;
 
         let has_trailing_newline = result.fields.get("trailing_newline")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
 
         let mut reconstructed_lines = Vec::new();
@@ -274,7 +273,7 @@ fn reconstruct_streaming_json_log(result: &ExtractionResult) -> CpacResult<Vec<u
 
     let has_trailing_nl = compacted_bytes.ends_with(b"\n");
     let text = std::str::from_utf8(compacted_bytes)
-        .map_err(|e| CpacError::DecompressFailed(format!("streaming UTF-8 decode: {}", e)))?;
+        .map_err(|e| CpacError::DecompressFailed(format!("streaming UTF-8 decode: {e}")))?;
 
     let mut reconstructed_lines: Vec<String> = Vec::new();
     for line in text.lines() {
@@ -321,9 +320,7 @@ fn compact_value(value: &Value, key_map: &HashMap<String, u32>) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let new_key = key_map.get(k)
-                        .map(|idx| format!("$L{}", idx))
-                        .unwrap_or_else(|| k.clone());
+                    let new_key = key_map.get(k).map_or_else(|| k.clone(), |idx| format!("$L{idx}"));
                     (new_key, compact_value(v, key_map))
                 })
                 .collect();

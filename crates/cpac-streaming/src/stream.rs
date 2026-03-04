@@ -95,7 +95,37 @@ impl StreamingCompressor {
         })
     }
 
-    /// Create compressor with MSN support.
+    /// Create compressor with MSN-based semantic extraction.
+    ///
+    /// MSN (Multi-Scale Normalization) detects structured data domains (JSON, CSV,
+    /// YAML, XML) and replaces repeated keys/tags with compact token indices before
+    /// entropy coding, improving compression ratios by 20-50% on structured data.
+    ///
+    /// # Examples
+    ///
+    /// Compress a stream of JSON-log records with MSN enabled:
+    ///
+    /// ```
+    /// use cpac_streaming::stream::{StreamingCompressor, StreamingDecompressor};
+    /// use cpac_streaming::MsnConfig;
+    /// use cpac_types::CompressConfig;
+    ///
+    /// let json_data = b"{\"name\":\"Alice\",\"age\":30}\n{\"name\":\"Bob\",\"age\":25}\n".repeat(50);
+    ///
+    /// let cfg = CompressConfig { enable_msn: true, msn_confidence: 0.7, ..Default::default() };
+    /// let mut compressor = StreamingCompressor::with_msn(cfg, MsnConfig::default(), 4096, 16 << 20).unwrap();
+    /// compressor.write(&json_data).unwrap();
+    /// let frame = compressor.finish().unwrap();
+    ///
+    /// // Frame can be decompressed with StreamingDecompressor
+    /// let mut decompressor = StreamingDecompressor::new().unwrap();
+    /// decompressor.feed(&frame).unwrap();
+    /// assert_eq!(decompressor.read_output(), json_data.as_slice());
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `block_size` is 0 or exceeds `max_buffer_size`.
     pub fn with_msn(
         config: CompressConfig,
         msn_config: crate::MsnConfig,
@@ -148,7 +178,7 @@ impl StreamingCompressor {
             + self
                 .compressed_blocks
                 .iter()
-                .map(|b| b.len())
+                .map(std::vec::Vec::len)
                 .sum::<usize>();
         if total_buffered > self.max_buffer_size {
             return Err(CpacError::Other(format!(
@@ -276,10 +306,10 @@ impl StreamingCompressor {
         self.flush()?;
         self.state = CompressorState::Finalized;
 
-        // Serialize MSN metadata if present
+        // Serialize MSN metadata using compact MessagePack encoding.
         let msn_bytes = if let Some(ref metadata) = self.msn_metadata {
-            serde_json::to_vec(metadata)
-                .map_err(|e| CpacError::Other(format!("MSN serialize: {}", e)))?
+            cpac_msn::encode_metadata_compact(metadata)
+                .map_err(|e| CpacError::Other(format!("MSN serialize: {e}")))?
         } else {
             Vec::new()
         };
@@ -420,6 +450,15 @@ impl StreamingDecompressor {
                 }
                 DecompressorState::Blocks => {
                     if self.blocks_processed >= self.num_blocks {
+                        // Integrity check: reconstructed output must match the
+                        // original size stored in the frame header.
+                        if self.output_buffer.len() != self.original_size {
+                            return Err(CpacError::DecompressFailed(format!(
+                                "output size mismatch: expected {}, got {}",
+                                self.original_size,
+                                self.output_buffer.len()
+                            )));
+                        }
                         self.state = DecompressorState::Done;
                         return Ok(());
                     }
@@ -500,8 +539,10 @@ impl StreamingDecompressor {
                 return Err(CpacError::InvalidFrame("truncated MSN metadata".into()));
             }
             let msn_bytes = self.input_buffer.drain(..msn_len).collect::<Vec<u8>>();
-            self.msn_metadata = Some(serde_json::from_slice(&msn_bytes)
-                .map_err(|e| CpacError::InvalidFrame(format!("MSN deserialize: {}", e)))?);
+            self.msn_metadata = Some(
+                cpac_msn::decode_metadata_compact(&msn_bytes)
+                    .map_err(|e| CpacError::InvalidFrame(format!("MSN deserialize: {e}")))?,
+            );
         }
         
         Ok(())
@@ -515,6 +556,7 @@ impl StreamingDecompressor {
     }
 
     /// Check if decompression is complete.
+    #[must_use] 
     pub fn is_done(&self) -> bool {
         self.state == DecompressorState::Done
     }

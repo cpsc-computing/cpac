@@ -113,7 +113,7 @@ pub fn list_archive(archive: &[u8]) -> CpacResult<Vec<ArchiveEntry>> {
         .collect())
 }
 
-/// Returns Vec of (entry, data_offset) pairs.
+/// Returns Vec of (entry, `data_offset`) pairs.
 fn parse_entries(data: &[u8]) -> CpacResult<Vec<(ArchiveEntry, usize)>> {
     if data.len() < 10 || &data[0..4] != CPAR_MAGIC {
         return Err(CpacError::InvalidFrame("not a CPAR archive".into()));
@@ -126,8 +126,7 @@ fn parse_entries(data: &[u8]) -> CpacResult<Vec<(ArchiveEntry, usize)>> {
     const MAX_ENTRIES: usize = 1_000_000;
     if n > MAX_ENTRIES {
         return Err(CpacError::InvalidFrame(format!(
-            "archive claims {} entries (max {})",
-            n, MAX_ENTRIES
+            "archive claims {n} entries (max {MAX_ENTRIES})"
         )));
     }
     let mut off = 10usize;

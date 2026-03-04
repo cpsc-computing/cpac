@@ -14,6 +14,7 @@ pub struct X25519KeyPair {
 }
 
 /// Generate a new X25519 keypair.
+#[must_use] 
 pub fn generate_x25519_keypair() -> X25519KeyPair {
     let secret = StaticSecret::random_from_rng(OsRng);
     let public = PublicKey::from(&secret);
@@ -21,6 +22,7 @@ pub fn generate_x25519_keypair() -> X25519KeyPair {
 }
 
 /// Compute shared secret from our secret key and their public key.
+#[must_use] 
 pub fn x25519_shared_secret(our_secret: &StaticSecret, their_public: &PublicKey) -> [u8; 32] {
     let shared = our_secret.diffie_hellman(their_public);
     *shared.as_bytes()

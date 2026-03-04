@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! Post-Quantum Cryptography — ML-KEM (FIPS 203) + ML-DSA (FIPS 204).
 //!
-//! Uses pure-Rust RustCrypto implementations. Feature-gated behind `pqc`.
+//! Uses pure-Rust `RustCrypto` implementations. Feature-gated behind `pqc`.
 //!
 //! - ML-KEM-768: key encapsulation (quantum-safe key exchange)
 //! - ML-DSA-65: digital signatures (quantum-safe authentication)
@@ -125,7 +125,7 @@ fn encapsulate_mlkem768(public_key: &[u8]) -> CpacResult<(Vec<u8>, Vec<u8>)> {
     let mut rng = rand::thread_rng();
     let (ct, ss) = ek
         .encapsulate(&mut rng)
-        .map_err(|_| CpacError::Encryption("ML-KEM-768 encapsulation failed".into()))?;
+        .map_err(|()| CpacError::Encryption("ML-KEM-768 encapsulation failed".into()))?;
     Ok((ct.as_slice().to_vec(), ss.as_slice().to_vec()))
 }
 
@@ -144,7 +144,7 @@ fn decapsulate_mlkem768(ciphertext: &[u8], secret_key: &[u8]) -> CpacResult<Vec<
         .map_err(|_| CpacError::Encryption("invalid ML-KEM-768 ciphertext length".into()))?;
     let ss = dk
         .decapsulate(&ct)
-        .map_err(|_| CpacError::Encryption("ML-KEM-768 decapsulation failed".into()))?;
+        .map_err(|()| CpacError::Encryption("ML-KEM-768 decapsulation failed".into()))?;
     Ok(ss.as_slice().to_vec())
 }
 

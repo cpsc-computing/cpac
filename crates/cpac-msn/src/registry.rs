@@ -15,6 +15,7 @@ pub struct DomainRegistry {
 
 impl DomainRegistry {
     /// Create a new empty registry.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             domains: RwLock::new(HashMap::new()),
@@ -23,7 +24,7 @@ impl DomainRegistry {
 
     /// Register a domain handler.
     ///
-    /// The domain's ID (from DomainInfo) is used as the key.
+    /// The domain's ID (from `DomainInfo`) is used as the key.
     pub fn register(&self, domain: Arc<dyn Domain>) {
         let info = domain.info();
         let mut domains = self.domains.write().unwrap();
@@ -81,8 +82,8 @@ impl Default for DomainRegistry {
 }
 
 /// Global domain registry singleton.
-static GLOBAL_REGISTRY: once_cell::sync::Lazy<DomainRegistry> =
-    once_cell::sync::Lazy::new(|| {
+static GLOBAL_REGISTRY: std::sync::LazyLock<DomainRegistry> =
+    std::sync::LazyLock::new(|| {
         let registry = DomainRegistry::new();
         
         // Register all domain handlers
@@ -104,6 +105,7 @@ static GLOBAL_REGISTRY: once_cell::sync::Lazy<DomainRegistry> =
     });
 
 /// Get the global domain registry.
+#[must_use] 
 pub fn global_registry() -> &'static DomainRegistry {
     &GLOBAL_REGISTRY
 }
