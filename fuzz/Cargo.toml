@@ -15,6 +15,7 @@ cpac-transforms = { path = "../crates/cpac-transforms" }
 cpac-types = { path = "../crates/cpac-types" }
 cpac-cas = { path = "../crates/cpac-cas" }
 cpac-archive = { path = "../crates/cpac-archive" }
+cpac-streaming = { path = "../crates/cpac-streaming" }
 
 # Prevent this from interfering with workspace builds.
 [workspace]
@@ -43,4 +44,9 @@ doc = false
 [[bin]]
 name = "fuzz_archive_decode"
 path = "fuzz_targets/fuzz_archive_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_streaming_decode"
+path = "fuzz_targets/fuzz_streaming_decode.rs"
 doc = false

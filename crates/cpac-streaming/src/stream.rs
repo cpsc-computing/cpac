@@ -144,7 +144,7 @@ impl StreamingCompressor {
     /// Returns error if compression fails or compressor is finalized.
     pub fn write(&mut self, data: &[u8]) -> CpacResult<usize> {
         if self.state == CompressorState::Finalized {
-            return Err(CpacError::Other("compressor already finalized".into()));
+            return Err(CpacError::AlreadyFinalized);
         }
 
         // Append to input buffer
@@ -213,42 +213,46 @@ impl StreamingCompressor {
     }
 
     /// Compress one full block from the input buffer.
+    ///
+    /// Uses a slice reference to avoid an extra per-block heap allocation.
     fn compress_block(&mut self) -> CpacResult<()> {
-        let block_data: Vec<u8> = self.input_buffer.drain(..self.block_size).collect();
-        let result = cpac_engine::compress(&block_data, &self.config)?;
+        let result = cpac_engine::compress(&self.input_buffer[..self.block_size], &self.config)?;
+        self.input_buffer.drain(..self.block_size);
         self.compressed_blocks.push(result.data);
         Ok(())
     }
 
     /// Compress one block with MSN extraction using consistent metadata.
+    ///
+    /// Passes slice references to both `extract_with_metadata` and `compress` to
+    /// avoid the two extra per-block `Vec` allocations from the previous
+    /// `drain(..).collect()` pattern.
     fn compress_block_with_msn(&mut self) -> CpacResult<()> {
-        let block_data: Vec<u8> = self.input_buffer.drain(..self.block_size).collect();
-
-        // MSN is handled externally (extract_with_metadata above).  Disable
-        // enable_msn in the inner compress() call so that the streaming residual
-        // is never passed through a second round of MSN extraction, which would
-        // corrupt the 0x01-prefixed wire format and cause size mismatches on
-        // decompression.
+        // Disable MSN inside the inner compress() call: the residual has already
+        // been processed by extract_with_metadata above and must not be
+        // re-processed (that would corrupt the 0x01-prefixed wire format).
         let inner_config = cpac_types::CompressConfig {
             enable_msn: false,
             ..self.config.clone()
         };
-
-        // Extract MSN using consistent metadata from detection phase
-        if let Some(ref metadata) = self.msn_metadata {
-            let msn_result = cpac_msn::extract_with_metadata(&block_data, metadata)?;
-            let residual = if msn_result.applied {
-                &msn_result.residual
+        let bs = self.block_size;
+        let compressed = if let Some(meta) = self.msn_metadata.as_ref() {
+            // msn_metadata and input_buffer are disjoint fields — Rust's NLL
+            // allows borrowing both simultaneously.
+            let msn_result = cpac_msn::extract_with_metadata(
+                &self.input_buffer[..bs],
+                meta,
+            )?;
+            if msn_result.applied {
+                cpac_engine::compress(&msn_result.residual, &inner_config)?.data
             } else {
-                &block_data
-            };
-            let result = cpac_engine::compress(residual, &inner_config)?;
-            self.compressed_blocks.push(result.data);
+                cpac_engine::compress(&self.input_buffer[..bs], &inner_config)?.data
+            }
         } else {
-            // No metadata - compress raw
-            let result = cpac_engine::compress(&block_data, &inner_config)?;
-            self.compressed_blocks.push(result.data);
-        }
+            cpac_engine::compress(&self.input_buffer[..bs], &inner_config)?.data
+        };
+        self.input_buffer.drain(..bs);
+        self.compressed_blocks.push(compressed);
         Ok(())
     }
 
@@ -258,35 +262,30 @@ impl StreamingCompressor {
     /// Returns error if compression fails.
     pub fn flush(&mut self) -> CpacResult<()> {
         if !self.input_buffer.is_empty() {
-            // If MSN not yet detected and enabled, detect now
+            // If MSN not yet detected and enabled, detect now.
             if self.msn_config.enable && !self.msn_detected {
                 self.detect_msn()?;
             }
-            
-        let block_data = self.input_buffer.drain(..).collect::<Vec<u8>>();
-
-            // Same rationale as compress_block_with_msn: disable internal MSN
-            // to prevent double-application on the already-processed residual.
+            // Same rationale as compress_block_with_msn: disable internal MSN.
             let inner_config = cpac_types::CompressConfig {
                 enable_msn: false,
                 ..self.config.clone()
             };
-
-            // Extract and compress with consistent metadata
-            if let Some(ref metadata) = self.msn_metadata {
-                let msn_result = cpac_msn::extract_with_metadata(&block_data, metadata)?;
-                let residual = if msn_result.applied {
-                    &msn_result.residual
+            let compressed = if let Some(meta) = self.msn_metadata.as_ref() {
+                let msn_result = cpac_msn::extract_with_metadata(
+                    &self.input_buffer,
+                    meta,
+                )?;
+                if msn_result.applied {
+                    cpac_engine::compress(&msn_result.residual, &inner_config)?.data
                 } else {
-                    &block_data
-                };
-                let result = cpac_engine::compress(residual, &inner_config)?;
-                self.compressed_blocks.push(result.data);
+                    cpac_engine::compress(&self.input_buffer, &inner_config)?.data
+                }
             } else {
-                // No metadata - compress raw
-                let result = cpac_engine::compress(&block_data, &inner_config)?;
-                self.compressed_blocks.push(result.data);
-            }
+                cpac_engine::compress(&self.input_buffer, &inner_config)?.data
+            };
+            self.input_buffer.clear();
+            self.compressed_blocks.push(compressed);
         }
         Ok(())
     }
@@ -299,7 +298,7 @@ impl StreamingCompressor {
     /// Returns error if finalization fails.
     pub fn finish(mut self) -> CpacResult<Vec<u8>> {
         if self.state == CompressorState::Finalized {
-            return Err(CpacError::Other("compressor already finalized".into()));
+            return Err(CpacError::AlreadyFinalized);
         }
 
         // Flush remaining data

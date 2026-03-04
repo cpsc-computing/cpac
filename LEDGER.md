@@ -322,6 +322,60 @@ MSN improvement: 85.14% - 85.54%
 - **4 Criterion bench groups** (cpac-streaming/benches/streaming.rs)
 - **2 regression detection tests** added to bench.rs
 
+## Session 13 (2026-03-04)
+### All Remaining TODOs + Beyond-TODO Enhancements
+
+#### Bug Fix: JSONL Strict Extraction
+- **Root cause:** `JsonDomain::extract_jsonl()` used `filter_map(...ok())` which silently dropped unparseable lines. Data created with `.repeat(N)` (no trailing newline per repetition) produces boundary lines that concatenate two JSON objects, which are not valid JSON. Dropped lines caused `expected N, got M` size mismatches on decompression.
+- **Fix:** Replaced `filter_map` with a strict `collect::<CpacResult<Vec<Value>>>()` loop — any non-empty line that fails JSON parsing causes `extract_jsonl` to return `Err`, triggering engine passthrough. True JSONL data (all lines valid) still benefits from field extraction.
+- **Tests:** All 3 JSONL unit tests updated/fixed; `integration_json_roundtrip_with_msn` now passes.
+
+#### Error Messages: New CpacError Variants
+- Added `AlreadyFinalized` variant to `CpacError` for double-finish attempts on `StreamingCompressor`.
+- Added `DomainError { domain, message }` for structured per-domain errors with context.
+- `cpac-ffi`: mapped new variants to FFI error codes (`InvalidArg`, `CompressFailed`).
+- `stream.rs`: `finish()` on an already-finalized compressor now returns `AlreadyFinalized`.
+
+#### SIMD: memchr in CSV & JSON Hot Paths
+- Added `memchr = "2"` dependency to `cpac-msn/Cargo.toml`.
+- `CsvDomain::detect()`: replaced manual `take_while` + comma scan with `memchr::memchr` + `memchr_iter`.
+- `JsonDomain::detect()`: replaced byte-scan loop with `memchr::memchr` for JSONL first-line check.
+
+#### Memory Pool Tuning: Zero-Copy Streaming Blocks
+- Eliminated `drain(..).collect::<Vec<u8>>()` pattern in `compress_block()`, `compress_block_with_msn()`, and `flush()`.
+- All three now pass slice references directly to engine/MSN APIs, then drain/clear the buffer after. Saves one 1 MB heap allocation per compressed block.
+- `compress_block_with_msn` / `flush`: refactored `is_some()` + `unwrap()` to `if let Some(meta) = ...` (clippy `unnecessary_unwrap` fix).
+
+#### CLI Polish: Streaming & Benchmark Flags
+- `Compress` subcommand: added `--streaming` (enable `StreamingCompressor::with_msn`) and `--stream-block` (block size in KB).
+- `Decompress` subcommand: added `--streaming` (auto-detected from `.cpac-stream` extension too).
+- `Benchmark` subcommand: added `--json` for machine-readable JSON array output.
+- Added `#[allow(clippy::too_many_arguments)]` to `cmd_decompress` (8 params, CLI dispatch function).
+
+#### Benchmark Automation: `benchmark-all.ps1`
+- PowerShell script parameterized by `-Mode quick/balanced/full`, `-Json`, `-SkipBuild`, `-SkipBaselines`.
+- Iterates corpus files, saves per-file logs + summary to timestamped `benchmark-results/YYYY-MM-DD_HH-MM/`.
+- Also runs `cargo bench --workspace` for Criterion microbenchmarks.
+
+#### Corpus Expansion: `download-corpus.ps1`
+- Downloads enwik8, Calgary corpus, selected Silesia files.
+- Generates synthetic 1 MB JSONL event log (varied timestamps, levels, messages).
+
+#### Fuzz Testing: Streaming Decode Target
+- New `fuzz/fuzz_targets/fuzz_streaming_decode.rs`: fuzzes `StreamingDecompressor::feed` with full input, chunked input, and synthesized well-formed CPAC-stream headers with arbitrary MSN payload.
+- Added `cpac-streaming` dependency to `fuzz/Cargo.toml`.
+
+#### Python Bindings (cpac-py)
+- Fixed `Compressor::new` in `python/cpac-py/src/lib.rs` to use `StreamingCompressor::with_msn(config, msn_cfg, bs, mb)` signature.
+- Added `enable_msn` and `msn_confidence` params to `Compressor::new`.
+
+#### Statistics
+- **All workspace tests passing** (413 tests, 0 failures)
+- **clippy clean** (`-D warnings`, 0 warnings)
+- **3 new JSONL tests** in `cpac-msn`
+- **1 new fuzz target** (`fuzz_streaming_decode`)
+- **2 new scripts** (`benchmark-all.ps1`, `download-corpus.ps1`)
+
 ## Session 11 (2026-03-03)
 ### MSN Streaming Fixes + Full Benchmark Run
 

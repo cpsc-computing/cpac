@@ -5,6 +5,7 @@
 use crate::domain::{Domain, DomainInfo, ExtractionResult};
 use cpac_types::{CpacError, CpacResult};
 use std::collections::HashMap;
+// memchr provides SIMD-accelerated byte search on x86/aarch64.
 
 /// CSV domain handler.
 ///
@@ -33,24 +34,18 @@ impl Domain for CsvDomain {
             }
         }
 
-        // Check if first line looks like CSV header
-        // SIMD opportunity: both scans below (`take_while(b != '\n')` and
-        // counting `,` / `\n` bytes) are trivially vectorisable.  Replacing
-        // with `memchr::memchr` (which uses SIMD internally) would be a
-        // low-risk, high-reward optimisation for large CSV files, where
-        // `detect()` is called repeatedly on multi-MB chunks.
-        let first_line = data.iter().take_while(|&&b| b != b'\n').copied().collect::<Vec<_>>();
-        if first_line.is_empty() {
+        // Use memchr for SIMD-accelerated newline and comma scanning.
+        let first_nl = memchr::memchr(b'\n', data).unwrap_or(data.len());
+        if first_nl == 0 {
             return 0.0;
         }
+        let first_line = &data[..first_nl];
 
-        let comma_count = first_line.iter().filter(|&&b| b == b',').count();
-        if comma_count >= 1 {
-            // Check if subsequent lines exist
-            let newline_count = data.iter().filter(|&&b| b == b'\n').count();
-            if newline_count >= 1 {
-                return 0.7;
-            }
+        // Count commas in the first line using memchr::memchr_iter (SIMD-backed).
+        let comma_count = memchr::memchr_iter(b',', first_line).count();
+        if comma_count >= 1 && first_nl < data.len() {
+            // At least one more line exists (data.len() > first_nl).
+            return 0.7;
         }
 
         0.0

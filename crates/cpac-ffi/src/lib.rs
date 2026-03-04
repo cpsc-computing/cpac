@@ -67,6 +67,8 @@ impl From<CpacError> for CpacErrorCode {
             CpacError::Encryption(_) => CpacErrorCode::Encryption,
             CpacError::IoError(_) => CpacErrorCode::Io,
             CpacError::Other(_) => CpacErrorCode::Other,
+            CpacError::AlreadyFinalized => CpacErrorCode::InvalidArg,
+            CpacError::DomainError { .. } => CpacErrorCode::CompressFailed,
         }
     }
 }

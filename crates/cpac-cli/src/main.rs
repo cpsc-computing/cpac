@@ -75,6 +75,13 @@ enum Commands {
         /// Use "cpac list-domains" to see available domains.
         #[arg(long, requires = "enable_msn")]
         msn_domain: Option<String>,
+        /// Use incremental streaming compression (bounded memory, large files).
+        /// Output uses the CPAC streaming wire format (.cpac-stream).
+        #[arg(long)]
+        streaming: bool,
+        /// Block size in bytes for streaming compression (default: 1 MiB).
+        #[arg(long, default_value_t = 1 << 20, requires = "streaming")]
+        stream_block: usize,
     },
     /// Decompress a file (or stdin with -).
     #[command(alias = "d", alias = "x")]
@@ -99,6 +106,9 @@ enum Commands {
         /// Use memory-mapped I/O (auto for files > 64 MB, force with flag).
         #[arg(long)]
         mmap: bool,
+        /// Use streaming decompression (required for .cpac-stream files).
+        #[arg(long)]
+        streaming: bool,
     },
     /// Show file info or host system details.
     #[command(alias = "i")]
@@ -135,6 +145,9 @@ enum Commands {
         /// Skip baseline engines (gzip, zstd, brotli, lzma).
         #[arg(long)]
         skip_baselines: bool,
+        /// Output results as JSON (machine-readable).
+        #[arg(long)]
+        json: bool,
     },
     /// Analyze file with Auto-CAS constraint inference.
     #[command(alias = "cas")]
@@ -389,6 +402,8 @@ fn cmd_compress(
     enable_msn: bool,
     msn_confidence: f64,
     msn_domain: Option<String>,
+    streaming: bool,
+    stream_block: usize,
 ) {
     let backend = backend.map(|b| match parse_backend(&b) {
         Ok(v) => v,
@@ -430,52 +445,82 @@ fn cmd_compress(
             || (file_path.to_str() != Some("-")
                 && cpac_streaming::mmap::should_use_mmap(file_path));
 
-        let result = if use_mmap && file_path.to_str() != Some("-") {
-            cpac_streaming::mmap::mmap_compress(file_path, &config)
+        let (compressed_data, original_size, compressed_size) = if streaming {
+            // Streaming path: incremental, bounded-memory compression.
+            let msn_cfg = cpac_streaming::MsnConfig {
+                enable: enable_msn,
+                confidence_threshold: msn_confidence,
+                ..Default::default()
+            };
+            let data = read_input(file_path);
+            let orig = data.len();
+            let mut compressor = match cpac_streaming::stream::StreamingCompressor::with_msn(
+                config.clone(), msn_cfg, stream_block, 64 * 1024 * 1024,
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Streaming compressor init failed: {e}");
+                    process::exit(1);
+                }
+            };
+            if let Err(e) = compressor.write(&data) {
+                eprintln!("Streaming write failed: {e}");
+                process::exit(1);
+            }
+            match compressor.finish() {
+                Ok(frame) => {
+                    let csz = frame.len();
+                    (frame, orig, csz)
+                }
+                Err(e) => {
+                    eprintln!("Streaming finish failed: {e}");
+                    process::exit(1);
+                }
+            }
+        } else if use_mmap && file_path.to_str() != Some("-") {
+            match cpac_streaming::mmap::mmap_compress(file_path, &config) {
+                Ok(r) => { let csz = r.data.len(); (r.data, r.original_size, csz) }
+                Err(e) => {
+                    eprintln!("Compression failed for '{}': {e}", file_path.display());
+                    eprintln!("Hint: Check input file format and try different backends with --backend.");
+                    if files.len() > 1 { eprintln!("       Continuing with remaining files...\n"); continue; }
+                    process::exit(1);
+                }
+            }
         } else {
             let data = read_input(file_path);
-            // Auto-dispatch: use block-parallel for data > 256 KiB when threads > 1
             let use_parallel =
                 data.len() >= cpac_engine::PARALLEL_THRESHOLD && resources.max_threads > 1;
-            if use_parallel {
-                cpac_engine::compress_parallel(
-                    &data,
-                    &config,
-                    cpac_engine::DEFAULT_BLOCK_SIZE,
-                    resources.max_threads,
-                )
+            let res = if use_parallel {
+                cpac_engine::compress_parallel(&data, &config, cpac_engine::DEFAULT_BLOCK_SIZE, resources.max_threads)
             } else {
                 cpac_engine::compress(&data, &config)
-            }
-        };
-        let result = match result {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("Compression failed for '{}': {e}", file_path.display());
-                eprintln!(
-                    "Hint: Check input file format and try different backends with --backend."
-                );
-                if files.len() > 1 {
-                    eprintln!("       Continuing with remaining files...\n");
-                    continue;
+            };
+            match res {
+                Ok(r) => { let csz = r.data.len(); (r.data, r.original_size, csz) }
+                Err(e) => {
+                    eprintln!("Compression failed for '{}': {e}", file_path.display());
+                    eprintln!("Hint: Check input file format and try different backends with --backend.");
+                    if files.len() > 1 { eprintln!("       Continuing with remaining files...\n"); continue; }
+                    process::exit(1);
                 }
-                process::exit(1);
             }
         };
 
+        let ext = if streaming { ".cpac-stream" } else { CPAC_EXT };
         let out_path = if files.len() == 1 {
             output.clone().unwrap_or_else(|| {
                 let mut p = file_path.as_os_str().to_owned();
-                p.push(CPAC_EXT);
+                p.push(ext);
                 PathBuf::from(p)
             })
         } else {
             let mut p = file_path.as_os_str().to_owned();
-            p.push(CPAC_EXT);
+            p.push(ext);
             PathBuf::from(p)
         };
 
-        write_output(&out_path, &result.data, force);
+        write_output(&out_path, &compressed_data, force);
 
         if let Some(ref pb) = progress_bar {
             pb.set_message(format!(
@@ -486,45 +531,23 @@ fn cmd_compress(
         }
 
         if verbose >= 2 {
-            // -vv = detailed output
-            let ratio = if result.compressed_size > 0 {
-                result.original_size as f64 / result.compressed_size as f64
-            } else {
-                0.0
-            };
-            let savings = if result.original_size > 0 {
-                (1.0 - result.compressed_size as f64 / result.original_size as f64) * 100.0
-            } else {
-                0.0
-            };
+            let ratio = if compressed_size > 0 { original_size as f64 / compressed_size as f64 } else { 0.0 };
+            let savings = if original_size > 0 { (1.0 - compressed_size as f64 / original_size as f64) * 100.0 } else { 0.0 };
             println!("Input:      {}", file_path.display());
             println!("Output:     {}", out_path.display());
-            println!("Original:   {}", format_size(result.original_size));
-            println!("Compressed: {}", format_size(result.compressed_size));
+            println!("Original:   {}", format_size(original_size));
+            println!("Compressed: {}", format_size(compressed_size));
             println!("Ratio:      {ratio:.2}x ({savings:.1}% saved)");
-            println!("Track:      {:?}", result.track);
-            println!("Backend:    {:?}", result.backend);
+            println!("Mode:       {}", if streaming { "streaming" } else { "standard" });
             if verbose >= 3 {
-                // -vvv = debug info
                 println!("Threads:    {}", resources.max_threads);
                 println!("Memory:     {} MB", resources.max_memory_mb);
                 println!("MMap:       {use_mmap}");
             }
-            if files.len() > 1 {
-                println!();
-            }
+            if files.len() > 1 { println!(); }
         } else if verbose == 1 || progress_bar.is_none() {
-            // -v = basic output (or no progress bar)
-            let ratio = if result.compressed_size > 0 {
-                result.original_size as f64 / result.compressed_size as f64
-            } else {
-                0.0
-            };
-            println!(
-                "{} -> {} [{ratio:.2}x]",
-                file_path.display(),
-                out_path.display()
-            );
+            let ratio = if compressed_size > 0 { original_size as f64 / compressed_size as f64 } else { 0.0 };
+            println!("{} -> {} [{ratio:.2}x]", file_path.display(), out_path.display());
         }
     }
 
@@ -533,6 +556,7 @@ fn cmd_compress(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_decompress(
     input: PathBuf,
     output: Option<PathBuf>,
@@ -541,37 +565,60 @@ fn cmd_decompress(
     verbose: u8,
     threads: usize,
     mmap: bool,
+    streaming: bool,
 ) {
     let use_mmap =
         mmap || (input.to_str() != Some("-") && cpac_streaming::mmap::should_use_mmap(&input));
 
-    let result = if use_mmap && input.to_str() != Some("-") {
-        cpac_streaming::mmap::mmap_decompress(&input)
+    // Detect streaming format by filename or explicit flag.
+    let is_stream = streaming
+        || input.extension().map(|e| e == "cpac-stream").unwrap_or(false);
+
+    let decompressed_data = if is_stream {
+        let data = read_input(&input);
+        let mut decomp = match cpac_streaming::stream::StreamingDecompressor::new() {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("Streaming decompressor init failed: {e}");
+                process::exit(1);
+            }
+        };
+        if let Err(e) = decomp.feed(&data) {
+            eprintln!("Streaming decompression failed for '{}': {e}", input.display());
+            eprintln!("Hint: Ensure the file was compressed with --streaming.");
+            process::exit(1);
+        }
+        decomp.read_output()
+    } else if use_mmap && input.to_str() != Some("-") {
+        match cpac_streaming::mmap::mmap_decompress(&input) {
+            Ok(r) => r.data,
+            Err(e) => {
+                eprintln!("Decompression failed for '{}': {e}", input.display());
+                process::exit(1);
+            }
+        }
     } else {
         let resources = build_resources(threads, 0);
         let data = read_input(&input);
-        if cpac_engine::is_cpbl(&data) {
+        let res = if cpac_engine::is_cpbl(&data) {
             cpac_engine::decompress_parallel(&data, resources.max_threads)
         } else {
             cpac_engine::decompress(&data)
-        }
-    };
-    let result = match result {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Decompression failed for '{}': {e}", input.display());
-            eprintln!("Hint: Ensure the file is a valid CPAC archive and not corrupted.");
-            eprintln!(
-                "      Use 'cpac info {}' to inspect the file.",
-                input.display()
-            );
-            process::exit(1);
+        };
+        match res {
+            Ok(r) => r.data,
+            Err(e) => {
+                eprintln!("Decompression failed for '{}': {e}", input.display());
+                eprintln!("Hint: Ensure the file is a valid CPAC archive and not corrupted.");
+                eprintln!("      Use 'cpac info {}' to inspect the file.", input.display());
+                process::exit(1);
+            }
         }
     };
 
     let out_path = output.unwrap_or_else(|| {
         let s = input.to_string_lossy();
-        if let Some(stripped) = s.strip_suffix(CPAC_EXT) {
+        if let Some(stripped) = s.strip_suffix(".cpac-stream").or_else(|| s.strip_suffix(CPAC_EXT)) {
             PathBuf::from(stripped)
         } else {
             let mut p = input.as_os_str().to_owned();
@@ -580,33 +627,28 @@ fn cmd_decompress(
         }
     });
 
-    write_output(&out_path, &result.data, force);
+    write_output(&out_path, &decompressed_data, force);
 
     if verbose >= 2 {
-        // -vv = detailed output
-        let input_size = if input.to_str() == Some("-") {
-            0
-        } else {
+        let input_size = if input.to_str() == Some("-") { 0 } else {
             input.metadata().map(|m| m.len() as usize).unwrap_or(0)
         };
         println!("Input:       {}", input.display());
         println!("Output:      {}", out_path.display());
         println!("Compressed:  {}", format_size(input_size));
-        println!("Original:    {}", format_size(result.data.len()));
+        println!("Original:    {}", format_size(decompressed_data.len()));
+        println!("Mode:        {}", if is_stream { "streaming" } else { "standard" });
         if verbose >= 3 {
-            // -vvv = debug info
             let resources = build_resources(threads, 0);
             println!("Threads:     {}", resources.max_threads);
             println!("MMap:        {use_mmap}");
-            println!("Block-level: {}", cpac_engine::is_cpbl(&read_input(&input)));
         }
     } else {
-        // Default or -v: basic output
         println!(
             "{} -> {} [{}]",
             input.display(),
             out_path.display(),
-            format_size(result.data.len())
+            format_size(decompressed_data.len())
         );
     }
 }
@@ -693,6 +735,7 @@ fn cmd_benchmark(
     quick: bool,
     full: bool,
     skip_baselines: bool,
+    json: bool,
 ) {
     use cpac_engine::{BaselineEngine, BenchProfile, BenchmarkRunner};
 
@@ -782,8 +825,21 @@ fn cmd_benchmark(
         }
     }
 
-    // Summary
-    if !all_results.is_empty() {
+    // Summary / JSON output
+    if json {
+        // Machine-readable JSON output for automation.
+        println!("[");
+        for (i, r) in all_results.iter().enumerate() {
+            let comma = if i + 1 < all_results.len() { "," } else { "" };
+            println!(
+                "  {{\"engine\":\"{}\",\"ratio\":{:.4},\"compress_mbs\":{:.2},\"decompress_mbs\":{:.2},\"verified\":{}}}{}",
+                r.engine_label, r.ratio, r.compress_throughput_mbs, r.decompress_throughput_mbs,
+                r.lossless_verified,
+                comma
+            );
+        }
+        println!("]");
+    } else if !all_results.is_empty() {
         println!();
         let best_ratio = all_results
             .iter()
@@ -797,14 +853,8 @@ fn cmd_benchmark(
                     .unwrap()
             })
             .unwrap();
-        println!(
-            "Best ratio:        {} ({:.2}x)",
-            best_ratio.engine_label, best_ratio.ratio
-        );
-        println!(
-            "Fastest compress:  {} ({:.1} MB/s)",
-            best_speed.engine_label, best_speed.compress_throughput_mbs
-        );
+        println!("Best ratio:        {} ({:.2}x)", best_ratio.engine_label, best_ratio.ratio);
+        println!("Fastest compress:  {} ({:.1} MB/s)", best_speed.engine_label, best_speed.compress_throughput_mbs);
     }
 }
 
@@ -1253,9 +1303,11 @@ fn main() {
             enable_msn,
             msn_confidence,
             msn_domain,
+            streaming,
+            stream_block,
         } => cmd_compress(
-            input, output, backend, force, keep, recursive, verbose, threads, max_memory, mmap, 
-            enable_msn, msn_confidence, msn_domain,
+            input, output, backend, force, keep, recursive, verbose, threads, max_memory, mmap,
+            enable_msn, msn_confidence, msn_domain, streaming, stream_block,
         ),
         Commands::Decompress {
             input,
@@ -1265,7 +1317,8 @@ fn main() {
             verbose,
             threads,
             mmap,
-        } => cmd_decompress(input, output, force, keep, verbose, threads, mmap),
+            streaming,
+        } => cmd_decompress(input, output, force, keep, verbose, threads, mmap, streaming),
         Commands::Info { input, host } => cmd_info(input, host),
         Commands::ListProfiles => cmd_list_profiles(),
         Commands::ListBackends => cmd_list_backends(),
@@ -1276,7 +1329,8 @@ fn main() {
             quick,
             full,
             skip_baselines,
-        } => cmd_benchmark(input, iterations, quick, full, skip_baselines),
+            json,
+        } => cmd_benchmark(input, iterations, quick, full, skip_baselines, json),
         Commands::AutoCas { input, compress } => cmd_auto_cas(input, compress),
         Commands::Encrypt {
             input,

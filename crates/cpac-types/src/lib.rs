@@ -33,6 +33,17 @@ pub enum CpacError {
 
     #[error("{0}")]
     Other(String),
+
+    /// Compressor or decompressor used after it was already finalized.
+    #[error("already finalized")]
+    AlreadyFinalized,
+
+    /// Domain-specific detection or extraction failure.
+    #[error("domain error ({domain}): {message}")]
+    DomainError {
+        domain: &'static str,
+        message: String,
+    },
 }
 
 /// Result type alias for CPAC operations.
