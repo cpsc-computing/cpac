@@ -14,7 +14,7 @@
 //! ## CP2 (Version 2 - with MSN support)
 //! ```text
 //! "CP" (2B) | version=2 (1B) | flags (2B) | backend_id (1B)
-//! | original_size (4B LE) | dag_descriptor_len (2B LE) | msn_metadata_len (2B LE)
+//! | original_size (4B LE) | dag_descriptor_len (2B LE) | msn_metadata_len (4B LE)
 //! | dag_descriptor | msn_metadata | payload
 //! ```
 
@@ -41,8 +41,8 @@ pub const VERSION: u8 = VERSION_CP;
 /// Minimum header size for CP (magic + version + flags + backend + `orig_size` + `dag_len`).
 const MIN_HEADER_CP: usize = 2 + 1 + 2 + 1 + 4 + 2; // 12 bytes
 
-/// Minimum header size for CP2 (adds `msn_metadata_len`).
-const MIN_HEADER_CP2: usize = MIN_HEADER_CP + 2; // 14 bytes
+/// Minimum header size for CP2 (adds `msn_metadata_len` as u32).
+const MIN_HEADER_CP2: usize = MIN_HEADER_CP + 4; // 16 bytes
 
 /// Frame header parsed from wire format.
 #[derive(Clone, Debug)]
@@ -121,7 +121,7 @@ fn encode_frame_with_version(
     buf.extend_from_slice(&dag_len.to_le_bytes());
 
     if version == VERSION_CP2 {
-        let msn_len = msn_metadata.len() as u16;
+        let msn_len = msn_metadata.len() as u32;
         buf.extend_from_slice(&msn_len.to_le_bytes());
     }
 
@@ -169,7 +169,7 @@ pub fn decode_frame(data: &[u8]) -> CpacResult<(FrameHeader, &[u8])> {
                 data.len()
             )));
         }
-        let msn_len = u16::from_le_bytes([data[12], data[13]]) as usize;
+        let msn_len = u32::from_le_bytes([data[12], data[13], data[14], data[15]]) as usize;
         let dag_end = MIN_HEADER_CP2 + dag_len;
         let msn_end = dag_end + msn_len;
 
@@ -270,6 +270,22 @@ mod tests {
         assert_eq!(header.backend, Backend::Zstd);
         assert_eq!(header.original_size, 100);
         assert_eq!(header.dag_descriptor, dag);
+        assert_eq!(header.msn_metadata, msn);
+        assert_eq!(decoded_payload, payload);
+    }
+
+    #[test]
+    fn encode_decode_cp2_large_msn() {
+        // Regression test: msn_metadata_len was u16, silently truncating when > 65535 bytes.
+        // 134281 as u16 = 3209; this test ensures the u32 field handles large metadata correctly.
+        let payload = b"compressed";
+        let msn = vec![0xABu8; 70_000]; // > 65535, previously caused u16 truncation
+
+        let frame = encode_frame_cp2(payload, Backend::Zstd, 70_000, b"", &msn);
+        let (header, decoded_payload) = decode_frame(&frame).unwrap();
+
+        assert_eq!(header.version, VERSION_CP2);
+        assert_eq!(header.msn_metadata.len(), 70_000, "MSN metadata length truncated");
         assert_eq!(header.msn_metadata, msn);
         assert_eq!(decoded_payload, payload);
     }

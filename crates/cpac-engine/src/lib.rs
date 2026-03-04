@@ -350,6 +350,24 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_msn_xml_large_parallel() {
+        // > 256 KB triggers CPBL parallel path; XML content should activate MSN
+        let record = b"<?xml version=\"1.0\"?><record><id>1</id><name>Alice</name><age>30</age><city>New York</city></record>\n";
+        let data: Vec<u8> = record.iter().copied().cycle().take(300_000).collect();
+        assert!(data.len() >= parallel::PARALLEL_THRESHOLD);
+
+        let config = CompressConfig {
+            enable_msn: true,
+            ..Default::default()
+        };
+        let compressed = compress(&data, &config).expect("CP2+CPBL compress failed");
+        // Verify it actually went through parallel path (CPBL wrapper)
+        assert!(is_cpbl(&compressed.data), "expected CPBL frame");
+        let result = decompress(&compressed.data).expect("CP2+CPBL decompress failed");
+        assert_eq!(result.data, data, "CP2+CPBL roundtrip data mismatch");
+    }
+
+    #[test]
     fn roundtrip_with_msn_json() {
         // Repetitive JSON data - ideal for MSN
         let json_data = r#"{"name":"Alice","age":30,"city":"NYC"}
