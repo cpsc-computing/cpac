@@ -29,7 +29,7 @@ drop-in CLI for gzip/zstd/brotli workflows. Written in Rust.
   progress bars, 18+ curated benchmark datasets
 - **Host detection** — CPU, cores, RAM, SIMD tier detection with safe auto-defaults
 - **Cross-platform** — Windows (primary), Linux, macOS; x86_64 and aarch64
-- **289+ tests** — comprehensive regression suite, golden vectors, property-based tests,
+- **413+ tests** — comprehensive regression suite, golden vectors, property-based tests,
   determinism validation, transform-specific tests
 
 ## AI Agent Workflow
@@ -38,10 +38,9 @@ If you're an AI agent opening this repository for the first time:
 
 1. **Read AGENTS.md** — Complete codebase onboarding (architecture, entry points, conventions)
 2. **Read WARP.md** — Project rules (build commands, presubmit checklist, commit style)
-3. **Read LEDGER.md** — Development session history
-4. **Set Windows PATH** (if on Windows): `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"`
-5. **Verify build**: `cargo build --workspace && cargo test --workspace`
-6. **Run presubmit** before any commits: build, test, clippy, fmt (see WARP.md)
+3. **Set Windows PATH** (if on Windows): `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"`
+4. **Verify build**: `cargo build --workspace && cargo test --workspace`
+5. **Run presubmit** before any commits: build, test, clippy, fmt (see WARP.md)
 
 ## Quick Start
 
@@ -120,7 +119,7 @@ cpac completions powershell > cpac.ps1
 
 ## Architecture
 
-CPAC is a 13-crate Cargo workspace. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+CPAC is a 16-crate Cargo workspace. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 for the full design.
 
 ```
@@ -134,9 +133,12 @@ cpac-engine         Top-level API, host detection, parallel, benchmarks
 cpac-cli            Command-line interface (clap)
 cpac-crypto         AEAD, KDF, key exchange, PQC (feature-gated)
 cpac-streaming      Block streaming, progress, mmap, adaptive sizing
+cpac-msn            Multi-Scale Normalization (domain semantic extraction)
 cpac-domains        Domain-aware handlers
 cpac-cas            Constraint-Aware Schema inference
 cpac-archive        Multi-file .cpar archive format
+cpac-dict           Dictionary training (Zstd)
+cpac-ffi            C/C++ FFI bindings
 ```
 
 Compression pipeline: `SSR → Preprocess (transforms) → Entropy coding → Frame encoding`
@@ -236,9 +238,6 @@ cpac benchmark myfile.txt
 # Full: 10 iterations (publication-grade)
 ```
 
-**TBD:** Full benchmark suite with industry-standard corpora (Canterbury, Silesia, Calgary).  
-See [.work/benchmarks/LINKEDIN_REPORT.md](.work/benchmarks/LINKEDIN_REPORT.md) for detailed analysis.
-
 ### Criterion Microbenchmarks
 
 ```bash
@@ -267,10 +266,7 @@ cargo bench -p cpac-engine --bench dag         # DAG compile + execute
 
 ### Near-Term (Signal-Driven, Phase 3+)
 
-All future optimizations are **bottleneck signal-driven**. See [.work/benchmarks/PERFORMANCE_ROADMAP.md](.work/benchmarks/PERFORMANCE_ROADMAP.md) for:
-- 7 tracked bottlenecks with clear trigger criteria
-- Mitigation paths and expected improvements
-- Profiling best practices
+All future optimizations are **bottleneck signal-driven**. See `BENCHMARKING.md` for the full corpus results.
 
 **Top Priorities** (when signals indicate):
 - **Memory pool activation** — When profiling shows >10% time in allocator
@@ -293,8 +289,6 @@ All future optimizations are **bottleneck signal-driven**. See [.work/benchmarks
 - **Hardware offload** — FPGA/ASIC integration for high-throughput
 - **Format versioning** — backward-compatible wire format evolution
 
-See [LEDGER.md](LEDGER.md) for session-by-session development progress.
-
 ## Requirements
 
 - **Rust** 1.75+ stable (tested on 1.93)
@@ -305,11 +299,9 @@ See [LEDGER.md](LEDGER.md) for session-by-session development progress.
 
 - `AGENTS.md` — AI agent onboarding guide
 - `WARP.md` — Warp IDE project rules
-- `LEDGER.md` — Development session ledger
 - `BENCHMARKING.md` — Industry benchmark results and guide
 - `docs/SPEC.md` — Wire format specification
 - `docs/ARCHITECTURE.md` — System architecture
-- `docs/SESSION_8_REPORT.md` — Latest session comprehensive report
 - `CONTRIBUTING.md` — Contribution guidelines
 - `SECURITY.md` — Security policy
 

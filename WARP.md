@@ -9,7 +9,7 @@
 ```bash
 cargo build --workspace           # debug build
 cargo build --release             # release (fat LTO)
-cargo test --workspace            # all tests (~220+)
+cargo test --workspace            # all tests (413+)
 cargo clippy --workspace -- -D warnings  # lint (must pass)
 cargo fmt --all -- --check        # format check
 cargo bench -p cpac-engine        # criterion benchmarks
@@ -62,12 +62,11 @@ Before committing, all of the following must pass:
 ## Git Branch
 - Main development: `main`
 - Feature branches: `feature/<name>`
-- Current: `feature/rust-port` (will merge to `main` when repo moves)
+- Integration/staging: `develop`
 
 ## Key Files to Load
 When starting work on this codebase, load:
 1. `AGENTS.md` — codebase overview, conventions, gotchas
 2. `WARP.md` — this file (project rules)
-3. `LEDGER.md` — session history
-4. `docs/SPEC.md` — wire format reference
-5. `docs/ARCHITECTURE.md` — system design
+3. `docs/SPEC.md` — wire format reference
+4. `docs/ARCHITECTURE.md` — system design

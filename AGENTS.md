@@ -1,12 +1,11 @@
 # CPAC Agent Guide
 
 This is the CPAC compression engine repository. Read this file first when
-onboarding to the codebase. See also `WARP.md` for Warp-specific project
-rules and `LEDGER.md` for development history.
+onboarding to the codebase. See also `WARP.md` for Warp-specific project rules.
 
 ## Workspace Overview
 
-13-crate Cargo workspace under `crates/`. No circular dependencies.
+16-crate Cargo workspace under `crates/`. No circular dependencies.
 
 **Core pipeline** (in compression order):
 - `cpac-types` — `CpacError`, `CompressConfig`, `ResourceConfig`, shared enums
@@ -23,9 +22,12 @@ rules and `LEDGER.md` for development history.
 **Extensions:**
 - `cpac-crypto` — AEAD, KDF, key exchange, `pqc` feature (ML-KEM-768, ML-DSA-65), `hybrid.rs`
 - `cpac-streaming` — CS streaming frame, progress, `mmap.rs` (memmap2), adaptive block sizing
+- `cpac-msn` — Multi-Scale Normalization: domain detection + semantic field extraction (JSON/CSV/XML/YAML/logs/binary)
 - `cpac-domains` — CSV/JSON/XML/YAML/log domain handlers
 - `cpac-cas` — constraint inference, DoF extraction, cost model
 - `cpac-archive` — CPAR multi-file archive format
+- `cpac-dict` — Zstd dictionary training
+- `cpac-ffi` — C/C++ FFI bindings with cbindgen headers
 
 ## Key Entry Points
 
@@ -134,7 +136,7 @@ IDs must match. See `docs/SPEC.md`.
 **CRITICAL**: The repository root must stay clean. Only the following are permitted:
 
 - **Build configuration**: `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `clippy.toml`
-- **Documentation**: `README.md`, `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `AGENTS.md`, `WARP.md`, `LEDGER.md`, `BENCHMARKING.md`
+- **Documentation**: `README.md`, `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `AGENTS.md`, `WARP.md`, `BENCHMARKING.md`
 - **Setup scripts**: `setup.sh`, `setup.ps1`, `env.sh`, `env.ps1`, `pgo-build.sh`, `pgo-build.ps1`
 - **Directories**: `crates/`, `docs/`, `fuzz/`, `python/`, `scripts/`, `target/`, `.work/`
 - **Hidden files**: `.git/`, `.gitignore`, `.github/`
