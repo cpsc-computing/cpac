@@ -8,18 +8,25 @@ CPAC includes comprehensive benchmarking against **industry-standard compression
 
 ### Run Quick Benchmark (< 2 minutes)
 ```bash
-pwsh scripts/run-benchmarks.ps1 -Mode quick
+cpac benchmark .work/benchdata/canterbury/alice29.txt --quick
+cpac benchmark .work/benchdata/silesia/dickens --quick
+cpac benchmark .work/benchdata/logs/loghub-2.0/2k/Linux_2k.log --quick
 ```
 
 ### Run Balanced Benchmark (5-10 minutes)
 ```bash
-pwsh scripts/run-benchmarks.ps1 -Mode balanced
+cpac benchmark .work/benchdata/canterbury/alice29.txt
+cpac benchmark .work/benchdata/silesia/dickens
+cpac benchmark .work/benchdata/logs/loghub-2.0/2k/Linux_2k.log
 ```
 
-### Run Single File
-```bash
-cpac benchmark .work/benchdata/canterbury/alice29.txt --quick
-cpac benchmark .work/benchdata/silesia/dickens
+### Download Corpus Data
+```powershell
+# Default set (Canterbury, Calgary, Silesia, Loghub-2k)
+pwsh scripts/download-corpus.ps1
+
+# Specific corpora
+pwsh scripts/download-corpus.ps1 -Corpus "canterbury,silesia"
 ```
 
 ## Industry-Standard Corpora
@@ -75,18 +82,18 @@ cpac benchmark .work/benchdata/silesia/dickens
 - **Use Case**: Classic text compression benchmark
 - **License**: Public domain
 
-## Benchmark Results (2026-03-02 - Gzip-9 Parity Update)
+## Benchmark Results (2026-03-04 — Session 14, Balanced Mode, 3 iterations)
 
 ### CPAC Gzip = gzip-9 Baseline ✓
 
-**IMPORTANT:** CPAC Gzip backend now uses **consistent level 9 compression** to match the gzip-9 baseline for fair comparison.
+**IMPORTANT:** CPAC Gzip backend uses **consistent level 9 compression** to match the gzip-9 baseline for fair comparison.
 
 | Corpus | CPAC Gzip | gzip-9 | Ratio Match |
 |--------|-----------|--------|-------------|
-| Canterbury alice29.txt | 2.80x @ 8.9 MB/s | 2.80x @ 22.4 MB/s | ✓ Exact |
-| Calgary paper1 | 2.87x @ 11.9 MB/s | 2.87x @ 39.4 MB/s | ✓ Exact |
-| Linux logs | 11.91x @ 44.7 MB/s | 14.52x @ 84.5 MB/s | ✓ Consistent |
-| Apache logs | 15.43x @ 57.5 MB/s | 18.44x @ 95.3 MB/s | ✓ Consistent |
+| Canterbury alice29.txt | 2.80x @ 8.0 MB/s | 2.80x @ 20.5 MB/s | ✓ Exact |
+| Calgary paper1 | 2.87x @ 10.6 MB/s | 2.87x @ 33.8 MB/s | ✓ Exact |
+| Linux logs | 11.91x @ 41.7 MB/s | 14.52x @ 77.6 MB/s | ✓ Consistent |
+| Apache logs | 15.43x @ 49.9 MB/s | 18.44x @ 73.4 MB/s | ✓ Consistent |
 
 ### Comprehensive Corpus Results (Latest)
 
@@ -98,21 +105,19 @@ cpac benchmark .work/benchdata/silesia/dickens
 - **Linux System Logs:** 14.52x (gzip-9), 14.39x (zstd-3)
 
 **Production Speed/Ratio Balance (zstd-3):**
-- OpenStack Cloud Logs: **708.7 MB/s @ 11.59x**
-- Linux System Logs: **496.7 MB/s @ 14.39x**
-- Apache Web Logs: **470.3 MB/s @ 15.91x**
-- HDFS Big Data Logs: **328.7 MB/s @ 5.29x**
-- Silesia dickens: **256.2 MB/s @ 2.77x**
+- OpenStack Cloud Logs: **633.9 MB/s @ 11.59x**
+- Linux System Logs: **466.8 MB/s @ 14.39x**
+- Apache Web Logs: **417.4 MB/s @ 15.91x**
+- Silesia xml: **554.5 MB/s @ 8.41x**
+- Silesia dickens: **206.5 MB/s @ 2.77x**
 
 ### Canterbury Corpus Results
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | CPAC Lzma | Baseline gzip-9 | Baseline zstd-3 | Baseline brotli-11 | Baseline lzma-6 | Best |
 |------|-----------|-------------|-----------|-----------|--------|--------|-----------|--------|------|
-| alice29.txt | 2.67x @ 14 MB/s | 2.97x @ 8 MB/s | **2.80x @ 9 MB/s** | 1.00x @ 15 MB/s | **2.80x @ 22 MB/s** | 2.73x @ 185 MB/s | **3.27x @ 1 MB/s** | 1.83x @ 48 MB/s | **Baseline brotli-11** |
-| asyoulik.txt | 2.49x @ 14 MB/s | 2.68x @ 8 MB/s | 2.56x @ 9 MB/s | 1.00x @ 15 MB/s | 2.56x @ 26 MB/s | 2.50x @ 142 MB/s | **2.93x @ 1 MB/s** | 1.80x @ 44 MB/s | **Baseline brotli-11** |
-| kennedy.xls | 5.84x @ 42 MB/s | 7.26x @ 20 MB/s | 5.12x @ 7 MB/s | 1.13x @ 45 MB/s | 4.92x @ 10 MB/s | **9.21x @ 472 MB/s** | **16.75x @ 1 MB/s** | 2.68x @ 68 MB/s | **Baseline brotli-11** |
-| lcet10.txt | 3.03x @ 15 MB/s | 3.33x @ 9 MB/s | 2.95x @ 10 MB/s | 1.00x @ 16 MB/s | 2.95x @ 26 MB/s | 3.03x @ 239 MB/s | **3.76x @ 1 MB/s** | 1.84x @ 46 MB/s | **Baseline brotli-11** |
-| plrabn12.txt | 2.51x @ 13 MB/s | 2.70x @ 8 MB/s | 2.48x @ 7 MB/s | 1.00x @ 14 MB/s | 2.48x @ 16 MB/s | 2.51x @ 214 MB/s | **2.95x @ 1 MB/s** | 1.87x @ 47 MB/s | **Baseline brotli-11** |
+| alice29.txt | 2.67x @ 12 MB/s | 2.97x @ 7 MB/s | **2.80x @ 8 MB/s** | 1.00x @ 14 MB/s | **2.80x @ 21 MB/s** | 2.73x @ 174 MB/s | **3.27x @ 1 MB/s** | 1.83x @ 41 MB/s | **Baseline brotli-11** |
+| kennedy.xls | 5.84x @ 36 MB/s | 7.26x @ 18 MB/s | 5.12x @ 7 MB/s | 1.13x @ 38 MB/s | 4.92x @ 9 MB/s | **9.21x @ 361 MB/s** | **16.75x @ 1 MB/s** | 2.68x @ 60 MB/s | **Baseline brotli-11** |
+| plrabn12.txt | 2.51x @ 12 MB/s | 2.70x @ 7 MB/s | 2.48x @ 7 MB/s | 1.00x @ 12 MB/s | 2.48x @ 12 MB/s | 2.51x @ 138 MB/s | **2.95x @ 1 MB/s** | 1.87x @ 42 MB/s | **Baseline brotli-11** |
 
 **Key Findings:**
 - ✅ **CPAC Gzip = gzip-9 parity** on alice29.txt (2.80x exact match)
@@ -124,7 +129,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | CPAC Lzma | Baseline gzip-9 | Baseline zstd-3 | Baseline brotli-11 | Baseline lzma-6 | Best |
 |------|-----------|-------------|-----------|-----------|--------|--------|-----------|--------|------|
-| paper1 | 2.72x @ 16 MB/s | 2.93x @ 6 MB/s | **2.87x @ 12 MB/s** | 1.00x @ 17 MB/s | **2.87x @ 39 MB/s** | 2.73x @ 137 MB/s | **3.44x @ 1 MB/s** | 1.70x @ 44 MB/s | **Baseline brotli-11** |
+| paper1 | 2.72x @ 14 MB/s | 2.93x @ 6 MB/s | **2.87x @ 11 MB/s** | 1.00x @ 16 MB/s | **2.87x @ 34 MB/s** | 2.73x @ 112 MB/s | **3.44x @ 1 MB/s** | 1.70x @ 40 MB/s | **Baseline brotli-11** |
 
 **Key Findings:**
 - ✅ **CPAC Gzip = gzip-9 parity** on paper1 (2.87x exact match)
@@ -135,9 +140,9 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | CPAC Lzma | Baseline gzip-9 | Baseline zstd-3 | Baseline brotli-11 | Baseline lzma-6 | Best |
 |------|-----------|-------------|-----------|-----------|--------|--------|-----------|--------|------|
-| dickens (10 MB) | TBD | TBD | TBD | TBD | 2.64x @ 20 MB/s | 2.77x @ 256 MB/s | **3.57x @ 1 MB/s** | 1.84x @ 46 MB/s | **Baseline brotli-11** |
+| dickens (10 MB) | 2.73x @ 58 MB/s | 3.01x @ 35 MB/s | 2.63x @ 38 MB/s | 1.00x @ 58 MB/s | 2.64x @ 18 MB/s | 2.77x @ 207 MB/s | **3.57x @ 1 MB/s** | 1.84x @ 42 MB/s | **Baseline brotli-11** |
 | mozilla (51 MB) | 2.26x @ 82 MB/s | 2.46x @ 35 MB/s | 2.29x @ 20 MB/s | 1.00x @ 86 MB/s | 2.68x @ 17 MB/s | **2.79x @ 351 MB/s** | **3.63x @ 1 MB/s** | 1.79x @ 43 MB/s | **Baseline brotli-11** |
-| xml (5 MB) | 6.09x @ 83 MB/s | 6.53x @ 37 MB/s | 5.93x @ 28 MB/s | 1.00x @ 88 MB/s | 8.05x @ 54 MB/s | **8.41x @ 680 MB/s** | **12.42x @ 1 MB/s** | 1.89x @ 49 MB/s | **Baseline brotli-11** |
+| xml (5 MB) | 6.09x @ 85 MB/s | 6.53x @ 49 MB/s | 5.93x @ 41 MB/s | 2.87x @ 87 MB/s | 8.05x @ 47 MB/s | **8.41x @ 555 MB/s** | **12.42x @ 1 MB/s** | 1.89x @ 44 MB/s | **Baseline brotli-11** |
 
 **Key Findings:**
 - ✅ **brotli-11 exceptional on XML** (12.42x ratio)
@@ -157,7 +162,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | CPAC Lzma | Baseline gzip-9 | Baseline zstd-3 | Baseline brotli-11 | Baseline lzma-6 | Best |
 |------|-----------|-------------|-----------|-----------|--------|--------|-----------|--------|------|
-| Linux_2k.log (0.20 MB) | 11.53x @ 59 MB/s | 12.12x @ 24 MB/s | **11.91x @ 45 MB/s** | 5.83x @ 70 MB/s | 14.52x @ 85 MB/s | 14.39x @ 497 MB/s | **20.92x @ 1 MB/s** | 1.84x @ 44 MB/s | **Baseline brotli-11** |
+| Linux_2k.log (0.20 MB) | 11.53x @ 52 MB/s | 12.12x @ 23 MB/s | **11.91x @ 42 MB/s** | 5.83x @ 65 MB/s | 14.52x @ 78 MB/s | 14.39x @ 467 MB/s | **20.92x @ 1 MB/s** | 1.84x @ 41 MB/s | **Baseline brotli-11** |
 
 **Key Findings:**
 - ✅ **brotli-11 exceptional** on system logs (20.92x ratio)
@@ -168,7 +173,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | CPAC Lzma | Baseline gzip-9 | Baseline zstd-3 | Baseline brotli-11 | Baseline lzma-6 | Best |
 |------|-----------|-------------|-----------|-----------|--------|--------|-----------|--------|------|
-| Apache_2k.log (0.16 MB) | 15.02x @ 68 MB/s | 15.55x @ 26 MB/s | **15.43x @ 58 MB/s** | 7.63x @ 75 MB/s | 18.44x @ 95 MB/s | 15.91x @ 470 MB/s | **25.07x @ 1 MB/s** | 1.86x @ 53 MB/s | **Baseline brotli-11 🏆** |
+| Apache_2k.log (0.16 MB) | 15.02x @ 61 MB/s | 15.55x @ 22 MB/s | **15.43x @ 50 MB/s** | 7.63x @ 66 MB/s | 18.44x @ 73 MB/s | 15.91x @ 417 MB/s | **25.07x @ 1 MB/s** | 1.86x @ 47 MB/s | **Baseline brotli-11 🏆** |
 
 **Key Findings:**
 - ✅ **brotli-11 wins** with 25.07x (highest ratio across all corpora) 🏆
@@ -190,7 +195,7 @@ cpac benchmark .work/benchdata/silesia/dickens
 
 | File | CPAC Zstd | CPAC Brotli | CPAC Gzip | CPAC Lzma | Baseline gzip-9 | Baseline zstd-3 | Baseline brotli-11 | Baseline lzma-6 | Best |
 |------|-----------|-------------|-----------|-----------|--------|--------|-----------|--------|------|
-| OpenStack_2k.log (0.57 MB) | 9.27x @ 49 MB/s | 10.47x @ 25 MB/s | **9.76x @ 17 MB/s** | 3.45x @ 54 MB/s | 11.0x @ 136 MB/s | **11.59x @ 709 MB/s** | 15.17x @ 1 MB/s | 1.66x @ 40 MB/s | **Baseline brotli-11** (ratio), **Baseline zstd-3** (speed) |
+| OpenStack_2k.log (0.57 MB) | 9.27x @ 44 MB/s | 10.47x @ 23 MB/s | **9.76x @ 16 MB/s** | 3.45x @ 48 MB/s | 11.0x @ 126 MB/s | **11.59x @ 634 MB/s** | 15.17x @ 1 MB/s | 1.66x @ 36 MB/s | **Baseline brotli-11** (ratio), **Baseline zstd-3** (speed) |
 
 **Key Findings:**
 - ✅ **zstd-3 fastest overall** (709 MB/s at 11.59x) - best production speed
@@ -224,9 +229,8 @@ When citing CPAC performance:
 
 ### For Users
 - **Quick validation**: `cpac benchmark file.txt --quick`
-- **Corpus benchmarks**: `pwsh scripts/run-corpus-benchmarks.ps1`
-- **Media recompression**: `pwsh scripts/test-media-recompression.ps1`
-- **Results location**: `.work/benchmarks/CORPUS_BENCHMARK_SUMMARY.md`
+- **Balanced benchmark**: `cpac benchmark file.dat` (3 iterations, all 4 baselines)
+- **Download corpora**: `pwsh scripts/download-corpus.ps1`
 
 ## Running Your Own Benchmarks
 
@@ -249,21 +253,17 @@ cpac benchmark .work/benchdata/silesia/mozilla --quick
 cpac benchmark .work/benchdata/silesia/xml
 ```
 
-### Automated Batch Benchmarks
+### Batch Benchmarks (Manual)
 ```powershell
-# Quick mode: 5 files, 3 iterations, 2 baselines (~2 min)
-pwsh scripts/run-benchmarks.ps1 -Mode quick
+# Quick mode — all representative files
+$base = ".work/benchdata"
+@("$base/canterbury/alice29.txt","$base/silesia/dickens","$base/logs/loghub-2.0/2k/Linux_2k.log") |
+  ForEach-Object { cpac benchmark $_ --quick }
 
-# Balanced mode: 13 files, 10 iterations, 4 baselines (~10 min)
-pwsh scripts/run-benchmarks.ps1 -Mode balanced
-
-# Full mode: All files, 50 iterations, all baselines (~2-4 hours)
-pwsh scripts/run-benchmarks.ps1 -Mode full
+# Balanced mode — same files, 3 iterations + all 4 baselines
+@("$base/canterbury/alice29.txt","$base/silesia/dickens","$base/logs/loghub-2.0/2k/Linux_2k.log") |
+  ForEach-Object { cpac benchmark $_ }
 ```
-
-Results saved to:
-- `.work/benchmark_results/results_{timestamp}.csv` - Raw data
-- `.work/benchmark_results/summary_{timestamp}.md` - Formatted report
 
 ## Advanced Usage
 
@@ -329,7 +329,7 @@ MSN performs deep semantic extraction on structured formats (JSON, CSV, XML, log
 
 ## Latest Benchmark Results (Real-World Corpora)
 
-**Date**: March 3, 2026 | **Version**: 0.1.0 | **Session**: 11 | **Baselines**: gzip-9, zstd-3, brotli-11, lzma-6
+**Date**: March 4, 2026 | **Version**: 0.1.0 | **Session**: 14 | **Baselines**: gzip-9, zstd-3, brotli-11, lzma-6
 
 **All results below are from the Rust implementation using industry-standard corpora.**
 **Large-file frame errors resolved** — all Silesia files now benchmark cleanly.
@@ -435,6 +435,6 @@ When publishing results using CPAC benchmarks, please cite:
 
 ---
 
-**Last Updated**: 2026-03-03 (Session 11)  
+**Last Updated**: 2026-03-04 (Session 14 — pedantic cleanup, MSN streaming, JSONL columnar fix)  
 **CPAC Version**: 0.1.0  
-**Benchmark Suite Version**: 1.0
+**Benchmark Suite Version**: 1.1
