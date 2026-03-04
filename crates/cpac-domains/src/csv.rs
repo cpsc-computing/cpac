@@ -7,7 +7,7 @@ use cpac_types::{CpacError, CpacResult, CpacType, DomainHint};
 use crate::DomainHandler;
 
 /// Detect if data looks like CSV.
-#[must_use] 
+#[must_use]
 pub fn detect_csv(data: &[u8]) -> bool {
     let sample = &data[..data.len().min(4096)];
     let text = String::from_utf8_lossy(sample);

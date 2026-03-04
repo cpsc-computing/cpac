@@ -27,26 +27,36 @@ impl Domain for SyslogDomain {
         if let Some(fname) = filename {
             if fname.contains("syslog")
                 || std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("log")) {
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("log"))
+            {
                 return 0.6;
             }
         }
 
         let text = std::str::from_utf8(data).unwrap_or("");
-        
+
         // Look for RFC 5424 priority pattern: <NUMBER>
-        let has_priority = text.lines().take(10).filter(|line| {
-            line.starts_with('<') && line.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
-        }).count() > 5;
+        let has_priority = text
+            .lines()
+            .take(10)
+            .filter(|line| {
+                line.starts_with('<') && line.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
+            })
+            .count()
+            > 5;
 
         if has_priority {
             return 0.8;
         }
 
         // Look for common syslog patterns
-        let has_timestamp = text.lines().take(10).filter(|line| {
-            line.contains('T') && line.contains(':') && line.contains('-')
-        }).count() > 5;
+        let has_timestamp = text
+            .lines()
+            .take(10)
+            .filter(|line| line.contains('T') && line.contains(':') && line.contains('-'))
+            .count()
+            > 5;
 
         if has_timestamp {
             return 0.5;
@@ -112,12 +122,24 @@ impl Domain for SyslogDomain {
         }
 
         let mut fields = HashMap::new();
-        fields.insert("hostnames".to_string(), serde_json::Value::Array(
-            repeated_hostnames.iter().map(|(h, _)| serde_json::Value::String(h.clone())).collect()
-        ));
-        fields.insert("appnames".to_string(), serde_json::Value::Array(
-            repeated_appnames.iter().map(|(a, _)| serde_json::Value::String(a.clone())).collect()
-        ));
+        fields.insert(
+            "hostnames".to_string(),
+            serde_json::Value::Array(
+                repeated_hostnames
+                    .iter()
+                    .map(|(h, _)| serde_json::Value::String(h.clone()))
+                    .collect(),
+            ),
+        );
+        fields.insert(
+            "appnames".to_string(),
+            serde_json::Value::Array(
+                repeated_appnames
+                    .iter()
+                    .map(|(a, _)| serde_json::Value::String(a.clone()))
+                    .collect(),
+            ),
+        );
 
         Ok(ExtractionResult {
             fields,
@@ -128,21 +150,33 @@ impl Domain for SyslogDomain {
     }
 
     fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
-        let hostnames_value = result.fields.get("hostnames")
+        let hostnames_value = result
+            .fields
+            .get("hostnames")
             .ok_or_else(|| CpacError::DecompressFailed("Missing hostnames".into()))?;
-        let appnames_value = result.fields.get("appnames")
+        let appnames_value = result
+            .fields
+            .get("appnames")
             .ok_or_else(|| CpacError::DecompressFailed("Missing appnames".into()))?;
 
         let hostnames: Vec<String> = if let serde_json::Value::Array(arr) = hostnames_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
-            return Err(CpacError::DecompressFailed("Invalid hostnames format".into()));
+            return Err(CpacError::DecompressFailed(
+                "Invalid hostnames format".into(),
+            ));
         };
 
         let appnames: Vec<String> = if let serde_json::Value::Array(arr) = appnames_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
-            return Err(CpacError::DecompressFailed("Invalid appnames format".into()));
+            return Err(CpacError::DecompressFailed(
+                "Invalid appnames format".into(),
+            ));
         };
 
         let mut reconstructed = std::str::from_utf8(&result.residual)

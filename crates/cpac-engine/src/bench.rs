@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
 //! Benchmarking framework: `BenchmarkRunner`, `CorpusManager`, report generation.
 
-use cpac_types::{Backend, CompressConfig, CpacResult, CpacError};
+use cpac_types::{Backend, CompressConfig, CpacError, CpacResult};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -44,7 +44,7 @@ pub enum BaselineEngine {
 }
 
 impl BaselineEngine {
-    #[must_use] 
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             BaselineEngine::Gzip9 => "gzip-9",
@@ -54,7 +54,7 @@ impl BaselineEngine {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn all() -> &'static [BaselineEngine] {
         &[
             BaselineEngine::Gzip9,
@@ -90,7 +90,7 @@ pub enum BenchProfile {
 }
 
 impl BenchProfile {
-    #[must_use] 
+    #[must_use]
     pub fn iterations(self) -> usize {
         match self {
             BenchProfile::Quick => 1,
@@ -109,7 +109,7 @@ pub struct CorpusManager;
 
 impl CorpusManager {
     /// Scan a directory recursively, returning files up to `max_size_mb`.
-    #[must_use] 
+    #[must_use]
     pub fn scan_directory(dir: &Path, max_size_mb: Option<u64>) -> Vec<PathBuf> {
         let max_bytes = max_size_mb.map(|mb| mb * 1024 * 1024);
         let mut files = Vec::new();
@@ -119,7 +119,9 @@ impl CorpusManager {
     }
 
     fn scan_recursive(dir: &Path, out: &mut Vec<PathBuf>, max_bytes: Option<u64>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return; };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -170,7 +172,7 @@ impl Default for BenchmarkRunner {
 }
 
 impl BenchmarkRunner {
-    #[must_use] 
+    #[must_use]
     pub fn new(profile: BenchProfile) -> Self {
         Self {
             profile,
@@ -286,7 +288,7 @@ impl BenchmarkRunner {
     }
 
     /// Benchmark all files in a directory with CPAC backends + baselines.
-    #[must_use] 
+    #[must_use]
     pub fn bench_directory(&self, dir: &Path, max_size_mb: Option<u64>) -> Vec<BenchResult> {
         let files = CorpusManager::scan_directory(dir, max_size_mb);
         let mut results = Vec::new();
@@ -308,7 +310,7 @@ impl BenchmarkRunner {
     }
 
     /// Summarize results into a corpus summary.
-    #[must_use] 
+    #[must_use]
     pub fn summarize(corpus_name: &str, results: &[BenchResult]) -> CorpusSummary {
         let total_original: usize = results.iter().map(|r| r.original_size).sum();
         let total_compressed: usize = results.iter().map(|r| r.compressed_size).sum();
@@ -511,8 +513,7 @@ pub fn save_baseline(path: &Path, results: &[BenchResult]) -> CpacResult<()> {
 pub fn load_baseline(path: &Path) -> CpacResult<Vec<BaselineEntry>> {
     let json = std::fs::read_to_string(path)
         .map_err(|e| CpacError::IoError(format!("baseline read: {e}")))?;
-    serde_json::from_str(&json)
-        .map_err(|e| CpacError::IoError(format!("baseline parse: {e}")))
+    serde_json::from_str(&json).map_err(|e| CpacError::IoError(format!("baseline parse: {e}")))
 }
 
 /// Check current results against a stored baseline for regressions.
@@ -521,7 +522,7 @@ pub fn load_baseline(path: &Path) -> CpacResult<Vec<BaselineEntry>> {
 /// - `speed_tolerance`: fraction drop allowed (e.g. `0.10` = 10% drop OK)
 ///
 /// Returns a list of violations (empty = no regressions).
-#[must_use] 
+#[must_use]
 pub fn check_regressions(
     baseline: &[BaselineEntry],
     current: &[BenchResult],
@@ -537,9 +538,10 @@ pub fn check_regressions(
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
 
-        let Some(entry) = baseline.iter().find(|e| {
-            e.file_name == file_name && e.engine_label == result.engine_label
-        }) else {
+        let Some(entry) = baseline
+            .iter()
+            .find(|e| e.file_name == file_name && e.engine_label == result.engine_label)
+        else {
             continue; // No baseline for this entry — skip
         };
 
@@ -563,7 +565,12 @@ pub fn check_regressions(
             }
         };
 
-        if let Some(v) = check(RegressionKind::Ratio, entry.ratio, result.ratio, ratio_tolerance) {
+        if let Some(v) = check(
+            RegressionKind::Ratio,
+            entry.ratio,
+            result.ratio,
+            ratio_tolerance,
+        ) {
             violations.push(v);
         }
         if let Some(v) = check(
@@ -592,17 +599,42 @@ pub fn check_regressions(
 // ---------------------------------------------------------------------------
 
 /// Generate a Markdown report from a corpus summary.
-#[must_use] 
+#[must_use]
 pub fn generate_markdown_report(summary: &CorpusSummary) -> String {
     let mut md = String::new();
     write!(md, "# CPAC Benchmark Report: {}\n\n", summary.corpus_name).ok();
     writeln!(md, "- **Total original**: {} bytes", summary.total_original).ok();
-    writeln!(md, "- **Total compressed**: {} bytes", summary.total_compressed).ok();
+    writeln!(
+        md,
+        "- **Total compressed**: {} bytes",
+        summary.total_compressed
+    )
+    .ok();
     writeln!(md, "- **Overall ratio**: {:.2}x", summary.overall_ratio).ok();
-    writeln!(md, "- **Mean compress throughput**: {:.1} MB/s", summary.mean_compress_mbs).ok();
-    writeln!(md, "- **Mean decompress throughput**: {:.1} MB/s", summary.mean_decompress_mbs).ok();
-    writeln!(md, "- **Lossless verified**: {}", if summary.all_lossless { "YES" } else { "FAIL" }).ok();
-    write!(md, "- **Peak memory (est.)**: {:.1} MB\n\n", summary.total_peak_memory_bytes as f64 / 1_048_576.0).ok();
+    writeln!(
+        md,
+        "- **Mean compress throughput**: {:.1} MB/s",
+        summary.mean_compress_mbs
+    )
+    .ok();
+    writeln!(
+        md,
+        "- **Mean decompress throughput**: {:.1} MB/s",
+        summary.mean_decompress_mbs
+    )
+    .ok();
+    writeln!(
+        md,
+        "- **Lossless verified**: {}",
+        if summary.all_lossless { "YES" } else { "FAIL" }
+    )
+    .ok();
+    write!(
+        md,
+        "- **Peak memory (est.)**: {:.1} MB\n\n",
+        summary.total_peak_memory_bytes as f64 / 1_048_576.0
+    )
+    .ok();
     md.push_str("## Per-file results\n\n");
     for r in &summary.results {
         writeln!(
@@ -615,13 +647,14 @@ pub fn generate_markdown_report(summary: &CorpusSummary) -> String {
             r.decompress_throughput_mbs,
             r.peak_memory_bytes as f64 / 1_048_576.0,
             r.lossless_verified,
-        ).ok();
+        )
+        .ok();
     }
     md
 }
 
 /// Generate a CSV export from results.
-#[must_use] 
+#[must_use]
 pub fn generate_csv_export(results: &[BenchResult]) -> String {
     let mut csv = String::from(
         "file,engine,original_bytes,compressed_bytes,ratio,compress_ms,decompress_ms,compress_mbs,decompress_mbs,peak_memory_bytes,lossless\n",
@@ -641,7 +674,8 @@ pub fn generate_csv_export(results: &[BenchResult]) -> String {
             r.decompress_throughput_mbs,
             r.peak_memory_bytes,
             r.lossless_verified,
-        ).ok();
+        )
+        .ok();
     }
     csv
 }

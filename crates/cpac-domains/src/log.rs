@@ -14,9 +14,11 @@ const LOG_LEVELS: &[&str] = &[
 ];
 
 /// Detect log-style content.
-#[must_use] 
+#[must_use]
 pub fn detect_log(data: &[u8]) -> bool {
-    let Ok(text) = std::str::from_utf8(&data[..data.len().min(1024)]) else { return false; };
+    let Ok(text) = std::str::from_utf8(&data[..data.len().min(1024)]) else {
+        return false;
+    };
     let mut log_lines = 0;
     let mut total = 0;
     for line in text.lines().take(10) {

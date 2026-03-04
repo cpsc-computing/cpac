@@ -15,7 +15,7 @@ pub const TRANSFORM_ID: u8 = 11;
 /// Try to parse a list of strings as integers.
 ///
 /// Returns `(success, values)`. Empty strings map to 0.
-#[must_use] 
+#[must_use]
 pub fn parse_int_column(strings: &[String]) -> (bool, Vec<i64>) {
     let mut values = Vec::with_capacity(strings.len());
     for s in strings {
@@ -110,7 +110,10 @@ impl TransformNode for ParseIntTransform {
     fn decode(&self, input: CpacType, _metadata: &[u8]) -> CpacResult<CpacType> {
         match input {
             CpacType::IntColumn { values, .. } => {
-                let strings: Vec<String> = values.iter().map(std::string::ToString::to_string).collect();
+                let strings: Vec<String> = values
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect();
                 let total_bytes: usize = strings.iter().map(std::string::String::len).sum();
                 Ok(CpacType::StringColumn {
                     values: strings,

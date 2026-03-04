@@ -10,7 +10,7 @@
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     clippy::cast_possible_truncation,
-    clippy::unnecessary_wraps,
+    clippy::unnecessary_wraps
 )]
 
 pub mod aead;

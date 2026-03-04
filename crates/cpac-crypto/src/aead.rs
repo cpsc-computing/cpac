@@ -16,7 +16,7 @@ pub enum AeadAlgorithm {
 
 impl AeadAlgorithm {
     /// Wire ID for this algorithm.
-    #[must_use] 
+    #[must_use]
     pub fn id(self) -> u8 {
         match self {
             AeadAlgorithm::ChaCha20Poly1305 => 1,
@@ -36,7 +36,7 @@ impl AeadAlgorithm {
     }
 
     /// Nonce size in bytes.
-    #[must_use] 
+    #[must_use]
     pub fn nonce_size(self) -> usize {
         12 // Both use 96-bit nonces
     }

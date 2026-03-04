@@ -50,7 +50,7 @@ pub struct SSRResult {
 /// let result = analyze(&random);
 /// assert_eq!(result.track, Track::Track2);
 /// ```
-#[must_use] 
+#[must_use]
 pub fn analyze(data: &[u8]) -> SSRResult {
     let data_size = data.len();
 

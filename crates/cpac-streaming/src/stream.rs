@@ -29,7 +29,7 @@ const FLAG_MSN_ENABLED: u16 = 1 << 0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompressorState {
     Init,
-    Detecting,  // MSN detection phase
+    Detecting, // MSN detection phase
     Processing,
     Finalized,
 }
@@ -66,7 +66,12 @@ impl StreamingCompressor {
     /// # Errors
     /// Returns error if configuration is invalid.
     pub fn new(config: CompressConfig) -> CpacResult<Self> {
-        Self::with_options(config, crate::MsnConfig::disabled(), DEFAULT_STREAM_BLOCK, DEFAULT_MAX_BUFFER)
+        Self::with_options(
+            config,
+            crate::MsnConfig::disabled(),
+            DEFAULT_STREAM_BLOCK,
+            DEFAULT_MAX_BUFFER,
+        )
     }
 
     /// Create compressor with custom block size and max buffer.
@@ -237,10 +242,7 @@ impl StreamingCompressor {
         let compressed = if let Some(meta) = self.msn_metadata.as_ref() {
             // msn_metadata and input_buffer are disjoint fields — Rust's NLL
             // allows borrowing both simultaneously.
-            let msn_result = cpac_msn::extract_with_metadata(
-                &self.input_buffer[..bs],
-                meta,
-            )?;
+            let msn_result = cpac_msn::extract_with_metadata(&self.input_buffer[..bs], meta)?;
             if msn_result.applied {
                 cpac_engine::compress(&msn_result.residual, &inner_config)?.data
             } else {
@@ -270,10 +272,7 @@ impl StreamingCompressor {
                 ..self.config.clone()
             };
             let compressed = if let Some(meta) = self.msn_metadata.as_ref() {
-                let msn_result = cpac_msn::extract_with_metadata(
-                    &self.input_buffer,
-                    meta,
-                )?;
+                let msn_result = cpac_msn::extract_with_metadata(&self.input_buffer, meta)?;
                 if msn_result.applied {
                     cpac_engine::compress(&msn_result.residual, &inner_config)?.data
                 } else {
@@ -315,7 +314,11 @@ impl StreamingCompressor {
         // [CS][version][flags:2][num_blocks:4][orig_size:8][block_size:4][msn_len:2][msn_metadata][blocks...]
         let num_blocks = self.compressed_blocks.len();
         let total_payload: usize = self.compressed_blocks.iter().map(|b| 4 + b.len()).sum();
-        let flags: u16 = if self.msn_metadata.is_some() { FLAG_MSN_ENABLED } else { 0 };
+        let flags: u16 = if self.msn_metadata.is_some() {
+            FLAG_MSN_ENABLED
+        } else {
+            0
+        };
         let header_size = 2 + 1 + 2 + 4 + 8 + 4 + 2 + msn_bytes.len();
         let mut frame = Vec::with_capacity(header_size + total_payload);
 
@@ -476,7 +479,7 @@ impl StreamingDecompressor {
                     let _len_bytes = self.input_buffer.drain(..4).collect::<Vec<u8>>();
                     let block_data = self.input_buffer.drain(..block_len).collect::<Vec<u8>>();
                     let result = cpac_engine::decompress(&block_data)?;
-                    
+
                     // Reconstruct original data from residual using MSN metadata
                     let reconstructed = if let Some(ref metadata) = self.msn_metadata {
                         let msn_result = metadata.clone().with_residual(result.data);
@@ -484,7 +487,7 @@ impl StreamingDecompressor {
                     } else {
                         result.data
                     };
-                    
+
                     self.output_buffer.extend_from_slice(&reconstructed);
                     self.blocks_processed += 1;
                 }
@@ -501,7 +504,7 @@ impl StreamingDecompressor {
         if self.input_buffer[2] != STREAM_VERSION {
             return Err(CpacError::InvalidFrame("unsupported version".into()));
         }
-        
+
         let flags = u16::from_le_bytes([self.input_buffer[3], self.input_buffer[4]]);
         self.num_blocks = u32::from_le_bytes([
             self.input_buffer[5],
@@ -526,10 +529,10 @@ impl StreamingDecompressor {
             self.input_buffer[20],
         ]) as usize;
         let msn_len = u16::from_le_bytes([self.input_buffer[21], self.input_buffer[22]]) as usize;
-        
+
         // Drain header bytes (23 bytes base)
         self.input_buffer.drain(..23);
-        
+
         // Parse MSN metadata if present
         if flags & FLAG_MSN_ENABLED != 0 {
             if self.input_buffer.len() < msn_len {
@@ -541,7 +544,7 @@ impl StreamingDecompressor {
                     .map_err(|e| CpacError::InvalidFrame(format!("MSN deserialize: {e}")))?,
             );
         }
-        
+
         Ok(())
     }
 
@@ -553,7 +556,7 @@ impl StreamingDecompressor {
     }
 
     /// Check if decompression is complete.
-    #[must_use] 
+    #[must_use]
     pub fn is_done(&self) -> bool {
         self.state == DecompressorState::Done
     }
@@ -620,7 +623,8 @@ mod tests {
     fn streaming_incremental() {
         let config = CompressConfig::default();
         let msn_config = crate::MsnConfig::disabled();
-        let mut comp = StreamingCompressor::with_options(config, msn_config, 512, 8 * 1024 * 1024).unwrap();
+        let mut comp =
+            StreamingCompressor::with_options(config, msn_config, 512, 8 * 1024 * 1024).unwrap();
         for _ in 0..10 {
             comp.write(&vec![0u8; 256]).unwrap();
         }

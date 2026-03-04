@@ -142,7 +142,7 @@ pub fn field_lz_decode(data: &[u8]) -> CpacResult<Vec<u8>> {
 }
 
 /// Detect repeating field patterns (for preprocess heuristic).
-#[must_use] 
+#[must_use]
 pub fn detect_repeating_fields(data: &[u8], width: usize) -> f64 {
     let n = data.len();
     if n < width * 8 {

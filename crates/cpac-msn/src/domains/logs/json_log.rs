@@ -27,19 +27,24 @@ impl Domain for JsonLogDomain {
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
             if std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("jsonl"))
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("jsonl"))
                 || std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("ndjson")) {
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("ndjson"))
+            {
                 return 0.9;
             }
         }
 
         let text = std::str::from_utf8(data).unwrap_or("");
-        
+
         // Check if multiple lines are valid JSON objects
-        let valid_json_lines = text.lines().take(10).filter(|line| {
-            !line.trim().is_empty() && serde_json::from_str::<Value>(line).is_ok()
-        }).count();
+        let valid_json_lines = text
+            .lines()
+            .take(10)
+            .filter(|line| !line.trim().is_empty() && serde_json::from_str::<Value>(line).is_ok())
+            .count();
 
         if valid_json_lines >= 5 {
             return 0.8;
@@ -93,10 +98,19 @@ impl Domain for JsonLogDomain {
         let has_trailing_newline = text.ends_with('\n');
 
         let mut fields = HashMap::new();
-        fields.insert("keys".to_string(), Value::Array(
-            repeated_keys.iter().map(|(k, _)| Value::String(k.clone())).collect()
-        ));
-        fields.insert("trailing_newline".to_string(), Value::Bool(has_trailing_newline));
+        fields.insert(
+            "keys".to_string(),
+            Value::Array(
+                repeated_keys
+                    .iter()
+                    .map(|(k, _)| Value::String(k.clone()))
+                    .collect(),
+            ),
+        );
+        fields.insert(
+            "trailing_newline".to_string(),
+            Value::Bool(has_trailing_newline),
+        );
 
         Ok(ExtractionResult {
             fields,
@@ -139,10 +153,7 @@ impl Domain for JsonLogDomain {
             .collect();
 
         // Split at the last '\n' so we only process complete lines.
-        let split_pos = data
-            .iter()
-            .rposition(|&b| b == b'\n')
-            .map_or(0, |p| p + 1);
+        let split_pos = data.iter().rposition(|&b| b == b'\n').map_or(0, |p| p + 1);
         let complete_data = &data[..split_pos];
         let suffix = &data[split_pos..];
 
@@ -198,11 +209,15 @@ impl Domain for JsonLogDomain {
         }
 
         // --- Legacy (non-streaming) path ---
-        let keys_value = result.fields.get("keys")
+        let keys_value = result
+            .fields
+            .get("keys")
             .ok_or_else(|| CpacError::DecompressFailed("Missing keys".into()))?;
 
         let keys: Vec<String> = if let Value::Array(arr) = keys_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
             return Err(CpacError::DecompressFailed("Invalid keys format".into()));
         };
@@ -210,7 +225,9 @@ impl Domain for JsonLogDomain {
         let text = std::str::from_utf8(&result.residual)
             .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?;
 
-        let has_trailing_newline = result.fields.get("trailing_newline")
+        let has_trailing_newline = result
+            .fields
+            .get("trailing_newline")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
 
@@ -326,15 +343,15 @@ fn compact_value(value: &Value, key_map: &HashMap<String, u32>) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let new_key = key_map.get(k).map_or_else(|| k.clone(), |idx| format!("$L{idx}"));
+                    let new_key = key_map
+                        .get(k)
+                        .map_or_else(|| k.clone(), |idx| format!("$L{idx}"));
                     (new_key, compact_value(v, key_map))
                 })
                 .collect();
             Value::Object(new_map)
         }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(|v| compact_value(v, key_map)).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.iter().map(|v| compact_value(v, key_map)).collect()),
         _ => value.clone(),
     }
 }
@@ -345,7 +362,8 @@ fn expand_value(value: &Value, keys: &[String]) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let orig_key = k.strip_prefix("$L")
+                    let orig_key = k
+                        .strip_prefix("$L")
                         .and_then(|s| s.parse::<usize>().ok())
                         .and_then(|idx| keys.get(idx).cloned())
                         .unwrap_or_else(|| k.clone());
@@ -354,9 +372,7 @@ fn expand_value(value: &Value, keys: &[String]) -> Value {
                 .collect();
             Value::Object(new_map)
         }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(|v| expand_value(v, keys)).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.iter().map(|v| expand_value(v, keys)).collect()),
         _ => value.clone(),
     }
 }
@@ -368,17 +384,20 @@ mod tests {
     #[test]
     fn json_log_domain_roundtrip() {
         let domain = JsonLogDomain;
-        let data = b"{\"level\":\"info\",\"msg\":\"test1\"}\n{\"level\":\"error\",\"msg\":\"test2\"}";
+        let data =
+            b"{\"level\":\"info\",\"msg\":\"test1\"}\n{\"level\":\"error\",\"msg\":\"test2\"}";
 
         let result = domain.extract(data).unwrap();
         let reconstructed = domain.reconstruct(&result).unwrap();
 
         // Parse both to verify semantic equivalence
-        let orig_lines: Vec<Value> = std::str::from_utf8(data).unwrap()
+        let orig_lines: Vec<Value> = std::str::from_utf8(data)
+            .unwrap()
             .lines()
             .filter_map(|l| serde_json::from_str(l).ok())
             .collect();
-        let recon_lines: Vec<Value> = std::str::from_utf8(&reconstructed).unwrap()
+        let recon_lines: Vec<Value> = std::str::from_utf8(&reconstructed)
+            .unwrap()
             .lines()
             .filter_map(|l| serde_json::from_str(l).ok())
             .collect();
@@ -399,8 +418,10 @@ mod tests {
         // Residual must start with 0x01 marker, suffix_len should be 0
         assert_eq!(result.residual[0], 0x01);
         let suffix_len = u32::from_le_bytes([
-            result.residual[1], result.residual[2],
-            result.residual[3], result.residual[4],
+            result.residual[1],
+            result.residual[2],
+            result.residual[3],
+            result.residual[4],
         ]);
         assert_eq!(suffix_len, 0);
 
@@ -419,13 +440,17 @@ mod tests {
         let data: Vec<u8> = [complete_part.as_slice(), incomplete_part.as_slice()].concat();
 
         let detection = domain.extract(complete_part).unwrap();
-        let result = domain.extract_with_fields(&data, &detection.fields).unwrap();
+        let result = domain
+            .extract_with_fields(&data, &detection.fields)
+            .unwrap();
 
         // Residual starts with 0x01; suffix_len == incomplete_part.len()
         assert_eq!(result.residual[0], 0x01);
         let suffix_len = u32::from_le_bytes([
-            result.residual[1], result.residual[2],
-            result.residual[3], result.residual[4],
+            result.residual[1],
+            result.residual[2],
+            result.residual[3],
+            result.residual[4],
         ]) as usize;
         assert_eq!(suffix_len, incomplete_part.len());
 
@@ -447,8 +472,10 @@ mod tests {
 
         // suffix_len == data.len()
         let suffix_len = u32::from_le_bytes([
-            result.residual[1], result.residual[2],
-            result.residual[3], result.residual[4],
+            result.residual[1],
+            result.residual[2],
+            result.residual[3],
+            result.residual[4],
         ]) as usize;
         assert_eq!(suffix_len, data.len());
 
@@ -487,6 +514,9 @@ mod tests {
         let mut combined = recon1;
         combined.extend_from_slice(&recon2);
 
-        assert_eq!(combined, original, "cross-block concatenation must equal original");
+        assert_eq!(
+            combined, original,
+            "cross-block concatenation must equal original"
+        );
     }
 }

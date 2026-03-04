@@ -15,7 +15,7 @@ pub const TRANSFORM_ID: u8 = 7;
 /// Range-pack a slice of i64 values.
 ///
 /// Returns `(packed_bytes, min_value, pack_width)`.
-#[must_use] 
+#[must_use]
 pub fn range_pack_encode(values: &[i64]) -> (Vec<u8>, i64, u8) {
     if values.is_empty() {
         return (Vec::new(), 0, 0);
@@ -48,7 +48,7 @@ pub fn range_pack_encode(values: &[i64]) -> (Vec<u8>, i64, u8) {
 }
 
 /// Decode range-packed integers.
-#[must_use] 
+#[must_use]
 pub fn range_pack_decode(data: &[u8], count: usize, min_value: i64, pack_width: u8) -> Vec<i64> {
     let mut values = Vec::with_capacity(count);
     for i in 0..count {
@@ -79,7 +79,7 @@ pub fn range_pack_decode(data: &[u8], count: usize, min_value: i64, pack_width: 
 }
 
 /// Framed encode: `[count:4 LE][min_value:8 LE signed][pack_width:1][packed]`.
-#[must_use] 
+#[must_use]
 pub fn range_pack_encode_framed(values: &[i64]) -> Vec<u8> {
     let (packed, min_val, pack_width) = range_pack_encode(values);
     let mut out = Vec::with_capacity(13 + packed.len());

@@ -18,7 +18,9 @@ pub struct JsonDomain;
 impl JsonDomain {
     /// Build a (`field_map`, `field_names`) pair from field-count data.
     #[allow(clippy::cast_possible_truncation)]
-    fn build_field_index(field_counts: &HashMap<String, u32>) -> (HashMap<String, u32>, Vec<String>) {
+    fn build_field_index(
+        field_counts: &HashMap<String, u32>,
+    ) -> (HashMap<String, u32>, Vec<String>) {
         let mut repeated: Vec<String> = field_counts
             .iter()
             .filter(|(_, &c)| c >= 2)
@@ -66,9 +68,11 @@ impl JsonDomain {
                 }
                 Value::Object(new_map)
             }
-            Value::Array(arr) => {
-                Value::Array(arr.iter().map(|v| Self::compact_json(v, field_map)).collect())
-            }
+            Value::Array(arr) => Value::Array(
+                arr.iter()
+                    .map(|v| Self::compact_json(v, field_map))
+                    .collect(),
+            ),
             other => other.clone(),
         }
     }
@@ -79,7 +83,8 @@ impl JsonDomain {
             Value::Object(map) => {
                 let mut new_map = serde_json::Map::new();
                 for (key, val) in map {
-                    let new_key = key.strip_prefix('$')
+                    let new_key = key
+                        .strip_prefix('$')
                         .and_then(|s| s.parse::<usize>().ok())
                         .and_then(|idx| field_names.get(idx).cloned())
                         .unwrap_or_else(|| key.clone());
@@ -87,10 +92,12 @@ impl JsonDomain {
                 }
                 Value::Object(new_map)
             }
-            Value::Array(arr) => {
-                Value::Array(arr.iter().map(|v| Self::expand_json(v, field_names)).collect())
-            }
-    other => other.clone(),
+            Value::Array(arr) => Value::Array(
+                arr.iter()
+                    .map(|v| Self::expand_json(v, field_names))
+                    .collect(),
+            ),
+            other => other.clone(),
         }
     }
 
@@ -111,8 +118,16 @@ impl JsonDomain {
             "field_names".to_string(),
             Value::Array(repeated_fields.into_iter().map(Value::String).collect()),
         );
-        fields.insert("original_size".to_string(), Value::Number(data.len().into()));
-        Ok(ExtractionResult { fields, residual, metadata: HashMap::new(), domain_id: "text.json".to_string() })
+        fields.insert(
+            "original_size".to_string(),
+            Value::Number(data.len().into()),
+        );
+        Ok(ExtractionResult {
+            fields,
+            residual,
+            metadata: HashMap::new(),
+            domain_id: "text.json".to_string(),
+        })
     }
 
     /// Build a columnar residual from parsed JSONL rows.
@@ -129,10 +144,7 @@ impl JsonDomain {
     /// Integer-only columns are delta-encoded: first value absolute,
     /// subsequent values as signed deltas, space-separated.
     #[allow(clippy::cast_possible_truncation)] // lengths bounded by document size, << u32::MAX
-    fn build_columnar_residual(
-        rows: &[Value],
-        field_names: &[String],
-    ) -> CpacResult<Vec<u8>> {
+    fn build_columnar_residual(rows: &[Value], field_names: &[String]) -> CpacResult<Vec<u8>> {
         let num_cols = field_names.len();
         let row_count = rows.len();
 
@@ -155,7 +167,9 @@ impl JsonDomain {
         // Encode each column.
         let mut encoded_cols: Vec<Vec<u8>> = Vec::with_capacity(num_cols);
         for col in &columns {
-            let is_all_int = col.iter().all(|v| matches!(v, Value::Number(n) if n.is_i64() || n.is_u64()));
+            let is_all_int = col
+                .iter()
+                .all(|v| matches!(v, Value::Number(n) if n.is_i64() || n.is_u64()));
             let mut buf = Vec::new();
             if is_all_int && !col.is_empty() {
                 // Delta-encode consecutive integers.
@@ -177,9 +191,12 @@ impl JsonDomain {
             } else {
                 // Encode as JSON values, newline-separated.
                 for (i, v) in col.iter().enumerate() {
-                    if i > 0 { buf.push(b'\n'); }
-                    let s = serde_json::to_vec(v)
-                        .map_err(|e| CpacError::CompressFailed(format!("text.json col encode: {e}")))?;
+                    if i > 0 {
+                        buf.push(b'\n');
+                    }
+                    let s = serde_json::to_vec(v).map_err(|e| {
+                        CpacError::CompressFailed(format!("text.json col encode: {e}"))
+                    })?;
                     buf.extend_from_slice(&s);
                 }
             }
@@ -207,35 +224,50 @@ impl JsonDomain {
         trailing_newline: bool,
     ) -> CpacResult<Vec<u8>> {
         if residual.len() < 9 {
-            return Err(CpacError::DecompressFailed("text.json columnar: truncated header".into()));
+            return Err(CpacError::DecompressFailed(
+                "text.json columnar: truncated header".into(),
+            ));
         }
-        let num_cols = u32::from_le_bytes([residual[1], residual[2], residual[3], residual[4]]) as usize;
-        let row_count = u32::from_le_bytes([residual[5], residual[6], residual[7], residual[8]]) as usize;
+        let num_cols =
+            u32::from_le_bytes([residual[1], residual[2], residual[3], residual[4]]) as usize;
+        let row_count =
+            u32::from_le_bytes([residual[5], residual[6], residual[7], residual[8]]) as usize;
         let mut cursor = 9usize;
 
         if num_cols != field_names.len() {
-            return Err(CpacError::DecompressFailed("text.json columnar: column count mismatch".into()));
+            return Err(CpacError::DecompressFailed(
+                "text.json columnar: column count mismatch".into(),
+            ));
         }
 
         // Decode each column.
         let mut columns: Vec<Vec<Value>> = Vec::with_capacity(num_cols);
         for _fi in 0..num_cols {
             if cursor + 4 > residual.len() {
-                return Err(CpacError::DecompressFailed("text.json columnar: truncated col len".into()));
+                return Err(CpacError::DecompressFailed(
+                    "text.json columnar: truncated col len".into(),
+                ));
             }
             let col_len = u32::from_le_bytes([
-                residual[cursor], residual[cursor+1], residual[cursor+2], residual[cursor+3],
+                residual[cursor],
+                residual[cursor + 1],
+                residual[cursor + 2],
+                residual[cursor + 3],
             ]) as usize;
             cursor += 4;
             if cursor + col_len > residual.len() {
-                return Err(CpacError::DecompressFailed("text.json columnar: truncated col data".into()));
+                return Err(CpacError::DecompressFailed(
+                    "text.json columnar: truncated col data".into(),
+                ));
             }
             let col_bytes = &residual[cursor..cursor + col_len];
             cursor += col_len;
 
             // Detect integer delta-encoding: only digits, '-', ' '.
             let is_delta = !col_bytes.is_empty()
-                && col_bytes.iter().all(|&b| b.is_ascii_digit() || b == b'-' || b == b' ');
+                && col_bytes
+                    .iter()
+                    .all(|&b| b.is_ascii_digit() || b == b'-' || b == b' ');
 
             let col_values: Vec<Value> = if is_delta {
                 let text = std::str::from_utf8(col_bytes)
@@ -246,16 +278,23 @@ impl JsonDomain {
                     let n: i64 = token.parse().map_err(|e| {
                         CpacError::DecompressFailed(format!("text.json col delta parse: {e}"))
                     })?;
-                    if i == 0 { running = n; } else { running += n; }
+                    if i == 0 {
+                        running = n;
+                    } else {
+                        running += n;
+                    }
                     vals.push(Value::Number(running.into()));
                 }
                 vals
             } else {
                 let mut vals = Vec::with_capacity(row_count);
                 for chunk in col_bytes.split(|&b| b == b'\n') {
-                    if chunk.is_empty() { continue; }
-                    let v: Value = serde_json::from_slice(chunk)
-                        .map_err(|e| CpacError::DecompressFailed(format!("text.json col parse: {e}")))?;
+                    if chunk.is_empty() {
+                        continue;
+                    }
+                    let v: Value = serde_json::from_slice(chunk).map_err(|e| {
+                        CpacError::DecompressFailed(format!("text.json col parse: {e}"))
+                    })?;
                     vals.push(v);
                 }
                 vals
@@ -268,7 +307,8 @@ impl JsonDomain {
         for row_idx in 0..row_count {
             let mut map = serde_json::Map::new();
             for (fi, fname) in field_names.iter().enumerate() {
-                let v = columns.get(fi)
+                let v = columns
+                    .get(fi)
                     .and_then(|col| col.get(row_idx))
                     .cloned()
                     .unwrap_or(Value::Null);
@@ -276,8 +316,9 @@ impl JsonDomain {
                     map.insert(fname.clone(), v);
                 }
             }
-            let row_bytes = serde_json::to_vec(&Value::Object(map))
-                .map_err(|e| CpacError::DecompressFailed(format!("text.json row serialize: {e}")))?;
+            let row_bytes = serde_json::to_vec(&Value::Object(map)).map_err(|e| {
+                CpacError::DecompressFailed(format!("text.json row serialize: {e}"))
+            })?;
             output.extend_from_slice(&row_bytes);
             output.push(b'\n');
         }
@@ -335,8 +376,14 @@ impl JsonDomain {
             Value::Array(repeated_fields.into_iter().map(Value::String).collect()),
         );
         fields.insert("format".to_string(), Value::String("jsonl".to_string()));
-        fields.insert("original_size".to_string(), Value::Number(data.len().into()));
-        fields.insert("trailing_newline".to_string(), Value::Bool(trailing_newline));
+        fields.insert(
+            "original_size".to_string(),
+            Value::Number(data.len().into()),
+        );
+        fields.insert(
+            "trailing_newline".to_string(),
+            Value::Bool(trailing_newline),
+        );
         Ok(ExtractionResult {
             fields,
             residual,
@@ -360,14 +407,25 @@ impl Domain for JsonDomain {
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
             if std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) { return 0.9; }
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+            {
+                return 0.9;
+            }
             if std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("jsonl")) { return 0.95; }
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("jsonl"))
+            {
+                return 0.95;
+            }
         }
 
         // Use memchr2 to find the first structural JSON byte ({  or [),
         // skipping any leading ASCII whitespace without a per-byte branch loop.
-        let start = data.iter().position(|b| !b.is_ascii_whitespace()).unwrap_or(data.len());
+        let start = data
+            .iter()
+            .position(|b| !b.is_ascii_whitespace())
+            .unwrap_or(data.len());
         if start >= data.len() {
             return 0.0;
         }
@@ -383,7 +441,9 @@ impl Domain for JsonDomain {
 
         // Check if it's JSONL: first line must be a valid JSON object.
         let nl = memchr::memchr(b'\n', data).unwrap_or(data.len());
-        let first_line = data[start..nl].strip_suffix(b"\r").unwrap_or(&data[start..nl]);
+        let first_line = data[start..nl]
+            .strip_suffix(b"\r")
+            .unwrap_or(&data[start..nl]);
         if !first_line.is_empty() && serde_json::from_slice::<Value>(first_line).is_ok() {
             return 0.85; // Likely JSONL
         }
@@ -406,13 +466,18 @@ impl Domain for JsonDomain {
         data: &[u8],
         fields: &HashMap<String, serde_json::Value>,
     ) -> CpacResult<ExtractionResult> {
-        let field_names_value = fields.get("field_names")
-            .ok_or_else(|| CpacError::CompressFailed("text.json: missing field_names in metadata".into()))?;
+        let field_names_value = fields.get("field_names").ok_or_else(|| {
+            CpacError::CompressFailed("text.json: missing field_names in metadata".into())
+        })?;
 
         let field_names: Vec<String> = if let Value::Array(arr) = field_names_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
-            return Err(CpacError::CompressFailed("text.json: invalid field_names format".into()));
+            return Err(CpacError::CompressFailed(
+                "text.json: invalid field_names format".into(),
+            ));
         };
 
         let is_jsonl = fields.get("format").and_then(Value::as_str) == Some("jsonl");
@@ -428,15 +493,23 @@ impl Domain for JsonDomain {
                         None
                     } else {
                         Some(serde_json::from_slice::<Value>(l).map_err(|e| {
-                            CpacError::CompressFailed(format!("text.json JSONL line parse: {i} {e}"))
+                            CpacError::CompressFailed(format!(
+                                "text.json JSONL line parse: {i} {e}"
+                            ))
                         }))
                     }
                 })
                 .collect::<CpacResult<Vec<Value>>>()?;
             let residual = Self::build_columnar_residual(&lines, &field_names)?;
             let mut result_fields = fields.clone();
-            result_fields.insert("original_size".to_string(), Value::Number(data.len().into()));
-            result_fields.insert("trailing_newline".to_string(), Value::Bool(data.last() == Some(&b'\n')));
+            result_fields.insert(
+                "original_size".to_string(),
+                Value::Number(data.len().into()),
+            );
+            result_fields.insert(
+                "trailing_newline".to_string(),
+                Value::Bool(data.last() == Some(&b'\n')),
+            );
             return Ok(ExtractionResult {
                 fields: result_fields,
                 residual,
@@ -458,7 +531,10 @@ impl Domain for JsonDomain {
             .map_err(|e| CpacError::CompressFailed(format!("text.json serialize error: {e}")))?;
         let mut result_fields = HashMap::new();
         result_fields.insert("field_names".to_string(), field_names_value.clone());
-        result_fields.insert("original_size".to_string(), Value::Number(data.len().into()));
+        result_fields.insert(
+            "original_size".to_string(),
+            Value::Number(data.len().into()),
+        );
         Ok(ExtractionResult {
             fields: result_fields,
             residual,
@@ -468,33 +544,49 @@ impl Domain for JsonDomain {
     }
 
     fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
-        let field_names_value = result.fields.get("field_names")
+        let field_names_value = result
+            .fields
+            .get("field_names")
             .ok_or_else(|| CpacError::DecompressFailed("text.json: missing field_names".into()))?;
         let field_names: Vec<String> = if let Value::Array(arr) = field_names_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
-            return Err(CpacError::DecompressFailed("text.json: invalid field_names format".into()));
+            return Err(CpacError::DecompressFailed(
+                "text.json: invalid field_names format".into(),
+            ));
         };
 
         let is_jsonl = result.fields.get("format").and_then(Value::as_str) == Some("jsonl");
         if is_jsonl {
-            let trailing_newline = result.fields.get("trailing_newline")
+            let trailing_newline = result
+                .fields
+                .get("trailing_newline")
                 .and_then(Value::as_bool)
                 .unwrap_or(true); // default true for backward compat
-            // Columnar residual (produced by extract_jsonl) starts with 0x02.
+                                  // Columnar residual (produced by extract_jsonl) starts with 0x02.
             if result.residual.first() == Some(&0x02u8) {
-                return Self::reconstruct_columnar(&result.residual, &field_names, trailing_newline);
+                return Self::reconstruct_columnar(
+                    &result.residual,
+                    &field_names,
+                    trailing_newline,
+                );
             }
             // Legacy row-oriented JSONL path (backward compat for old frames).
             let mut output: Vec<u8> = Vec::with_capacity(result.residual.len());
             for raw_line in result.residual.split(|&b| b == b'\n') {
                 let line = raw_line.strip_suffix(b"\r").unwrap_or(raw_line);
-                if line.is_empty() { continue; }
-                let compacted: Value = serde_json::from_slice(line)
-                    .map_err(|e| CpacError::DecompressFailed(format!("text.json JSONL parse: {e}")))?;
+                if line.is_empty() {
+                    continue;
+                }
+                let compacted: Value = serde_json::from_slice(line).map_err(|e| {
+                    CpacError::DecompressFailed(format!("text.json JSONL parse: {e}"))
+                })?;
                 let expanded = Self::expand_json(&compacted, &field_names);
-                let bytes = serde_json::to_vec(&expanded)
-                    .map_err(|e| CpacError::DecompressFailed(format!("text.json JSONL serialize: {e}")))?;
+                let bytes = serde_json::to_vec(&expanded).map_err(|e| {
+                    CpacError::DecompressFailed(format!("text.json JSONL serialize: {e}"))
+                })?;
                 output.extend_from_slice(&bytes);
                 output.push(b'\n');
             }
@@ -520,14 +612,14 @@ mod tests {
     #[test]
     fn json_domain_detection() {
         let domain = JsonDomain;
-        
+
         // Valid JSON
         assert!(domain.detect(br#"{"key": "value"}"#, None) > 0.9);
         assert!(domain.detect(br#"[1, 2, 3]"#, None) > 0.9);
-        
+
         // Filename detection
         assert!(domain.detect(b"", Some("test.json")) > 0.8);
-        
+
         // Non-JSON
         assert!(domain.detect(b"plain text", None) < 0.1);
     }
@@ -536,14 +628,14 @@ mod tests {
     fn json_domain_roundtrip() {
         let domain = JsonDomain;
         let data = br#"{"name":"Alice","age":30,"name":"Bob","age":25}"#;
-        
+
         let result = domain.extract(data).unwrap();
         let reconstructed = domain.reconstruct(&result).unwrap();
-        
+
         // Parse both to compare structure (order may differ)
         let original: Value = serde_json::from_slice(data).unwrap();
         let recovered: Value = serde_json::from_slice(&reconstructed).unwrap();
-        
+
         assert_eq!(original, recovered);
     }
 
@@ -566,17 +658,30 @@ mod tests {
         let result = domain.extract(data).unwrap();
 
         // Should detect JSONL format
-        assert_eq!(result.fields.get("format").and_then(serde_json::Value::as_str), Some("jsonl"));
+        assert_eq!(
+            result
+                .fields
+                .get("format")
+                .and_then(serde_json::Value::as_str),
+            Some("jsonl")
+        );
         // Residual should be smaller (field names extracted)
-        assert!(result.residual.len() < data.len(), "residual {} >= original {}", result.residual.len(), data.len());
+        assert!(
+            result.residual.len() < data.len(),
+            "residual {} >= original {}",
+            result.residual.len(),
+            data.len()
+        );
 
         let reconstructed = domain.reconstruct(&result).unwrap();
         // Compare parsed objects line by line
-        let orig_lines: Vec<serde_json::Value> = data.split(|&b| b == b'\n')
+        let orig_lines: Vec<serde_json::Value> = data
+            .split(|&b| b == b'\n')
             .filter(|l| !l.is_empty())
             .map(|l| serde_json::from_slice(l).unwrap())
             .collect();
-        let recon_lines: Vec<serde_json::Value> = reconstructed.split(|&b| b == b'\n')
+        let recon_lines: Vec<serde_json::Value> = reconstructed
+            .split(|&b| b == b'\n')
             .filter(|l| !l.is_empty())
             .map(|l| serde_json::from_slice(l).unwrap())
             .collect();
@@ -594,13 +699,18 @@ mod tests {
 
         let detection = domain.extract(block1).unwrap();
         assert_eq!(
-            detection.fields.get("format").and_then(serde_json::Value::as_str),
+            detection
+                .fields
+                .get("format")
+                .and_then(serde_json::Value::as_str),
             Some("jsonl"),
             "expected JSONL format to be detected"
         );
 
         // Apply same field map to block2
-        let result2 = domain.extract_with_fields(block2, &detection.fields).unwrap();
+        let result2 = domain
+            .extract_with_fields(block2, &detection.fields)
+            .unwrap();
         let recon2 = domain.reconstruct(&result2).unwrap();
 
         // Compare line-by-line as parsed JSON
@@ -624,10 +734,17 @@ mod tests {
         let data = b"{\"a\":1,\"b\":2}\n{\"a\":3,\"b\":4}\n";
         let result = domain.extract(data).unwrap();
         assert_eq!(
-            result.fields.get("format").and_then(serde_json::Value::as_str),
+            result
+                .fields
+                .get("format")
+                .and_then(serde_json::Value::as_str),
             Some("jsonl")
         );
-        assert_eq!(result.residual.first(), Some(&0x02u8), "columnar magic 0x02 expected");
+        assert_eq!(
+            result.residual.first(),
+            Some(&0x02u8),
+            "columnar magic 0x02 expected"
+        );
     }
 
     /// Integer-only columns must be delta-encoded (space-separated tokens, all digits/'-').
@@ -640,8 +757,15 @@ mod tests {
         assert_eq!(result.residual.first(), Some(&0x02u8));
 
         // Locate the score column (field_names are sorted alphabetically: ["score", "user"]).
-        let field_names = result.fields.get("field_names").and_then(|v| v.as_array()).unwrap();
-        let score_col_idx = field_names.iter().position(|v| v.as_str() == Some("score")).unwrap();
+        let field_names = result
+            .fields
+            .get("field_names")
+            .and_then(|v| v.as_array())
+            .unwrap();
+        let score_col_idx = field_names
+            .iter()
+            .position(|v| v.as_str() == Some("score"))
+            .unwrap();
 
         // Parse the wire format to reach the score column's bytes.
         let r = &result.residual;
@@ -650,7 +774,9 @@ mod tests {
         let mut cursor = 9usize;
         let mut col_bufs: Vec<&[u8]> = Vec::with_capacity(num_cols);
         for _ in 0..num_cols {
-            let col_len = u32::from_le_bytes([r[cursor], r[cursor+1], r[cursor+2], r[cursor+3]]) as usize;
+            let col_len =
+                u32::from_le_bytes([r[cursor], r[cursor + 1], r[cursor + 2], r[cursor + 3]])
+                    as usize;
             cursor += 4;
             col_bufs.push(&r[cursor..cursor + col_len]);
             cursor += col_len;
@@ -658,16 +784,24 @@ mod tests {
         let score_bytes = col_bufs[score_col_idx];
         // Must be all digits, '-', or ' ' (delta encoding).
         assert!(
-            score_bytes.iter().all(|&b| b.is_ascii_digit() || b == b'-' || b == b' '),
+            score_bytes
+                .iter()
+                .all(|&b| b.is_ascii_digit() || b == b'-' || b == b' '),
             "score column should be delta-encoded, got: {:?}",
             std::str::from_utf8(score_bytes)
         );
         // Full roundtrip still correct.
         let reconstructed = domain.reconstruct(&result).unwrap();
-        let orig: Vec<serde_json::Value> = data.split(|&b| b == b'\n')
-            .filter(|l| !l.is_empty()).map(|l| serde_json::from_slice(l).unwrap()).collect();
-        let recon: Vec<serde_json::Value> = reconstructed.split(|&b| b == b'\n')
-            .filter(|l| !l.is_empty()).map(|l| serde_json::from_slice(l).unwrap()).collect();
+        let orig: Vec<serde_json::Value> = data
+            .split(|&b| b == b'\n')
+            .filter(|l| !l.is_empty())
+            .map(|l| serde_json::from_slice(l).unwrap())
+            .collect();
+        let recon: Vec<serde_json::Value> = reconstructed
+            .split(|&b| b == b'\n')
+            .filter(|l| !l.is_empty())
+            .map(|l| serde_json::from_slice(l).unwrap())
+            .collect();
         assert_eq!(orig, recon);
     }
 
@@ -681,7 +815,10 @@ mod tests {
         let result = domain.extract(data).unwrap();
         assert_eq!(result.residual.first(), Some(&0x02u8));
         assert_eq!(
-            result.fields.get("trailing_newline").and_then(serde_json::Value::as_bool),
+            result
+                .fields
+                .get("trailing_newline")
+                .and_then(serde_json::Value::as_bool),
             Some(false)
         );
         let reconstructed = domain.reconstruct(&result).unwrap();
@@ -693,28 +830,31 @@ mod tests {
         let data2 = b"{\"x\":3,\"y\":\"c\"}\n{\"x\":4,\"y\":\"d\"}\n";
         let result2 = domain.extract(data2).unwrap();
         let recon2 = domain.reconstruct(&result2).unwrap();
-        assert!(recon2.ends_with(b"\n"), "reconstructed data should end with newline");
+        assert!(
+            recon2.ends_with(b"\n"),
+            "reconstructed data should end with newline"
+        );
     }
 
     #[test]
     fn json_domain_compression_on_repetitive() {
         let domain = JsonDomain;
-        
+
         // Highly repetitive JSON
         let data = br#"[
             {"user":"alice","score":100,"level":5},
             {"user":"bob","score":200,"level":10},
             {"user":"charlie","score":150,"level":7}
         ]"#;
-        
+
         let result = domain.extract(data).unwrap();
-        
+
         // Residual should be smaller than original (field names extracted)
         assert!(result.residual.len() < data.len());
-        
+
         // Should have extracted field names
         assert!(result.fields.contains_key("field_names"));
-        
+
         // Verify roundtrip
         let reconstructed = domain.reconstruct(&result).unwrap();
         let original: Value = serde_json::from_slice(data).unwrap();

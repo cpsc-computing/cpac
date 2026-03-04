@@ -5,7 +5,11 @@
 //! Provides Zstd dictionary generation from corpus files, storage format,
 //! and integration with compression pipeline.
 
-#![allow(clippy::cast_possible_truncation, clippy::missing_errors_doc, clippy::missing_panics_doc)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc
+)]
 
 use cpac_types::{CpacError, CpacResult};
 use std::path::Path;
@@ -103,7 +107,7 @@ impl CpacDictionary {
     /// Serialize dictionary to binary format.
     ///
     /// Format: `[magic:4][version:1][dict_id:8][size:4][samples:4][corpus_size:8][created_at:8][data]`
-    #[must_use] 
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(37 + self.data.len());
         bytes.extend_from_slice(b"CPDI"); // Magic: CPAC Dictionary

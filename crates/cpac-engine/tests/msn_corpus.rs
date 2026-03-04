@@ -3,8 +3,8 @@
 //! Real-world MSN tests using corpus data.
 
 use cpac_engine::{compress, decompress, CompressConfig};
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 fn corpus_path(filename: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -24,29 +24,39 @@ fn corpus_json() {
         eprintln!("Skipping test: corpus file not found: {:?}", path);
         return;
     }
-    
+
     let data = fs::read(&path).unwrap();
-    
+
     // Without MSN
     let config_no_msn = CompressConfig {
         enable_msn: false,
         ..Default::default()
     };
     let result_no_msn = compress(&data, &config_no_msn).unwrap();
-    
+
     // With MSN
     let config_msn = CompressConfig {
         enable_msn: true,
         ..Default::default()
     };
     let result_msn = compress(&data, &config_msn).unwrap();
-    
+
     println!("Corpus data.json ({} bytes):", data.len());
-    println!("  Without MSN: {} bytes ({:.2}x)", result_no_msn.compressed_size, result_no_msn.ratio());
-    println!("  With MSN: {} bytes ({:.2}x)", result_msn.compressed_size, result_msn.ratio());
-    println!("  MSN delta: {:.1}%", 
-        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0);
-    
+    println!(
+        "  Without MSN: {} bytes ({:.2}x)",
+        result_no_msn.compressed_size,
+        result_no_msn.ratio()
+    );
+    println!(
+        "  With MSN: {} bytes ({:.2}x)",
+        result_msn.compressed_size,
+        result_msn.ratio()
+    );
+    println!(
+        "  MSN delta: {:.1}%",
+        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0
+    );
+
     // Verify lossless roundtrip
     let decompressed = decompress(&result_msn.data).unwrap();
     assert_eq!(decompressed.data, data);
@@ -60,29 +70,39 @@ fn corpus_large_json() {
         eprintln!("Skipping test: corpus file not found: {:?}", path);
         return;
     }
-    
+
     let data = fs::read(&path).unwrap();
-    
+
     // Without MSN
     let config_no_msn = CompressConfig {
         enable_msn: false,
         ..Default::default()
     };
     let result_no_msn = compress(&data, &config_no_msn).unwrap();
-    
+
     // With MSN
     let config_msn = CompressConfig {
         enable_msn: true,
         ..Default::default()
     };
     let result_msn = compress(&data, &config_msn).unwrap();
-    
+
     println!("Corpus large-data.json ({} bytes):", data.len());
-    println!("  Without MSN: {} bytes ({:.2}x)", result_no_msn.compressed_size, result_no_msn.ratio());
-    println!("  With MSN: {} bytes ({:.2}x)", result_msn.compressed_size, result_msn.ratio());
-    println!("  MSN delta: {:.1}%", 
-        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0);
-    
+    println!(
+        "  Without MSN: {} bytes ({:.2}x)",
+        result_no_msn.compressed_size,
+        result_no_msn.ratio()
+    );
+    println!(
+        "  With MSN: {} bytes ({:.2}x)",
+        result_msn.compressed_size,
+        result_msn.ratio()
+    );
+    println!(
+        "  MSN delta: {:.1}%",
+        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0
+    );
+
     // Verify lossless roundtrip
     let decompressed = decompress(&result_msn.data).unwrap();
     assert_eq!(decompressed.data, data);
@@ -96,29 +116,39 @@ fn corpus_csv() {
         eprintln!("Skipping test: corpus file not found: {:?}", path);
         return;
     }
-    
+
     let data = fs::read(&path).unwrap();
-    
+
     // Without MSN
     let config_no_msn = CompressConfig {
         enable_msn: false,
         ..Default::default()
     };
     let result_no_msn = compress(&data, &config_no_msn).unwrap();
-    
+
     // With MSN
     let config_msn = CompressConfig {
         enable_msn: true,
         ..Default::default()
     };
     let result_msn = compress(&data, &config_msn).unwrap();
-    
+
     println!("Corpus metrics.csv ({} bytes):", data.len());
-    println!("  Without MSN: {} bytes ({:.2}x)", result_no_msn.compressed_size, result_no_msn.ratio());
-    println!("  With MSN: {} bytes ({:.2}x)", result_msn.compressed_size, result_msn.ratio());
-    println!("  MSN delta: {:.1}%", 
-        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0);
-    
+    println!(
+        "  Without MSN: {} bytes ({:.2}x)",
+        result_no_msn.compressed_size,
+        result_no_msn.ratio()
+    );
+    println!(
+        "  With MSN: {} bytes ({:.2}x)",
+        result_msn.compressed_size,
+        result_msn.ratio()
+    );
+    println!(
+        "  MSN delta: {:.1}%",
+        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0
+    );
+
     // Verify lossless roundtrip
     let decompressed = decompress(&result_msn.data).unwrap();
     assert_eq!(decompressed.data, data);
@@ -132,29 +162,39 @@ fn corpus_large_csv() {
         eprintln!("Skipping test: corpus file not found: {:?}", path);
         return;
     }
-    
+
     let data = fs::read(&path).unwrap();
-    
+
     // Without MSN
     let config_no_msn = CompressConfig {
         enable_msn: false,
         ..Default::default()
     };
     let result_no_msn = compress(&data, &config_no_msn).unwrap();
-    
+
     // With MSN
     let config_msn = CompressConfig {
         enable_msn: true,
         ..Default::default()
     };
     let result_msn = compress(&data, &config_msn).unwrap();
-    
+
     println!("Corpus large-metrics.csv ({} bytes):", data.len());
-    println!("  Without MSN: {} bytes ({:.2}x)", result_no_msn.compressed_size, result_no_msn.ratio());
-    println!("  With MSN: {} bytes ({:.2}x)", result_msn.compressed_size, result_msn.ratio());
-    println!("  MSN delta: {:.1}%", 
-        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0);
-    
+    println!(
+        "  Without MSN: {} bytes ({:.2}x)",
+        result_no_msn.compressed_size,
+        result_no_msn.ratio()
+    );
+    println!(
+        "  With MSN: {} bytes ({:.2}x)",
+        result_msn.compressed_size,
+        result_msn.ratio()
+    );
+    println!(
+        "  MSN delta: {:.1}%",
+        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0
+    );
+
     // Verify lossless roundtrip
     let decompressed = decompress(&result_msn.data).unwrap();
     assert_eq!(decompressed.data, data);
@@ -168,29 +208,39 @@ fn corpus_server_log() {
         eprintln!("Skipping test: corpus file not found: {:?}", path);
         return;
     }
-    
+
     let data = fs::read(&path).unwrap();
-    
+
     // Without MSN
     let config_no_msn = CompressConfig {
         enable_msn: false,
         ..Default::default()
     };
     let result_no_msn = compress(&data, &config_no_msn).unwrap();
-    
+
     // With MSN
     let config_msn = CompressConfig {
         enable_msn: true,
         ..Default::default()
     };
     let result_msn = compress(&data, &config_msn).unwrap();
-    
+
     println!("Corpus server.log ({} bytes):", data.len());
-    println!("  Without MSN: {} bytes ({:.2}x)", result_no_msn.compressed_size, result_no_msn.ratio());
-    println!("  With MSN: {} bytes ({:.2}x)", result_msn.compressed_size, result_msn.ratio());
-    println!("  MSN delta: {:.1}%", 
-        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0);
-    
+    println!(
+        "  Without MSN: {} bytes ({:.2}x)",
+        result_no_msn.compressed_size,
+        result_no_msn.ratio()
+    );
+    println!(
+        "  With MSN: {} bytes ({:.2}x)",
+        result_msn.compressed_size,
+        result_msn.ratio()
+    );
+    println!(
+        "  MSN delta: {:.1}%",
+        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0
+    );
+
     // Verify lossless roundtrip
     let decompressed = decompress(&result_msn.data).unwrap();
     assert_eq!(decompressed.data, data);
@@ -204,29 +254,39 @@ fn corpus_large_server_log() {
         eprintln!("Skipping test: corpus file not found: {:?}", path);
         return;
     }
-    
+
     let data = fs::read(&path).unwrap();
-    
+
     // Without MSN
     let config_no_msn = CompressConfig {
         enable_msn: false,
         ..Default::default()
     };
     let result_no_msn = compress(&data, &config_no_msn).unwrap();
-    
+
     // With MSN
     let config_msn = CompressConfig {
         enable_msn: true,
         ..Default::default()
     };
     let result_msn = compress(&data, &config_msn).unwrap();
-    
+
     println!("Corpus large-server.log ({} bytes):", data.len());
-    println!("  Without MSN: {} bytes ({:.2}x)", result_no_msn.compressed_size, result_no_msn.ratio());
-    println!("  With MSN: {} bytes ({:.2}x)", result_msn.compressed_size, result_msn.ratio());
-    println!("  MSN delta: {:.1}%", 
-        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0);
-    
+    println!(
+        "  Without MSN: {} bytes ({:.2}x)",
+        result_no_msn.compressed_size,
+        result_no_msn.ratio()
+    );
+    println!(
+        "  With MSN: {} bytes ({:.2}x)",
+        result_msn.compressed_size,
+        result_msn.ratio()
+    );
+    println!(
+        "  MSN delta: {:.1}%",
+        (result_no_msn.compressed_size as f64 / result_msn.compressed_size as f64 - 1.0) * 100.0
+    );
+
     // Verify lossless roundtrip
     let decompressed = decompress(&result_msn.data).unwrap();
     assert_eq!(decompressed.data, data);

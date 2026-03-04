@@ -23,10 +23,9 @@ fn compress_decompress_roundtrip(data: &[u8], enable_msn: bool) {
         backend: Some(Backend::Zstd),
         ..Default::default()
     };
-    let compressed = compress(data, &config)
-        .unwrap_or_else(|e| panic!("compress failed: {e}"));
-    let decompressed = decompress(&compressed.data)
-        .unwrap_or_else(|e| panic!("decompress failed: {e}"));
+    let compressed = compress(data, &config).unwrap_or_else(|e| panic!("compress failed: {e}"));
+    let decompressed =
+        decompress(&compressed.data).unwrap_or_else(|e| panic!("decompress failed: {e}"));
     assert_eq!(
         decompressed.data, data,
         "roundtrip mismatch (msn={})",
@@ -63,8 +62,7 @@ fn integration_yaml_roundtrip_with_msn() {
 
 #[test]
 fn integration_xml_roundtrip_with_msn() {
-    let xml_data =
-        "<person><name>Alice</name><age>30</age></person>\n".repeat(200);
+    let xml_data = "<person><name>Alice</name><age>30</age></person>\n".repeat(200);
     compress_decompress_roundtrip(xml_data.as_bytes(), true);
 }
 
@@ -94,8 +92,7 @@ fn integration_streaming_msn_json_roundtrip() {
     use cpac_streaming::stream::{StreamingCompressor, StreamingDecompressor};
     use cpac_streaming::MsnConfig;
 
-    let json_data = r#"{"id":1,"host":"srv1","level":"info","code":200}"#
-        .repeat(300);
+    let json_data = r#"{"id":1,"host":"srv1","level":"info","code":200}"#.repeat(300);
     let input = json_data.as_bytes();
 
     let cfg = CompressConfig {
@@ -195,7 +192,7 @@ fn integration_metadata_compact_smaller_than_json() {
 #[test]
 fn integration_regression_baseline_self_check() {
     use cpac_engine::bench::{
-        check_regressions, load_baseline, save_baseline, BenchmarkRunner, BenchProfile,
+        check_regressions, load_baseline, save_baseline, BenchProfile, BenchmarkRunner,
     };
     use std::io::Write;
     use tempfile::tempdir;
@@ -205,7 +202,8 @@ fn integration_regression_baseline_self_check() {
     // Write a small compressible file.
     let file = dir.path().join("sample.txt");
     let mut f = std::fs::File::create(&file).unwrap();
-    f.write_all(b"Hello CPAC integration test! ".repeat(200).as_slice()).unwrap();
+    f.write_all(b"Hello CPAC integration test! ".repeat(200).as_slice())
+        .unwrap();
     drop(f);
 
     // Benchmark it.

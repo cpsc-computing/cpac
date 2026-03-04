@@ -10,7 +10,7 @@
     clippy::cast_precision_loss,
     clippy::cast_sign_loss,
     clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
+    clippy::missing_panics_doc
 )]
 
 pub mod mmap;
@@ -57,7 +57,7 @@ impl Default for MsnConfig {
 
 impl MsnConfig {
     /// Create disabled MSN config.
-    #[must_use] 
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             enable: false,
@@ -159,8 +159,10 @@ pub fn decompress_streaming(data: &[u8], parallel: bool) -> CpacResult<Decompres
             return Err(CpacError::InvalidFrame("truncated MSN metadata".into()));
         }
         let msn_bytes = &data[23..23 + msn_len];
-        Some(serde_json::from_slice(msn_bytes)
-            .map_err(|e| CpacError::InvalidFrame(format!("MSN deserialize: {e}")))?)
+        Some(
+            serde_json::from_slice(msn_bytes)
+                .map_err(|e| CpacError::InvalidFrame(format!("MSN deserialize: {e}")))?,
+        )
     } else {
         None
     };
@@ -218,7 +220,7 @@ pub fn decompress_streaming(data: &[u8], parallel: bool) -> CpacResult<Decompres
 }
 
 /// Check if data is a streaming frame.
-#[must_use] 
+#[must_use]
 pub fn is_streaming_frame(data: &[u8]) -> bool {
     data.len() >= 23 && &data[0..2] == STREAM_MAGIC && data[2] == STREAM_VERSION
 }
@@ -239,7 +241,7 @@ pub struct ProgressInfo {
 
 impl ProgressInfo {
     /// Throughput in MB/s.
-    #[must_use] 
+    #[must_use]
     pub fn throughput_mbs(&self) -> f64 {
         if self.elapsed_secs > 0.0 {
             self.bytes_processed as f64 / 1_048_576.0 / self.elapsed_secs
@@ -248,7 +250,7 @@ impl ProgressInfo {
         }
     }
     /// Estimated time remaining in seconds.
-    #[must_use] 
+    #[must_use]
     pub fn eta_seconds(&self) -> f64 {
         if self.bytes_processed > 0 && self.total_bytes > self.bytes_processed {
             let rate = self.bytes_processed as f64 / self.elapsed_secs;
@@ -258,7 +260,7 @@ impl ProgressInfo {
         }
     }
     /// Completion fraction 0.0..1.0.
-    #[must_use] 
+    #[must_use]
     pub fn fraction(&self) -> f64 {
         if self.total_bytes > 0 {
             self.bytes_processed as f64 / self.total_bytes as f64
@@ -349,7 +351,7 @@ impl Default for AdaptiveBlockConfig {
 impl AdaptiveBlockConfig {
     /// Choose block size based on data entropy estimate.
     /// High entropy → larger blocks (less overhead), low entropy → smaller (faster).
-    #[must_use] 
+    #[must_use]
     pub fn select_block_size(&self, entropy: f64, data_size: usize) -> usize {
         let ratio = (entropy / 8.0).clamp(0.0, 1.0);
         let size = self.min_block + ((self.max_block - self.min_block) as f64 * ratio) as usize;

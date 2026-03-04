@@ -16,20 +16,25 @@ fn debug_msn_sizes() {
 {"name":"Henry","age":27,"city":"LA","status":"active"}
 {"name":"Iris","age":33,"city":"NYC","status":"active"}
 {"name":"Jack","age":26,"city":"SF","status":"inactive"}"#;
-    
+
     let data = json_data.repeat(10);
     println!("Original size: {} bytes", data.len());
-    
+
     // Test MSN extraction directly
     let msn_result = cpac_msn::extract(data.as_bytes(), None, 0.5).unwrap();
     println!("MSN domain: {:?}", msn_result.domain_id);
     println!("MSN applied: {}", msn_result.applied);
     println!("MSN confidence: {:.2}", msn_result.confidence);
-    println!("MSN fields size: {} bytes", serde_json::to_vec(&msn_result.fields).unwrap().len());
+    println!(
+        "MSN fields size: {} bytes",
+        serde_json::to_vec(&msn_result.fields).unwrap().len()
+    );
     println!("MSN residual size: {} bytes", msn_result.residual.len());
-    println!("MSN total (fields+residual): {} bytes", 
-        serde_json::to_vec(&msn_result.fields).unwrap().len() + msn_result.residual.len());
-    
+    println!(
+        "MSN total (fields+residual): {} bytes",
+        serde_json::to_vec(&msn_result.fields).unwrap().len() + msn_result.residual.len()
+    );
+
     // Without MSN
     let config_no_msn = CompressConfig {
         enable_msn: false,
@@ -39,7 +44,7 @@ fn debug_msn_sizes() {
     println!("\nWithout MSN:");
     println!("  Compressed size: {} bytes", result_no_msn.compressed_size);
     println!("  Ratio: {:.2}x", result_no_msn.ratio());
-    
+
     // With MSN
     let config_msn = CompressConfig {
         enable_msn: true,

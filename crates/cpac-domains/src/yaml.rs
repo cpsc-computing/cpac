@@ -7,12 +7,14 @@ use cpac_types::{CpacError, CpacResult, CpacType, DomainHint};
 use crate::DomainHandler;
 
 /// Detect YAML content (starts with `---` or `key: value` patterns).
-#[must_use] 
+#[must_use]
 pub fn detect_yaml(data: &[u8]) -> bool {
     if data.len() < 4 {
         return false;
     }
-    let Ok(text) = std::str::from_utf8(&data[..data.len().min(512)]) else { return false; };
+    let Ok(text) = std::str::from_utf8(&data[..data.len().min(512)]) else {
+        return false;
+    };
     let trimmed = text.trim_start();
     if trimmed.starts_with("---") {
         return true;

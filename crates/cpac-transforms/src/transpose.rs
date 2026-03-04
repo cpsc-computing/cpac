@@ -90,7 +90,7 @@ pub fn transpose_decode(data: &[u8], element_width: usize) -> CpacResult<Vec<u8>
 ///
 /// Checks common widths (2, 4, 8, 16, 32) and returns the best match
 /// based on column-byte repetition scoring.
-#[must_use] 
+#[must_use]
 pub fn detect_record_width(data: &[u8]) -> Option<usize> {
     let probe = if data.len() > 8192 {
         &data[..8192]

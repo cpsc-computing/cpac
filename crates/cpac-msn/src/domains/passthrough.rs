@@ -51,11 +51,11 @@ mod tests {
     fn passthrough_roundtrip() {
         let domain = PassthroughDomain;
         let data = b"test data that should pass through unchanged";
-        
+
         let result = domain.extract(data).unwrap();
         assert_eq!(result.residual, data);
         assert!(result.fields.is_empty());
-        
+
         let reconstructed = domain.reconstruct(&result).unwrap();
         assert_eq!(reconstructed, data);
     }

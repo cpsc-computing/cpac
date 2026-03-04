@@ -125,7 +125,7 @@ pub fn float_split_decode_framed(data: &[u8]) -> CpacResult<Vec<u8>> {
 // ---------------------------------------------------------------------------
 
 /// Detect if data is primarily float32 values. Returns float width or None.
-#[must_use] 
+#[must_use]
 pub fn detect_float_data(data: &[u8]) -> Option<u8> {
     let n = data.len();
     if n < 32 || !n.is_multiple_of(4) {

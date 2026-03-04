@@ -15,7 +15,7 @@ pub struct DomainRegistry {
 
 impl DomainRegistry {
     /// Create a new empty registry.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             domains: RwLock::new(HashMap::new()),
@@ -47,7 +47,7 @@ impl DomainRegistry {
         min_confidence: f64,
     ) -> Option<(Arc<dyn Domain>, f64)> {
         let domains = self.domains.read().unwrap();
-        
+
         let mut best_domain: Option<Arc<dyn Domain>> = None;
         let mut best_score = min_confidence;
 
@@ -82,30 +82,29 @@ impl Default for DomainRegistry {
 }
 
 /// Global domain registry singleton.
-static GLOBAL_REGISTRY: std::sync::LazyLock<DomainRegistry> =
-    std::sync::LazyLock::new(|| {
-        let registry = DomainRegistry::new();
-        
-        // Register all domain handlers
-        registry.register(Arc::new(crate::domains::PassthroughDomain));
-        registry.register(Arc::new(crate::domains::JsonDomain));
-        registry.register(Arc::new(crate::domains::CsvDomain));
-        registry.register(Arc::new(crate::domains::XmlDomain));
-        registry.register(Arc::new(crate::domains::YamlDomain));
-        registry.register(Arc::new(crate::domains::MsgPackDomain));
-        registry.register(Arc::new(crate::domains::CborDomain));
-        registry.register(Arc::new(crate::domains::ProtobufDomain));
-        registry.register(Arc::new(crate::domains::AvroDomain));
-        registry.register(Arc::new(crate::domains::SyslogDomain));
-        registry.register(Arc::new(crate::domains::ApacheDomain));
-        registry.register(Arc::new(crate::domains::HttpDomain));
-        registry.register(Arc::new(crate::domains::JsonLogDomain));
-        
-        registry
-    });
+static GLOBAL_REGISTRY: std::sync::LazyLock<DomainRegistry> = std::sync::LazyLock::new(|| {
+    let registry = DomainRegistry::new();
+
+    // Register all domain handlers
+    registry.register(Arc::new(crate::domains::PassthroughDomain));
+    registry.register(Arc::new(crate::domains::JsonDomain));
+    registry.register(Arc::new(crate::domains::CsvDomain));
+    registry.register(Arc::new(crate::domains::XmlDomain));
+    registry.register(Arc::new(crate::domains::YamlDomain));
+    registry.register(Arc::new(crate::domains::MsgPackDomain));
+    registry.register(Arc::new(crate::domains::CborDomain));
+    registry.register(Arc::new(crate::domains::ProtobufDomain));
+    registry.register(Arc::new(crate::domains::AvroDomain));
+    registry.register(Arc::new(crate::domains::SyslogDomain));
+    registry.register(Arc::new(crate::domains::ApacheDomain));
+    registry.register(Arc::new(crate::domains::HttpDomain));
+    registry.register(Arc::new(crate::domains::JsonLogDomain));
+
+    registry
+});
 
 /// Get the global domain registry.
-#[must_use] 
+#[must_use]
 pub fn global_registry() -> &'static DomainRegistry {
     &GLOBAL_REGISTRY
 }
@@ -156,9 +155,9 @@ mod tests {
     fn registry_register_and_get() {
         let registry = DomainRegistry::new();
         let domain: Arc<dyn Domain> = Arc::new(TestDomain);
-        
+
         registry.register(Arc::clone(&domain));
-        
+
         let retrieved = registry.get("test.mock");
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().info().id, "test.mock");
@@ -168,16 +167,16 @@ mod tests {
     fn registry_auto_detect() {
         let registry = DomainRegistry::new();
         let domain: Arc<dyn Domain> = Arc::new(TestDomain);
-        
+
         registry.register(domain);
-        
+
         // Should detect with high confidence
         let result = registry.auto_detect(b"TEST data", None, 0.5);
         assert!(result.is_some());
         let (detected, score) = result.unwrap();
         assert_eq!(detected.info().id, "test.mock");
         assert!(score >= 0.9);
-        
+
         // Should not detect with low confidence data
         let result = registry.auto_detect(b"other data", None, 0.5);
         assert!(result.is_none());
@@ -187,11 +186,11 @@ mod tests {
     fn registry_list_domains() {
         let registry = DomainRegistry::new();
         assert_eq!(registry.count(), 0);
-        
+
         let domain: Arc<dyn Domain> = Arc::new(TestDomain);
         registry.register(domain);
         assert_eq!(registry.count(), 1);
-        
+
         let domains = registry.list_domains();
         assert!(domains.contains(&"test.mock".to_string()));
     }

@@ -66,7 +66,7 @@ impl fmt::Display for SimdTier {
 ///
 /// Queries CPU features, core counts, RAM, and OS at runtime.
 /// This should be called once at startup and cached.
-#[must_use] 
+#[must_use]
 pub fn detect_host() -> HostInfo {
     let (cpu_vendor, cpu_brand) = detect_cpu_info();
     let (physical_cores, logical_cores) = detect_core_counts();
@@ -126,7 +126,7 @@ pub fn cached_host_info() -> &'static HostInfo {
 /// Pass the returned config through [`ResourceConfig::effective_threads`]
 /// / [`ResourceConfig::effective_memory_mb`] — or override individual
 /// fields from CLI flags before use.
-#[must_use] 
+#[must_use]
 pub fn auto_resource_config() -> cpac_types::ResourceConfig {
     let host = cached_host_info();
 

@@ -31,11 +31,19 @@ impl Domain for ApacheDomain {
         }
 
         let text = std::str::from_utf8(data).unwrap_or("");
-        
+
         // Look for Apache log patterns: IP - - [timestamp] "METHOD /path HTTP/..."
-        let has_apache_pattern = text.lines().take(10).filter(|line| {
-            line.contains('[') && line.contains(']') && line.contains("HTTP/") && line.contains('"')
-        }).count() > 5;
+        let has_apache_pattern = text
+            .lines()
+            .take(10)
+            .filter(|line| {
+                line.contains('[')
+                    && line.contains(']')
+                    && line.contains("HTTP/")
+                    && line.contains('"')
+            })
+            .count()
+            > 5;
 
         if has_apache_pattern {
             return 0.8;
@@ -60,8 +68,8 @@ impl Domain for ApacheDomain {
 
             // Parse method (in quotes)
             if let Some(start) = line.find('"') {
-                if let Some(end) = line[start+1..].find('"') {
-                    let request = &line[start+1..start+1+end];
+                if let Some(end) = line[start + 1..].find('"') {
+                    let request = &line[start + 1..start + 1 + end];
                     if let Some(method) = request.split_whitespace().next() {
                         *method_freq.entry(method.to_string()).or_insert(0) += 1;
                     }
@@ -71,8 +79,8 @@ impl Domain for ApacheDomain {
             // Parse user agent (last quoted string in Combined format)
             let quote_positions: Vec<_> = line.match_indices('"').collect();
             if quote_positions.len() >= 4 {
-                let ua_start = quote_positions[quote_positions.len()-2].0 + 1;
-                let ua_end = quote_positions[quote_positions.len()-1].0;
+                let ua_start = quote_positions[quote_positions.len() - 2].0 + 1;
+                let ua_end = quote_positions[quote_positions.len() - 1].0;
                 if ua_end > ua_start {
                     let ua = &line[ua_start..ua_end];
                     *ua_freq.entry(ua.to_string()).or_insert(0) += 1;
@@ -128,15 +136,33 @@ impl Domain for ApacheDomain {
         }
 
         let mut fields = HashMap::new();
-        fields.insert("ips".to_string(), serde_json::Value::Array(
-            repeated_ips.iter().map(|(i, _)| serde_json::Value::String(i.clone())).collect()
-        ));
-        fields.insert("methods".to_string(), serde_json::Value::Array(
-            repeated_methods.iter().map(|(m, _)| serde_json::Value::String(m.clone())).collect()
-        ));
-        fields.insert("user_agents".to_string(), serde_json::Value::Array(
-            repeated_uas.iter().map(|(u, _)| serde_json::Value::String(u.clone())).collect()
-        ));
+        fields.insert(
+            "ips".to_string(),
+            serde_json::Value::Array(
+                repeated_ips
+                    .iter()
+                    .map(|(i, _)| serde_json::Value::String(i.clone()))
+                    .collect(),
+            ),
+        );
+        fields.insert(
+            "methods".to_string(),
+            serde_json::Value::Array(
+                repeated_methods
+                    .iter()
+                    .map(|(m, _)| serde_json::Value::String(m.clone()))
+                    .collect(),
+            ),
+        );
+        fields.insert(
+            "user_agents".to_string(),
+            serde_json::Value::Array(
+                repeated_uas
+                    .iter()
+                    .map(|(u, _)| serde_json::Value::String(u.clone()))
+                    .collect(),
+            ),
+        );
 
         Ok(ExtractionResult {
             fields,
@@ -147,29 +173,43 @@ impl Domain for ApacheDomain {
     }
 
     fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
-        let ips_value = result.fields.get("ips")
+        let ips_value = result
+            .fields
+            .get("ips")
             .ok_or_else(|| CpacError::DecompressFailed("Missing ips".into()))?;
-        let methods_value = result.fields.get("methods")
+        let methods_value = result
+            .fields
+            .get("methods")
             .ok_or_else(|| CpacError::DecompressFailed("Missing methods".into()))?;
-        let uas_value = result.fields.get("user_agents")
+        let uas_value = result
+            .fields
+            .get("user_agents")
             .ok_or_else(|| CpacError::DecompressFailed("Missing user_agents".into()))?;
 
         let ips: Vec<String> = if let serde_json::Value::Array(arr) = ips_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
             return Err(CpacError::DecompressFailed("Invalid ips format".into()));
         };
 
         let methods: Vec<String> = if let serde_json::Value::Array(arr) = methods_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
             return Err(CpacError::DecompressFailed("Invalid methods format".into()));
         };
 
         let uas: Vec<String> = if let serde_json::Value::Array(arr) = uas_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
-            return Err(CpacError::DecompressFailed("Invalid user_agents format".into()));
+            return Err(CpacError::DecompressFailed(
+                "Invalid user_agents format".into(),
+            ));
         };
 
         let mut reconstructed = std::str::from_utf8(&result.residual)

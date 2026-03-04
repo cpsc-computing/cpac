@@ -100,10 +100,7 @@ pub fn compress_at_level(
             let mut out = Vec::new();
             {
                 let mut writer = brotli::CompressorWriter::new(
-                    &mut out,
-                    4096,
-                    quality,
-                    22, // lgwin = max window
+                    &mut out, 4096, quality, 22, // lgwin = max window
                 );
                 std::io::Write::write_all(&mut writer, data)
                     .map_err(|e| CpacError::CompressFailed(format!("brotli write: {e}")))?;
@@ -192,13 +189,13 @@ pub fn decompress_with_dict(
 /// - Large files + medium entropy → Zstd (speed matters)
 /// - Medium files + high entropy → Brotli (ratio matters)
 /// - Small files + high entropy → Brotli (ratio critical)
-#[must_use] 
+#[must_use]
 pub fn auto_select_backend(entropy: f64) -> Backend {
     auto_select_backend_with_size(entropy, 0)
 }
 
 /// Auto-select backend with size awareness.
-#[must_use] 
+#[must_use]
 pub fn auto_select_backend_with_size(entropy: f64, data_size: usize) -> Backend {
     // Raw for essentially incompressible data
     if entropy < 1.0 {

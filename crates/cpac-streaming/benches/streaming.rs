@@ -34,7 +34,13 @@ fn gen_json_log(rows: usize) -> Vec<u8> {
 fn gen_csv(rows: usize) -> Vec<u8> {
     let mut s = String::from("id,name,value,status\n");
     for i in 0..rows {
-        s.push_str(&format!("{},item_{},{},{}\n", i, i, i * 7 % 1000, if i % 2 == 0 { "ok" } else { "err" }));
+        s.push_str(&format!(
+            "{},item_{},{},{}\n",
+            i,
+            i,
+            i * 7 % 1000,
+            if i % 2 == 0 { "ok" } else { "err" }
+        ));
     }
     s.into_bytes()
 }
@@ -55,30 +61,33 @@ fn bench_streaming_compress_json(c: &mut Criterion) {
         g.throughput(Throughput::Bytes(data.len() as u64));
 
         // With MSN
-        let cfg_msn = CompressConfig { enable_msn: true, msn_confidence: 0.7, ..Default::default() };
+        let cfg_msn = CompressConfig {
+            enable_msn: true,
+            msn_confidence: 0.7,
+            ..Default::default()
+        };
         let msn_cfg = MsnConfig::default();
         g.bench_with_input(BenchmarkId::new("with_msn", rows), &data, |b, d| {
             b.iter(|| {
-                let mut c = StreamingCompressor::with_msn(
-                    cfg_msn.clone(),
-                    msn_cfg,
-                    4096,
-                    64 << 20,
-                )
-                .unwrap();
+                let mut c =
+                    StreamingCompressor::with_msn(cfg_msn.clone(), msn_cfg.clone(), 4096, 64 << 20)
+                        .unwrap();
                 c.write(black_box(d)).unwrap();
                 c.finish().unwrap()
             })
         });
 
         // Without MSN
-        let cfg_raw = CompressConfig { enable_msn: false, ..Default::default() };
+        let cfg_raw = CompressConfig {
+            enable_msn: false,
+            ..Default::default()
+        };
         let msn_disabled = MsnConfig::disabled();
         g.bench_with_input(BenchmarkId::new("no_msn", rows), &data, |b, d| {
             b.iter(|| {
                 let mut c = StreamingCompressor::with_msn(
                     cfg_raw.clone(),
-                    msn_disabled,
+                    msn_disabled.clone(),
                     4096,
                     64 << 20,
                 )
@@ -98,17 +107,17 @@ fn bench_streaming_compress_csv(c: &mut Criterion) {
         let data = gen_csv(rows);
         g.throughput(Throughput::Bytes(data.len() as u64));
 
-        let cfg_msn = CompressConfig { enable_msn: true, msn_confidence: 0.7, ..Default::default() };
+        let cfg_msn = CompressConfig {
+            enable_msn: true,
+            msn_confidence: 0.7,
+            ..Default::default()
+        };
         let msn_cfg = MsnConfig::default();
         g.bench_with_input(BenchmarkId::new("with_msn", rows), &data, |b, d| {
             b.iter(|| {
-                let mut c = StreamingCompressor::with_msn(
-                    cfg_msn.clone(),
-                    msn_cfg,
-                    4096,
-                    64 << 20,
-                )
-                .unwrap();
+                let mut c =
+                    StreamingCompressor::with_msn(cfg_msn.clone(), msn_cfg.clone(), 4096, 64 << 20)
+                        .unwrap();
                 c.write(black_box(d)).unwrap();
                 c.finish().unwrap()
             })
@@ -124,7 +133,10 @@ fn bench_streaming_compress_binary(c: &mut Criterion) {
         let data = gen_binary(size);
         g.throughput(Throughput::Bytes(data.len() as u64));
 
-        let cfg = CompressConfig { enable_msn: false, ..Default::default() };
+        let cfg = CompressConfig {
+            enable_msn: false,
+            ..Default::default()
+        };
         g.bench_with_input(BenchmarkId::new("compress", size), &data, |b, d| {
             b.iter(|| {
                 let mut c = StreamingCompressor::with_msn(
@@ -152,8 +164,13 @@ fn bench_streaming_decompress(c: &mut Criterion) {
 
     // Pre-compress a JSON log corpus to measure decompression only.
     let data = gen_json_log(2000);
-    let cfg = CompressConfig { enable_msn: true, msn_confidence: 0.7, ..Default::default() };
-    let mut comp = StreamingCompressor::with_msn(cfg, MsnConfig::default(), 4096, 64 << 20).unwrap();
+    let cfg = CompressConfig {
+        enable_msn: true,
+        msn_confidence: 0.7,
+        ..Default::default()
+    };
+    let mut comp =
+        StreamingCompressor::with_msn(cfg, MsnConfig::default(), 4096, 64 << 20).unwrap();
     comp.write(&data).unwrap();
     let frame = comp.finish().unwrap();
 
@@ -168,8 +185,12 @@ fn bench_streaming_decompress(c: &mut Criterion) {
 
     // Binary (no MSN)
     let data_bin = gen_binary(64 * 1024);
-    let cfg_bin = CompressConfig { enable_msn: false, ..Default::default() };
-    let mut comp_bin = StreamingCompressor::with_msn(cfg_bin, MsnConfig::disabled(), 4096, 64 << 20).unwrap();
+    let cfg_bin = CompressConfig {
+        enable_msn: false,
+        ..Default::default()
+    };
+    let mut comp_bin =
+        StreamingCompressor::with_msn(cfg_bin, MsnConfig::disabled(), 4096, 64 << 20).unwrap();
     comp_bin.write(&data_bin).unwrap();
     let frame_bin = comp_bin.finish().unwrap();
 

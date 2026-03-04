@@ -12,7 +12,7 @@
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
+    clippy::missing_panics_doc
 )]
 
 pub mod bench;
@@ -21,11 +21,11 @@ pub mod host;
 pub mod parallel;
 pub mod pool;
 
+pub use bench::{check_regressions, load_baseline, save_baseline};
 pub use bench::{
-    BaselineEntry, BaselineEngine, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary,
+    BaselineEngine, BaselineEntry, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary,
     RegressionKind, RegressionViolation,
 };
-pub use bench::{check_regressions, load_baseline, save_baseline};
 pub use cpac_dag::{ProfileCache, TransformDAG, TransformRegistry};
 pub use cpac_types::{
     Backend, CompressConfig, CompressResult, CpacError, CpacResult, DecompressResult,
@@ -124,7 +124,10 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
 
     // 4. Check if we should use parallel compression for large files
     // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel)
-    if !config.disable_parallel && original_size >= parallel::PARALLEL_THRESHOLD && backend != Backend::Raw {
+    if !config.disable_parallel
+        && original_size >= parallel::PARALLEL_THRESHOLD
+        && backend != Backend::Raw
+    {
         // Use default 1MB block size and auto-detect thread count
         let num_threads = rayon::current_num_threads();
         return compress_parallel(data, config, DEFAULT_BLOCK_SIZE, num_threads);
@@ -143,7 +146,8 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
             data_size: ssr.data_size,
         };
         // Use SSR-guided TP preprocess (generic profile / default)
-        let (preprocessed, _transform_meta) = cpac_transforms::preprocess(data_to_compress, &transform_ctx);
+        let (preprocessed, _transform_meta) =
+            cpac_transforms::preprocess(data_to_compress, &transform_ctx);
         preprocessed
     } else {
         data_to_compress.clone()
@@ -154,14 +158,24 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         &preprocessed,
         backend,
         config.level,
-        if backend == Backend::Zstd { config.dictionary.as_deref() } else { None },
+        if backend == Backend::Zstd {
+            config.dictionary.as_deref()
+        } else {
+            None
+        },
     )?;
 
     // 7. Frame encoding (CP2 if MSN enabled, CP otherwise)
     let frame = if msn_metadata.is_empty() {
         cpac_frame::encode_frame(&compressed_payload, backend, original_size, &[])
     } else {
-        cpac_frame::encode_frame_cp2(&compressed_payload, backend, original_size, &[], &msn_metadata)
+        cpac_frame::encode_frame_cp2(
+            &compressed_payload,
+            backend,
+            original_size,
+            &[],
+            &msn_metadata,
+        )
     };
 
     let compressed_size = frame.len();
@@ -343,30 +357,30 @@ mod tests {
 {"name":"Charlie","age":35,"city":"SF"}
 {"name":"Diana","age":28,"city":"NYC"}
 {"name":"Eve","age":32,"city":"LA"}"#;
-        
+
         let data = json_data.as_bytes();
-        
+
         // Compress with MSN enabled
         let config_msn = CompressConfig {
             enable_msn: true,
             ..Default::default()
         };
         let compressed_msn = compress(data, &config_msn).unwrap();
-        
+
         // Compress without MSN
         let config_no_msn = CompressConfig {
             enable_msn: false,
             ..Default::default()
         };
         let compressed_no_msn = compress(data, &config_no_msn).unwrap();
-        
+
         // MSN should achieve better compression on this structured data
         // (though results may vary based on SSR track selection)
-        
+
         // Decompress and verify (compare JSON semantically, not byte-for-byte)
         let decompressed_msn = decompress(&compressed_msn.data).unwrap();
         let decompressed_no_msn = decompress(&compressed_no_msn.data).unwrap();
-        
+
         // Parse both as JSON to verify semantic equivalence
         let orig_lines: Vec<serde_json::Value> = std::str::from_utf8(data)
             .unwrap()
@@ -383,8 +397,11 @@ mod tests {
             .lines()
             .map(|l| serde_json::from_str(l).unwrap())
             .collect();
-        
+
         assert_eq!(orig_lines, msn_lines, "MSN roundtrip semantic mismatch");
-        assert_eq!(orig_lines, no_msn_lines, "No-MSN roundtrip semantic mismatch");
+        assert_eq!(
+            orig_lines, no_msn_lines,
+            "No-MSN roundtrip semantic mismatch"
+        );
     }
 }

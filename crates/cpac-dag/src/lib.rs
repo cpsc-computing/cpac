@@ -9,7 +9,7 @@
     clippy::cast_possible_truncation,
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::needless_pass_by_value,
+    clippy::needless_pass_by_value
 )]
 
 pub mod dag;

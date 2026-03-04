@@ -30,9 +30,12 @@ impl Domain for ProtobufDomain {
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
             if std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("pb"))
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("pb"))
                 || std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("protobuf")) {
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("protobuf"))
+            {
                 return 0.8;
             }
         }
@@ -45,7 +48,7 @@ impl Domain for ProtobufDomain {
                 let wire_type = w[0] & 0x07;
                 wire_type <= 5
             });
-            
+
             if has_valid_tags {
                 return 0.5;
             }

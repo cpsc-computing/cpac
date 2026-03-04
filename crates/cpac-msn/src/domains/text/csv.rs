@@ -26,10 +26,16 @@ impl Domain for CsvDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
-            if std::path::Path::new(fname).extension().is_some_and(|e| e.eq_ignore_ascii_case("csv")) {
+            if std::path::Path::new(fname)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
+            {
                 return 0.9;
             }
-            if std::path::Path::new(fname).extension().is_some_and(|e| e.eq_ignore_ascii_case("tsv")) {
+            if std::path::Path::new(fname)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("tsv"))
+            {
                 return 0.85;
             }
         }
@@ -53,18 +59,19 @@ impl Domain for CsvDomain {
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         // Find the first newline — marks the end of the header line.
-        let newline_pos = data.iter().position(|&b| b == b'\n')
-            .ok_or_else(|| CpacError::CompressFailed("CSV: no newline found (single-line CSV)".into()))?;
+        let newline_pos = data.iter().position(|&b| b == b'\n').ok_or_else(|| {
+            CpacError::CompressFailed("CSV: no newline found (single-line CSV)".into())
+        })?;
 
         // Determine the separator written after the header (CRLF vs LF).
         // We look only at THIS specific newline, not the whole file, so that
         // mixed-ending files are handled correctly.
-        let (header_content_end, header_sep) =
-            if newline_pos > 0 && data[newline_pos - 1] == b'\r' {
-                (newline_pos - 1, "\r\n") // CRLF: header content ends before the \r
-            } else {
-                (newline_pos, "\n") // LF-only: header content ends before the \n
-            };
+        let (header_content_end, header_sep) = if newline_pos > 0 && data[newline_pos - 1] == b'\r'
+        {
+            (newline_pos - 1, "\r\n") // CRLF: header content ends before the \r
+        } else {
+            (newline_pos, "\n") // LF-only: header content ends before the \n
+        };
 
         // Parse header column names from the raw header bytes.
         // We do NOT trim so that reconstruct produces the byte-exact original.
@@ -157,18 +164,24 @@ impl Domain for CsvDomain {
         if result.residual.first() == Some(&0x01u8) {
             return Ok(result.residual[1..].to_vec());
         }
-        let headers_value = result.fields.get("headers")
+        let headers_value = result
+            .fields
+            .get("headers")
             .ok_or_else(|| CpacError::DecompressFailed("Missing headers".into()))?;
 
         let headers: Vec<String> = if let serde_json::Value::Array(arr) = headers_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
             return Err(CpacError::DecompressFailed("Invalid headers format".into()));
         };
 
         // header_sep is the separator written after the header line during extraction.
         // Defaults to "\n" for frames written before this field was introduced.
-        let header_sep = result.fields.get("header_sep")
+        let header_sep = result
+            .fields
+            .get("header_sep")
             .and_then(|v| v.as_str())
             .unwrap_or("\n");
 
@@ -284,7 +297,9 @@ mod tests {
         let data_block = b"Charlie,35,SF\nDiana,28,NYC\n";
 
         let detection = domain.extract(header_block).unwrap();
-        let result = domain.extract_with_fields(data_block, &detection.fields).unwrap();
+        let result = domain
+            .extract_with_fields(data_block, &detection.fields)
+            .unwrap();
 
         // Must start with 0x01 marker.
         assert_eq!(result.residual[0], 0x01u8);
@@ -315,6 +330,9 @@ mod tests {
         let mut combined = recon1;
         combined.extend_from_slice(&recon2);
 
-        assert_eq!(combined, original, "two-block CSV streaming roundtrip failed");
+        assert_eq!(
+            combined, original,
+            "two-block CSV streaming roundtrip failed"
+        );
     }
 }

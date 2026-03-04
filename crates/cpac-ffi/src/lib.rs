@@ -64,7 +64,9 @@ impl From<CpacError> for CpacErrorCode {
             CpacError::InvalidFrame(_) => CpacErrorCode::InvalidFrame,
             CpacError::UnsupportedBackend(_) => CpacErrorCode::UnsupportedBackend,
             CpacError::DecompressFailed(_) => CpacErrorCode::DecompressFailed,
-            CpacError::CompressFailed(_) | CpacError::DomainError { .. } => CpacErrorCode::CompressFailed,
+            CpacError::CompressFailed(_) | CpacError::DomainError { .. } => {
+                CpacErrorCode::CompressFailed
+            }
             CpacError::Transform(_) => CpacErrorCode::Transform,
             CpacError::Encryption(_) => CpacErrorCode::Encryption,
             CpacError::Other(_) => CpacErrorCode::Other,
@@ -199,7 +201,9 @@ pub struct CpacDecompressor(StreamingDecompressor);
 /// Do not free it.
 #[no_mangle]
 pub unsafe extern "C" fn cpac_version() -> *const c_char {
-    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast::<c_char>()
+    concat!(env!("CARGO_PKG_VERSION"), "\0")
+        .as_ptr()
+        .cast::<c_char>()
 }
 
 // ---------------------------------------------------------------------------

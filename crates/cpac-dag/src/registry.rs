@@ -16,7 +16,7 @@ pub struct TransformRegistry {
 
 impl TransformRegistry {
     /// Create a new empty registry.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             by_id: HashMap::new(),
@@ -25,7 +25,7 @@ impl TransformRegistry {
     }
 
     /// Create a registry pre-loaded with all built-in transforms.
-    #[must_use] 
+    #[must_use]
     pub fn with_builtins() -> Self {
         let mut reg = Self::new();
         reg.register(Arc::new(cpac_transforms::DeltaTransform));
@@ -50,31 +50,34 @@ impl TransformRegistry {
     }
 
     /// Look up a transform by wire ID.
-    #[must_use] 
+    #[must_use]
     pub fn get_by_id(&self, id: u8) -> Option<&Arc<dyn TransformNode>> {
         self.by_id.get(&id)
     }
 
     /// Look up a transform by name.
-    #[must_use] 
+    #[must_use]
     pub fn get_by_name(&self, name: &str) -> Option<&Arc<dyn TransformNode>> {
         self.by_name.get(name)
     }
 
     /// List all registered transform names.
-    #[must_use] 
+    #[must_use]
     pub fn names(&self) -> Vec<&str> {
-        self.by_name.keys().map(std::string::String::as_str).collect()
+        self.by_name
+            .keys()
+            .map(std::string::String::as_str)
+            .collect()
     }
 
     /// Number of registered transforms.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.by_id.len()
     }
 
     /// Whether the registry is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.by_id.is_empty()
     }

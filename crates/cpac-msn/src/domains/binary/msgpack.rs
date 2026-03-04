@@ -28,9 +28,12 @@ impl Domain for MsgPackDomain {
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
             if std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("msgpack"))
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("msgpack"))
                 || std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("mp")) {
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("mp"))
+            {
                 return 0.9;
             }
         }
@@ -43,7 +46,8 @@ impl Domain for MsgPackDomain {
 
         // Check if it's mostly ASCII text (indicates not MessagePack)
         #[allow(clippy::cast_precision_loss)]
-        let ascii_ratio = data.iter().filter(|&&b| (32u8..127u8).contains(&b)).count() as f64 / data.len() as f64;
+        let ascii_ratio =
+            data.iter().filter(|&&b| (32u8..127u8).contains(&b)).count() as f64 / data.len() as f64;
         if ascii_ratio > 0.9 {
             // Likely plain text, not MessagePack
             return 0.0;
@@ -92,9 +96,15 @@ impl Domain for MsgPackDomain {
             .map_err(|e| CpacError::CompressFailed(format!("MessagePack encode: {e}")))?;
 
         let mut fields = HashMap::new();
-        fields.insert("keys".to_string(), Value::Array(
-            repeated_keys.iter().map(|(k, _)| Value::String(k.clone())).collect()
-        ));
+        fields.insert(
+            "keys".to_string(),
+            Value::Array(
+                repeated_keys
+                    .iter()
+                    .map(|(k, _)| Value::String(k.clone()))
+                    .collect(),
+            ),
+        );
 
         Ok(ExtractionResult {
             fields,
@@ -105,11 +115,15 @@ impl Domain for MsgPackDomain {
     }
 
     fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
-        let keys_value = result.fields.get("keys")
+        let keys_value = result
+            .fields
+            .get("keys")
             .ok_or_else(|| CpacError::DecompressFailed("Missing keys".into()))?;
 
         let keys: Vec<String> = if let Value::Array(arr) = keys_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
             return Err(CpacError::DecompressFailed("Invalid keys format".into()));
         };
@@ -147,15 +161,15 @@ fn compact_value(value: &Value, key_map: &HashMap<String, u32>) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let new_key = key_map.get(k).map_or_else(|| k.clone(), |idx| format!("$K{idx}"));
+                    let new_key = key_map
+                        .get(k)
+                        .map_or_else(|| k.clone(), |idx| format!("$K{idx}"));
                     (new_key, compact_value(v, key_map))
                 })
                 .collect();
             Value::Object(new_map)
         }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(|v| compact_value(v, key_map)).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.iter().map(|v| compact_value(v, key_map)).collect()),
         _ => value.clone(),
     }
 }
@@ -166,7 +180,8 @@ fn expand_value(value: &Value, keys: &[String]) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let orig_key = k.strip_prefix("$K")
+                    let orig_key = k
+                        .strip_prefix("$K")
                         .and_then(|s| s.parse::<usize>().ok())
                         .and_then(|idx| keys.get(idx).cloned())
                         .unwrap_or_else(|| k.clone());
@@ -175,9 +190,7 @@ fn expand_value(value: &Value, keys: &[String]) -> Value {
                 .collect();
             Value::Object(new_map)
         }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(|v| expand_value(v, keys)).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.iter().map(|v| expand_value(v, keys)).collect()),
         _ => value.clone(),
     }
 }

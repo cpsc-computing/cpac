@@ -16,7 +16,7 @@
     clippy::cast_possible_wrap,
     clippy::cast_ptr_alignment,
     clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
+    clippy::missing_panics_doc
 )]
 
 pub mod bwt;
@@ -95,7 +95,7 @@ impl TransformID {
 /// Returns `(data, metadata)` where `data` is the TP-framed output
 /// (or raw bytes if no transform was applied) and `metadata` is empty
 /// (all info is embedded in the TP frame).
-#[must_use] 
+#[must_use]
 pub fn preprocess(data: &[u8], ctx: &TransformContext) -> (Vec<u8>, Vec<u8>) {
     let n = data.len();
     if n < MIN_PREPROCESS_SIZE {
@@ -198,7 +198,7 @@ pub fn preprocess(data: &[u8], ctx: &TransformContext) -> (Vec<u8>, Vec<u8>) {
 /// Checks for the `TP` magic header in `data`. If found, reverses the
 /// embedded transforms. The `_metadata` parameter is unused (all info
 /// is embedded in the TP frame).
-#[must_use] 
+#[must_use]
 pub fn unpreprocess(data: &[u8], _metadata: &[u8]) -> Vec<u8> {
     if data.len() < 4 || &data[0..2] != TP_MAGIC {
         return data.to_vec();

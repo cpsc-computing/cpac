@@ -87,7 +87,7 @@ mod tests {
     fn extraction_result_serialization() {
         let mut fields = HashMap::new();
         fields.insert("test".to_string(), serde_json::json!({"key": "value"}));
-        
+
         let result = ExtractionResult {
             fields,
             residual: vec![1, 2, 3],
@@ -98,7 +98,7 @@ mod tests {
         // Should serialize/deserialize without errors
         let serialized = serde_json::to_string(&result).unwrap();
         let deserialized: ExtractionResult = serde_json::from_str(&serialized).unwrap();
-        
+
         assert_eq!(result.domain_id, deserialized.domain_id);
         assert_eq!(result.residual, deserialized.residual);
     }

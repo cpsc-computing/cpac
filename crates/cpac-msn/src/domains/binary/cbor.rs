@@ -27,7 +27,9 @@ impl Domain for CborDomain {
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
             if std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("cbor")) {
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("cbor"))
+            {
                 return 0.9;
             }
         }
@@ -35,7 +37,8 @@ impl Domain for CborDomain {
         // CBOR detection must be strict to avoid false positives
         // Check if it's mostly ASCII text (indicates not CBOR)
         #[allow(clippy::cast_precision_loss)]
-        let ascii_ratio = data.iter().filter(|&&b| (32u8..127u8).contains(&b)).count() as f64 / data.len() as f64;
+        let ascii_ratio =
+            data.iter().filter(|&&b| (32u8..127u8).contains(&b)).count() as f64 / data.len() as f64;
         if ascii_ratio > 0.9 {
             // Likely plain text, not CBOR
             return 0.0;
@@ -92,9 +95,15 @@ impl Domain for CborDomain {
             .map_err(|e| CpacError::CompressFailed(format!("CBOR encode: {e}")))?;
 
         let mut fields = HashMap::new();
-        fields.insert("keys".to_string(), Value::Array(
-            repeated_keys.iter().map(|(k, _)| Value::String(k.clone())).collect()
-        ));
+        fields.insert(
+            "keys".to_string(),
+            Value::Array(
+                repeated_keys
+                    .iter()
+                    .map(|(k, _)| Value::String(k.clone()))
+                    .collect(),
+            ),
+        );
 
         Ok(ExtractionResult {
             fields,
@@ -105,11 +114,15 @@ impl Domain for CborDomain {
     }
 
     fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
-        let keys_value = result.fields.get("keys")
+        let keys_value = result
+            .fields
+            .get("keys")
             .ok_or_else(|| CpacError::DecompressFailed("Missing keys".into()))?;
 
         let keys: Vec<String> = if let Value::Array(arr) = keys_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
             return Err(CpacError::DecompressFailed("Invalid keys format".into()));
         };
@@ -136,16 +149,17 @@ fn cbor_to_json(cbor: &ciborium::Value) -> Result<Value, String> {
     match cbor {
         ciborium::Value::Integer(i) => {
             // Convert ciborium Integer to i64
-            let val: i64 = TryInto::<i64>::try_into(*i)
-                .map_err(|_| "Integer out of range".to_string())?;
+            let val: i64 =
+                TryInto::<i64>::try_into(*i).map_err(|_| "Integer out of range".to_string())?;
             Ok(Value::Number(val.into()))
         }
-        ciborium::Value::Bytes(b) => Ok(Value::String(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b))),
-        ciborium::Value::Float(f) => {
-            serde_json::Number::from_f64(*f)
-                .map(Value::Number)
-                .ok_or_else(|| "Invalid float".to_string())
-        }
+        ciborium::Value::Bytes(b) => Ok(Value::String(base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            b,
+        ))),
+        ciborium::Value::Float(f) => serde_json::Number::from_f64(*f)
+            .map(Value::Number)
+            .ok_or_else(|| "Invalid float".to_string()),
         ciborium::Value::Text(s) => Ok(Value::String(s.clone())),
         ciborium::Value::Bool(b) => Ok(Value::Bool(*b)),
         ciborium::Value::Null => Ok(Value::Null),
@@ -219,15 +233,15 @@ fn compact_value(value: &Value, key_map: &HashMap<String, u32>) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let new_key = key_map.get(k).map_or_else(|| k.clone(), |idx| format!("$C{idx}"));
+                    let new_key = key_map
+                        .get(k)
+                        .map_or_else(|| k.clone(), |idx| format!("$C{idx}"));
                     (new_key, compact_value(v, key_map))
                 })
                 .collect();
             Value::Object(new_map)
         }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(|v| compact_value(v, key_map)).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.iter().map(|v| compact_value(v, key_map)).collect()),
         _ => value.clone(),
     }
 }
@@ -238,7 +252,8 @@ fn expand_value(value: &Value, keys: &[String]) -> Value {
             let new_map: serde_json::Map<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let orig_key = k.strip_prefix("$C")
+                    let orig_key = k
+                        .strip_prefix("$C")
                         .and_then(|s| s.parse::<usize>().ok())
                         .and_then(|idx| keys.get(idx).cloned())
                         .unwrap_or_else(|| k.clone());
@@ -247,9 +262,7 @@ fn expand_value(value: &Value, keys: &[String]) -> Value {
                 .collect();
             Value::Object(new_map)
         }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(|v| expand_value(v, keys)).collect())
-        }
+        Value::Array(arr) => Value::Array(arr.iter().map(|v| expand_value(v, keys)).collect()),
         _ => value.clone(),
     }
 }
@@ -261,14 +274,20 @@ mod tests {
     #[test]
     fn cbor_domain_roundtrip() {
         let domain = CborDomain;
-        
+
         // Create CBOR data
         let data_map: Vec<(ciborium::Value, ciborium::Value)> = vec![
-            (ciborium::Value::Text("name".to_string()), ciborium::Value::Text("Alice".to_string())),
-            (ciborium::Value::Text("age".to_string()), ciborium::Value::Integer(30.into())),
+            (
+                ciborium::Value::Text("name".to_string()),
+                ciborium::Value::Text("Alice".to_string()),
+            ),
+            (
+                ciborium::Value::Text("age".to_string()),
+                ciborium::Value::Integer(30.into()),
+            ),
         ];
         let cbor_value = ciborium::Value::Map(data_map);
-        
+
         let mut cbor_data = Vec::new();
         ciborium::into_writer(&cbor_value, &mut cbor_data).unwrap();
 
@@ -277,7 +296,7 @@ mod tests {
 
         let orig: ciborium::Value = ciborium::from_reader(&cbor_data[..]).unwrap();
         let recon: ciborium::Value = ciborium::from_reader(&reconstructed[..]).unwrap();
-        
+
         // Compare as JSON for easier equality check
         let orig_json = cbor_to_json(&orig).unwrap();
         let recon_json = cbor_to_json(&recon).unwrap();

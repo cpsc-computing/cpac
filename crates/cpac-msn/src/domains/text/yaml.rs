@@ -25,19 +25,25 @@ impl Domain for YamlDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
-            if std::path::Path::new(fname).extension().is_some_and(|e| {
-                e.eq_ignore_ascii_case("yaml") || e.eq_ignore_ascii_case("yml")
-            }) {
+            if std::path::Path::new(fname)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("yaml") || e.eq_ignore_ascii_case("yml"))
+            {
                 return 0.9;
             }
         }
 
         let text = std::str::from_utf8(data).unwrap_or("");
-        
+
         // Check for YAML patterns
-        let has_yaml_markers = text.lines().take(20).filter(|line| {
-            line.contains(':') || line.trim().starts_with('-') || line.contains("---")
-        }).count() > 5;
+        let has_yaml_markers = text
+            .lines()
+            .take(20)
+            .filter(|line| {
+                line.contains(':') || line.trim().starts_with('-') || line.contains("---")
+            })
+            .count()
+            > 5;
 
         if has_yaml_markers {
             return 0.7;
@@ -234,8 +240,7 @@ mod tests {
     #[test]
     fn yaml_domain_detection() {
         let domain = YamlDomain;
-        let data =
-            b"name: Alice\nage: 30\ncity: NYC\nname: Bob\nage: 25\ncity: LA\nstatus: active";
+        let data = b"name: Alice\nage: 30\ncity: NYC\nname: Bob\nage: 25\ncity: LA\nstatus: active";
         assert!(domain.detect(data, None) > 0.6);
         assert!(domain.detect(b"", Some("test.yaml")) > 0.8);
     }
@@ -274,8 +279,12 @@ mod tests {
 
         let detection = domain.extract(block1).unwrap();
 
-        let r1 = domain.extract_with_fields(block1, &detection.fields).unwrap();
-        let r2 = domain.extract_with_fields(block2, &detection.fields).unwrap();
+        let r1 = domain
+            .extract_with_fields(block1, &detection.fields)
+            .unwrap();
+        let r2 = domain
+            .extract_with_fields(block2, &detection.fields)
+            .unwrap();
 
         assert_eq!(domain.reconstruct(&r1).unwrap(), block1.to_vec());
         assert_eq!(domain.reconstruct(&r2).unwrap(), block2.to_vec());
@@ -298,6 +307,9 @@ mod tests {
         let mut combined = domain.reconstruct(&r1).unwrap();
         combined.extend_from_slice(&domain.reconstruct(&r2).unwrap());
 
-        assert_eq!(combined, original, "YAML two-block streaming roundtrip failed");
+        assert_eq!(
+            combined, original,
+            "YAML two-block streaming roundtrip failed"
+        );
     }
 }

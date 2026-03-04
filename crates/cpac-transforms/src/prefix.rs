@@ -37,7 +37,7 @@ fn common_prefix(strings: &[String]) -> String {
 }
 
 /// Encode strings by extracting common prefix.
-#[must_use] 
+#[must_use]
 pub fn prefix_encode(values: &[String]) -> Vec<u8> {
     let mut out = Vec::from(MAGIC.as_slice());
     out.push(VERSION);

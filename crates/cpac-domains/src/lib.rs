@@ -34,7 +34,7 @@ pub trait DomainHandler: Send + Sync {
 }
 
 /// Detect the domain of the given data.
-#[must_use] 
+#[must_use]
 pub fn detect_domain(data: &[u8]) -> Option<DomainHint> {
     if data.is_empty() {
         return None;
@@ -68,7 +68,7 @@ pub fn detect_domain(data: &[u8]) -> Option<DomainHint> {
 }
 
 /// Registry of all built-in domain handlers.
-#[must_use] 
+#[must_use]
 pub fn builtin_handlers() -> Vec<Box<dyn DomainHandler>> {
     vec![
         Box::new(csv::CsvHandler),

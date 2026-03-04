@@ -31,7 +31,7 @@ pub const PARALLEL_THRESHOLD: usize = 256 * 1024;
 const CPBL_HEADER_SIZE: usize = 4 + 1 + 4 + 8;
 
 /// Check whether the given data starts with the CPBL magic.
-#[must_use] 
+#[must_use]
 pub fn is_cpbl(data: &[u8]) -> bool {
     data.len() >= 4 && &data[..4] == CPBL_MAGIC
 }

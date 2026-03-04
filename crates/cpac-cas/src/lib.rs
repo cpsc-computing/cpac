@@ -12,7 +12,7 @@
     clippy::cast_sign_loss,
     clippy::no_effect_underscore_binding,
     clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
+    clippy::missing_panics_doc
 )]
 
 use std::collections::HashSet;
@@ -65,7 +65,7 @@ pub struct CasAnalysis {
 }
 
 /// Infer constraints from integer column data.
-#[must_use] 
+#[must_use]
 pub fn infer_int_constraints(_name: &str, values: &[i64]) -> Vec<Constraint> {
     let mut constraints = Vec::new();
     if values.is_empty() {
@@ -89,7 +89,10 @@ pub fn infer_int_constraints(_name: &str, values: &[i64]) -> Vec<Constraint> {
     // Enumeration (if few unique values)
     let unique: HashSet<i64> = values.iter().copied().collect();
     if unique.len() <= 32 && unique.len() < values.len() / 2 {
-        let mut vals: Vec<String> = unique.iter().map(std::string::ToString::to_string).collect();
+        let mut vals: Vec<String> = unique
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         vals.sort();
         constraints.push(Constraint::Enumeration { values: vals });
     }
@@ -109,7 +112,7 @@ pub fn infer_int_constraints(_name: &str, values: &[i64]) -> Vec<Constraint> {
 }
 
 /// Infer constraints from string column data.
-#[must_use] 
+#[must_use]
 pub fn infer_string_constraints(_name: &str, values: &[String]) -> Vec<Constraint> {
     let mut constraints = Vec::new();
     if values.is_empty() {
@@ -128,7 +131,10 @@ pub fn infer_string_constraints(_name: &str, values: &[String]) -> Vec<Constrain
     // Enumeration
     let unique: HashSet<&str> = values.iter().map(std::string::String::as_str).collect();
     if unique.len() <= 64 && unique.len() < values.len() / 2 {
-        let mut vals: Vec<String> = unique.iter().map(std::string::ToString::to_string).collect();
+        let mut vals: Vec<String> = unique
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         vals.sort();
         constraints.push(Constraint::Enumeration { values: vals });
     }
@@ -137,7 +143,7 @@ pub fn infer_string_constraints(_name: &str, values: &[String]) -> Vec<Constrain
 }
 
 /// Infer additional structural constraints on integer data.
-#[must_use] 
+#[must_use]
 pub fn infer_structural_constraints(values: &[i64]) -> Vec<Constraint> {
     let mut constraints = Vec::new();
     if values.len() < 2 {
@@ -192,7 +198,7 @@ pub fn infer_structural_constraints(values: &[i64]) -> Vec<Constraint> {
 }
 
 /// Full column analysis returning a `CasAnalysis`.
-#[must_use] 
+#[must_use]
 pub fn analyze_columns(columns: &[(String, Vec<i64>)]) -> CasAnalysis {
     let mut all_constraints = Vec::new();
     let mut total_dof = 0.0;
@@ -232,7 +238,7 @@ const CAS_VERSION: u8 = 1;
 /// Compress data with CAS header prepended.
 ///
 /// Format: `[CAS][version][num_constraints:u16 LE][constraint_table][residual_data]`
-#[must_use] 
+#[must_use]
 pub fn cas_compress(data: &[u8]) -> Vec<u8> {
     // For raw bytes, we treat each byte as an i64 value in a single column
     let values: Vec<i64> = data.iter().map(|&b| i64::from(b)).collect();
@@ -264,7 +270,7 @@ pub fn cas_decompress(data: &[u8]) -> cpac_types::CpacResult<Vec<u8>> {
 }
 
 /// Estimate degrees of freedom for a column.
-#[must_use] 
+#[must_use]
 pub fn estimate_dof(
     values_count: usize,
     unique_count: usize,
@@ -284,7 +290,7 @@ pub fn estimate_dof(
 }
 
 /// Compute constrained `DoF` after applying constraints.
-#[must_use] 
+#[must_use]
 pub fn constrained_dof(total_dof: f64, constraints: &[Constraint], values_count: usize) -> f64 {
     let mut reduction = 0.0;
     for constraint in constraints {

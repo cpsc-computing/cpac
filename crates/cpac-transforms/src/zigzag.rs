@@ -19,14 +19,14 @@ pub const TRANSFORM_ID: u8 = 6;
 
 /// Zigzag-encode a signed i64 to an unsigned u64.
 #[inline]
-#[must_use] 
+#[must_use]
 pub fn zigzag_encode(value: i64) -> u64 {
     ((value << 1) ^ (value >> 63)) as u64
 }
 
 /// Zigzag-decode an unsigned u64 back to signed i64.
 #[inline]
-#[must_use] 
+#[must_use]
 pub fn zigzag_decode(value: u64) -> i64 {
     ((value >> 1) as i64) ^ (-((value & 1) as i64))
 }
@@ -36,7 +36,7 @@ pub fn zigzag_decode(value: u64) -> i64 {
 // ---------------------------------------------------------------------------
 
 /// Encode an unsigned integer as a varint (LEB128).
-#[must_use] 
+#[must_use]
 pub fn encode_varint(mut value: u64) -> Vec<u8> {
     let mut buf = Vec::with_capacity(10);
     loop {
@@ -71,7 +71,7 @@ pub fn decode_varint(data: &[u8]) -> CpacResult<(u64, usize)> {
 }
 
 /// Encode a signed i64 as zigzag + varint.
-#[must_use] 
+#[must_use]
 pub fn encode_signed_varint(value: i64) -> Vec<u8> {
     encode_varint(zigzag_encode(value))
 }
@@ -89,7 +89,7 @@ pub fn decode_signed_varint(data: &[u8]) -> CpacResult<(i64, usize)> {
 /// Encode a slice of i64 values using zigzag + varint.
 ///
 /// Format: `[count: varint][value0: signed_varint][value1: signed_varint]...`
-#[must_use] 
+#[must_use]
 pub fn zigzag_encode_batch(values: &[i64]) -> Vec<u8> {
     let mut buf = encode_varint(values.len() as u64);
     for &v in values {

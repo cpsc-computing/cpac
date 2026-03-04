@@ -20,7 +20,7 @@ pub const TRANSFORM_ID: u8 = 5;
 /// Apply byte-level delta encoding.
 ///
 /// First byte is stored as-is; subsequent bytes store `(cur - prev) & 0xFF`.
-#[must_use] 
+#[must_use]
 pub fn delta_encode(data: &[u8]) -> Vec<u8> {
     if data.len() < 2 {
         return data.to_vec();
@@ -34,7 +34,7 @@ pub fn delta_encode(data: &[u8]) -> Vec<u8> {
 }
 
 /// Reverse byte-level delta encoding.
-#[must_use] 
+#[must_use]
 pub fn delta_decode(data: &[u8]) -> Vec<u8> {
     if data.len() < 2 {
         return data.to_vec();
@@ -52,7 +52,7 @@ pub fn delta_decode(data: &[u8]) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 /// Delta-encode a slice of i64 values.
-#[must_use] 
+#[must_use]
 pub fn delta_encode_i64(values: &[i64]) -> Vec<i64> {
     if values.is_empty() {
         return Vec::new();
@@ -66,7 +66,7 @@ pub fn delta_encode_i64(values: &[i64]) -> Vec<i64> {
 }
 
 /// Reverse i64 delta encoding.
-#[must_use] 
+#[must_use]
 pub fn delta_decode_i64(deltas: &[i64]) -> Vec<i64> {
     if deltas.is_empty() {
         return Vec::new();

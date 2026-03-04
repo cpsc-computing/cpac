@@ -39,7 +39,7 @@ pub fn derive_key_argon2(password: &[u8], salt: &[u8]) -> CpacResult<Vec<u8>> {
 }
 
 /// Generate a random 16-byte salt.
-#[must_use] 
+#[must_use]
 pub fn random_salt() -> Vec<u8> {
     let mut salt = vec![0u8; 16];
     OsRng.fill_bytes(&mut salt);

@@ -18,7 +18,11 @@
 //! | dag_descriptor | msn_metadata | payload
 //! ```
 
-#![allow(clippy::cast_possible_truncation, clippy::missing_errors_doc, clippy::missing_panics_doc)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc
+)]
 
 use cpac_types::{Backend, CpacError, CpacResult};
 
@@ -53,18 +57,25 @@ pub struct FrameHeader {
 }
 
 /// Encode a frame using CP format (version 1).
-#[must_use] 
+#[must_use]
 pub fn encode_frame(
     payload: &[u8],
     backend: Backend,
     original_size: usize,
     dag_descriptor: &[u8],
 ) -> Vec<u8> {
-    encode_frame_with_version(payload, backend, original_size, dag_descriptor, &[], VERSION_CP)
+    encode_frame_with_version(
+        payload,
+        backend,
+        original_size,
+        dag_descriptor,
+        &[],
+        VERSION_CP,
+    )
 }
 
 /// Encode a frame using CP2 format (version 2) with MSN metadata.
-#[must_use] 
+#[must_use]
 pub fn encode_frame_cp2(
     payload: &[u8],
     backend: Backend,
@@ -72,7 +83,14 @@ pub fn encode_frame_cp2(
     dag_descriptor: &[u8],
     msn_metadata: &[u8],
 ) -> Vec<u8> {
-    encode_frame_with_version(payload, backend, original_size, dag_descriptor, msn_metadata, VERSION_CP2)
+    encode_frame_with_version(
+        payload,
+        backend,
+        original_size,
+        dag_descriptor,
+        msn_metadata,
+        VERSION_CP2,
+    )
 }
 
 fn encode_frame_with_version(

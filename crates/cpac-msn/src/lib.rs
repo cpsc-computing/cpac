@@ -9,15 +9,15 @@
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     clippy::unnecessary_wraps,
-    clippy::needless_pass_by_value,
+    clippy::needless_pass_by_value
 )]
 
 pub mod domain;
-pub mod registry;
 pub mod domains;
+pub mod registry;
 
 pub use domain::{Domain, DomainInfo, ExtractionResult};
-pub use registry::{DomainRegistry, global_registry};
+pub use registry::{global_registry, DomainRegistry};
 
 use cpac_types::{CpacResult, DomainHint};
 
@@ -58,7 +58,7 @@ fn default_msn_version() -> u8 {
 
 impl MsnResult {
     /// Create a passthrough result (MSN not applied).
-    #[must_use] 
+    #[must_use]
     pub fn passthrough(data: &[u8]) -> Self {
         Self {
             fields: std::collections::HashMap::new(),
@@ -70,7 +70,7 @@ impl MsnResult {
     }
 
     /// Extract metadata for frame storage (without residual).
-    #[must_use] 
+    #[must_use]
     pub fn metadata(&self) -> MsnMetadata {
         MsnMetadata {
             version: 1,
@@ -106,7 +106,7 @@ pub fn extract(
     min_confidence: f64,
 ) -> CpacResult<MsnResult> {
     let registry = global_registry();
-    
+
     // Auto-detect domain (domain_hint used for filename extension hints)
     let filename = domain_hint.as_ref().map(|h| match h {
         DomainHint::Json => ".json",
@@ -114,9 +114,9 @@ pub fn extract(
         DomainHint::Csv => ".csv",
         _ => "",
     });
-    
+
     let detected = registry.auto_detect(data, filename, min_confidence);
-    
+
     match detected {
         Some((domain, confidence)) => {
             match domain.extract(data) {
@@ -171,10 +171,7 @@ pub fn extract(
 /// # Errors
 ///
 /// Returns [`cpac_types::CpacError::CompressFailed`] if the domain extraction fails.
-pub fn extract_with_metadata(
-    data: &[u8],
-    metadata: &MsnMetadata,
-) -> CpacResult<MsnResult> {
+pub fn extract_with_metadata(data: &[u8], metadata: &MsnMetadata) -> CpacResult<MsnResult> {
     if !metadata.applied {
         // Metadata was passthrough, so just passthrough this data too
         return Ok(MsnResult::passthrough(data));
@@ -240,8 +237,7 @@ pub fn extract_with_metadata(
 pub fn encode_metadata_compact(meta: &MsnMetadata) -> CpacResult<Vec<u8>> {
     let mut out = vec![0x01u8]; // discriminator: 0x01 = MessagePack
     let msgpack = rmp_serde::to_vec(meta)
-        .map_err(|e| cpac_types::CpacError::CompressFailed(format!("MSN metadata encode: {e}")))?
-        ;
+        .map_err(|e| cpac_types::CpacError::CompressFailed(format!("MSN metadata encode: {e}")))?;
     out.extend_from_slice(&msgpack);
     Ok(out)
 }
@@ -259,8 +255,9 @@ pub fn decode_metadata_compact(bytes: &[u8]) -> CpacResult<MsnMetadata> {
         ));
     }
     if bytes[0] == 0x01 {
-        rmp_serde::from_slice(&bytes[1..])
-            .map_err(|e| cpac_types::CpacError::DecompressFailed(format!("MSN metadata msgpack: {e}")))
+        rmp_serde::from_slice(&bytes[1..]).map_err(|e| {
+            cpac_types::CpacError::DecompressFailed(format!("MSN metadata msgpack: {e}"))
+        })
     } else {
         // Legacy JSON path (first byte is '{' = 0x7B or whitespace)
         serde_json::from_slice(bytes)
@@ -274,22 +271,22 @@ pub fn reconstruct(result: &MsnResult) -> CpacResult<Vec<u8>> {
         // Passthrough case
         return Ok(result.residual.clone());
     }
-    
+
     let domain_id = result.domain_id.as_ref().ok_or_else(|| {
         cpac_types::CpacError::DecompressFailed("MSN result missing domain_id".into())
     })?;
-    
+
     let registry = global_registry();
     let domain = registry.get(domain_id).ok_or_else(|| {
         cpac_types::CpacError::DecompressFailed(format!("Domain not found: {domain_id}"))
     })?;
-    
+
     let extraction = ExtractionResult {
         fields: result.fields.clone(),
         residual: result.residual.clone(),
         metadata: std::collections::HashMap::new(),
         domain_id: domain_id.clone(),
     };
-    
+
     domain.reconstruct(&extraction)
 }

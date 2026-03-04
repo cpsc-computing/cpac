@@ -26,7 +26,9 @@ impl Domain for AvroDomain {
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
             if std::path::Path::new(fname)
-                .extension().is_some_and(|e| e.eq_ignore_ascii_case("avro")) {
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("avro"))
+            {
                 return 0.9;
             }
         }
@@ -71,10 +73,10 @@ mod tests {
     fn avro_domain_passthrough() {
         let domain = AvroDomain;
         let data = b"Obj\x01\x00\x00sample data";
-        
+
         let result = domain.extract(data).unwrap();
         let reconstructed = domain.reconstruct(&result).unwrap();
-        
+
         assert_eq!(data.as_slice(), reconstructed.as_slice());
     }
 }

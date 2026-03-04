@@ -19,7 +19,7 @@ const MAGIC: &[u8; 2] = b"TK";
 const VERSION: u8 = 1;
 
 /// Encode a list of strings using dictionary tokenization.
-#[must_use] 
+#[must_use]
 pub fn tokenize_encode(values: &[String]) -> Vec<u8> {
     if values.is_empty() {
         let mut out = Vec::from(MAGIC.as_slice());

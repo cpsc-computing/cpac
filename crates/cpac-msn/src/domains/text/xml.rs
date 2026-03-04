@@ -25,14 +25,16 @@ impl Domain for XmlDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
-            if std::path::Path::new(fname).extension().is_some_and(|e| {
-                e.eq_ignore_ascii_case("xml") || e.eq_ignore_ascii_case("svg")
-            }) {
+            if std::path::Path::new(fname)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("xml") || e.eq_ignore_ascii_case("svg"))
+            {
                 return 0.9;
             }
-            if std::path::Path::new(fname).extension().is_some_and(|e| {
-                e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("xhtml")
-            }) {
+            if std::path::Path::new(fname)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("xhtml"))
+            {
                 return 0.85;
             }
         }
@@ -112,7 +114,7 @@ impl Domain for XmlDomain {
         // IMPORTANT: Replace in reverse order by tag length to avoid partial matches
         let mut tag_vec: Vec<(&String, &u32)> = tag_map.iter().collect();
         tag_vec.sort_by(|a, b| b.0.len().cmp(&a.0.len())); // Longest tags first
-        
+
         let mut compacted = text.to_string();
         for (tag, idx) in tag_vec {
             let placeholder = format!("@T{idx}");
@@ -124,9 +126,15 @@ impl Domain for XmlDomain {
         }
 
         let mut fields = HashMap::new();
-        fields.insert("tags".to_string(), serde_json::Value::Array(
-            repeated_tags.iter().map(|(t, _)| serde_json::Value::String(t.clone())).collect()
-        ));
+        fields.insert(
+            "tags".to_string(),
+            serde_json::Value::Array(
+                repeated_tags
+                    .iter()
+                    .map(|(t, _)| serde_json::Value::String(t.clone()))
+                    .collect(),
+            ),
+        );
 
         Ok(ExtractionResult {
             fields,
@@ -184,11 +192,15 @@ impl Domain for XmlDomain {
     }
 
     fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
-        let tags_value = result.fields.get("tags")
+        let tags_value = result
+            .fields
+            .get("tags")
             .ok_or_else(|| CpacError::DecompressFailed("Missing tags".into()))?;
 
         let tags: Vec<String> = if let serde_json::Value::Array(arr) = tags_value {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
         } else {
             return Err(CpacError::DecompressFailed("Invalid tags format".into()));
         };
@@ -247,9 +259,13 @@ mod tests {
         let detection = domain.extract(block1).unwrap();
 
         // Compress block1 with detection fields
-        let r1 = domain.extract_with_fields(block1, &detection.fields).unwrap();
+        let r1 = domain
+            .extract_with_fields(block1, &detection.fields)
+            .unwrap();
         // Compress block2 with SAME detection fields
-        let r2 = domain.extract_with_fields(block2, &detection.fields).unwrap();
+        let r2 = domain
+            .extract_with_fields(block2, &detection.fields)
+            .unwrap();
 
         // Both use detection-phase fields for reconstruction
         let recon1 = domain.reconstruct(&r1).unwrap();
@@ -276,6 +292,9 @@ mod tests {
         let mut combined = domain.reconstruct(&r1).unwrap();
         combined.extend_from_slice(&domain.reconstruct(&r2).unwrap());
 
-        assert_eq!(combined, original, "XML two-block streaming roundtrip failed");
+        assert_eq!(
+            combined, original,
+            "XML two-block streaming roundtrip failed"
+        );
     }
 }

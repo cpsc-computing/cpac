@@ -30,20 +30,29 @@ impl Domain for HttpDomain {
             }
         }
 
-        let Ok(text) = std::str::from_utf8(data) else { return 0.0; };
+        let Ok(text) = std::str::from_utf8(data) else {
+            return 0.0;
+        };
 
         // Check for HTTP request/response patterns
         let first_lines: Vec<&str> = text.lines().take(10).collect();
         let mut http_indicators = 0;
 
         for line in &first_lines {
-            if line.starts_with("GET ") || line.starts_with("POST ") ||
-               line.starts_with("PUT ") || line.starts_with("DELETE ") ||
-               line.starts_with("HTTP/1") || line.starts_with("HTTP/2") {
+            if line.starts_with("GET ")
+                || line.starts_with("POST ")
+                || line.starts_with("PUT ")
+                || line.starts_with("DELETE ")
+                || line.starts_with("HTTP/1")
+                || line.starts_with("HTTP/2")
+            {
                 http_indicators += 1;
             }
-            if line.contains("Host:") || line.contains("User-Agent:") ||
-               line.contains("Content-Type:") || line.contains("Content-Length:") {
+            if line.contains("Host:")
+                || line.contains("User-Agent:")
+                || line.contains("Content-Type:")
+                || line.contains("Content-Length:")
+            {
                 http_indicators += 1;
             }
         }
@@ -64,7 +73,7 @@ impl Domain for HttpDomain {
         // Extract common HTTP headers
         let mut common_headers = HashMap::new();
         let lines: Vec<&str> = text.lines().collect();
-        
+
         // Count header occurrences
         let mut header_counts: HashMap<String, usize> = HashMap::new();
         for line in &lines {
@@ -83,10 +92,10 @@ impl Domain for HttpDomain {
 
         let mut fields = HashMap::new();
         if !common_headers.is_empty() {
-            fields.insert("common_headers".to_string(), serde_json::Value::Object(
-                common_headers.into_iter()
-                    .collect()
-            ));
+            fields.insert(
+                "common_headers".to_string(),
+                serde_json::Value::Object(common_headers.into_iter().collect()),
+            );
         }
 
         Ok(ExtractionResult {
@@ -118,10 +127,10 @@ mod tests {
     fn http_domain_roundtrip() {
         let domain = HttpDomain;
         let data = b"POST /api HTTP/1.1\nHost: api.example.com\nContent-Type: application/json\n\n{\"test\":1}";
-        
+
         let result = domain.extract(data).unwrap();
         let reconstructed = domain.reconstruct(&result).unwrap();
-        
+
         assert_eq!(data.as_slice(), reconstructed.as_slice());
     }
 }
