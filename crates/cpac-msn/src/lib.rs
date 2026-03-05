@@ -19,7 +19,7 @@ pub mod registry;
 pub use domain::{Domain, DomainInfo, ExtractionResult};
 pub use registry::{global_registry, DomainRegistry};
 
-use cpac_types::{CpacResult, DomainHint};
+use cpac_types::CpacResult;
 
 /// Result of MSN extraction.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -100,21 +100,17 @@ impl MsnMetadata {
 /// Extract semantic fields from data using MSN.
 ///
 /// This is the main entry point for MSN extraction.
+///
+/// `filename` is an optional file path or name that the registry uses for
+/// extension-based domain detection (e.g. passing `"events.jsonl"` enables
+/// JSONL-specific detection before content probing). Pass `None` for
+/// content-only detection.
 pub fn extract(
     data: &[u8],
-    domain_hint: Option<DomainHint>,
+    filename: Option<&str>,
     min_confidence: f64,
 ) -> CpacResult<MsnResult> {
     let registry = global_registry();
-
-    // Auto-detect domain (domain_hint used for filename extension hints)
-    let filename = domain_hint.as_ref().map(|h| match h {
-        DomainHint::Json => ".json",
-        DomainHint::Xml => ".xml",
-        DomainHint::Csv => ".csv",
-        DomainHint::Log => ".log",
-        _ => "",
-    });
 
     let detected = registry.auto_detect(data, filename, min_confidence);
 

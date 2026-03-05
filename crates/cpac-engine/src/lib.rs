@@ -95,10 +95,30 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // 1. SSR analysis
     let ssr = cpac_ssr::analyze(data);
 
-    // 2. MSN (Multi-Scale Normalization) - Track 1 only, if enabled
+    // 2. Select backend with size awareness
+    let backend = config.backend.unwrap_or_else(|| {
+        cpac_entropy::auto_select_backend_with_size(ssr.entropy_estimate, original_size)
+    });
+
+    // 3. Check if we should use parallel compression for large files.
+    // Done BEFORE MSN extraction so we don't waste time extracting MSN on the full
+    // file only to discard the result — each parallel block applies MSN independently.
+    // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel).
+    if !config.disable_parallel
+        && original_size >= parallel::PARALLEL_THRESHOLD
+        && backend != Backend::Raw
+    {
+        // Use default 1MB block size and auto-detect thread count
+        let num_threads = rayon::current_num_threads();
+        return compress_parallel(data, config, DEFAULT_BLOCK_SIZE, num_threads);
+    }
+
+    // 4. MSN (Multi-Scale Normalization) — Track 1 only, single-block path.
+    //    Pass the actual filename from config so extension-based domain detection
+    //    (e.g. ".jsonl", ".log") works in addition to content-based probing.
+    let msn_filename = config.filename.as_deref();
     let (msn_data, msn_metadata) = if config.enable_msn && ssr.track == Track::Track1 {
-        // Use confidence threshold from config
-        match cpac_msn::extract(data, None, config.msn_confidence) {
+        match cpac_msn::extract(data, msn_filename, config.msn_confidence) {
             Ok(result) if result.applied => {
                 // MSN succeeded - use residual as input, store metadata (without residual)
                 // Encode as compact MessagePack (~30-40% smaller than JSON).
@@ -116,22 +136,6 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     };
 
     let data_to_compress = &msn_data;
-
-    // 3. Select backend with size awareness
-    let backend = config.backend.unwrap_or_else(|| {
-        cpac_entropy::auto_select_backend_with_size(ssr.entropy_estimate, original_size)
-    });
-
-    // 4. Check if we should use parallel compression for large files
-    // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel)
-    if !config.disable_parallel
-        && original_size >= parallel::PARALLEL_THRESHOLD
-        && backend != Backend::Raw
-    {
-        // Use default 1MB block size and auto-detect thread count
-        let num_threads = rayon::current_num_threads();
-        return compress_parallel(data, config, DEFAULT_BLOCK_SIZE, num_threads);
-    }
 
     // 5. Adaptive preprocessing
     // Skip preprocessing for:

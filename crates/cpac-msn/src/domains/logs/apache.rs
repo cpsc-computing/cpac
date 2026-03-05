@@ -6,6 +6,10 @@ use crate::domain::{Domain, DomainInfo, ExtractionResult};
 use cpac_types::{CpacError, CpacResult};
 use std::collections::HashMap;
 
+const WEEKDAYS_APACHE: &[&str] = &[
+    "[Mon ", "[Tue ", "[Wed ", "[Thu ", "[Fri ", "[Sat ", "[Sun ",
+];
+
 /// Apache log domain handler.
 ///
 /// Extracts repeated IPs, user agents, and referrers.
@@ -36,13 +40,10 @@ impl Domain for ApacheDomain {
 
         // Apache error log pattern: "[Day Mon DD HH:MM:SS YYYY] [level] message"
         // e.g. "[Sun Dec 04 04:47:44 2005] [notice] workerEnv.init()..."
-        const WEEKDAYS: &[&str] = &[
-            "[Mon ", "[Tue ", "[Wed ", "[Thu ", "[Fri ", "[Sat ", "[Sun ",
-        ];
         let error_log_count = text
             .lines()
             .take(10)
-            .filter(|line| WEEKDAYS.iter().any(|d| line.starts_with(d)))
+            .filter(|line| WEEKDAYS_APACHE.iter().any(|d| line.starts_with(d)))
             .count();
 
         if error_log_count > 5 {
@@ -119,12 +120,9 @@ impl Domain for ApacheDomain {
 impl ApacheDomain {
     /// True when `text` looks like an Apache error log (`[Day Mon DD ...]` lines).
     fn is_error_log(text: &str) -> bool {
-        const WEEKDAYS: &[&str] = &[
-            "[Mon ", "[Tue ", "[Wed ", "[Thu ", "[Fri ", "[Sat ", "[Sun ",
-        ];
         text.lines()
             .take(10)
-            .filter(|line| WEEKDAYS.iter().any(|d| line.starts_with(d)))
+            .filter(|line| WEEKDAYS_APACHE.iter().any(|d| line.starts_with(d)))
             .count()
             > 5
     }

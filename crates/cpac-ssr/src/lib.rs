@@ -181,13 +181,24 @@ fn detect_domain(data: &[u8]) -> Option<DomainHint> {
     None
 }
 
+const BSD_MONTHS_SSR: &[&str] = &[
+    "Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ",
+    "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec ",
+];
+const WEEKDAYS_SSR: &[&str] = &[
+    "[Mon ", "[Tue ", "[Wed ", "[Thu ", "[Fri ", "[Sat ", "[Sun ",
+];
+const LOG_LEVELS_SSR: &[&str] = &[
+    " INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL ",
+];
+
 /// Content-based log format detection.
 ///
 /// Recognises:
 /// - BSD syslog:    `Mon DD HH:MM:SS hostname app[pid]: msg`
 /// - Apache error:  `[Day Mon DD HH:MM:SS YYYY] [level] msg`
 /// - Apache/NCSA access log: `IP - - [timestamp] "METHOD /path HTTP/x.x" status bytes`
-/// - Structured:    ISO date + log-level keyword (OpenStack, Nova, etc.)
+/// - Structured:    `ISO-date` + `log-level` keyword (`OpenStack`, `Nova`, etc.)
 fn detect_log(data: &[u8]) -> bool {
     // Sample at most 4 KB so this stays O(1) for large files.
     let sample = &data[..data.len().min(4096)];
@@ -196,31 +207,20 @@ fn detect_log(data: &[u8]) -> bool {
         return false;
     }
 
-    const BSD_MONTHS: &[&str] = &[
-        "Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ",
-        "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec ",
-    ];
-    const WEEKDAYS: &[&str] = &[
-        "[Mon ", "[Tue ", "[Wed ", "[Thu ", "[Fri ", "[Sat ", "[Sun ",
-    ];
-    const LOG_LEVELS: &[&str] = &[
-        " INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL ",
-    ];
-
     let mut bsd = 0usize;
     let mut apache_err = 0usize;
     let mut structured = 0usize;
     let mut access_log = 0usize;
 
     for line in text.lines().take(10) {
-        if BSD_MONTHS.iter().any(|m| line.starts_with(m)) {
+        if BSD_MONTHS_SSR.iter().any(|m| line.starts_with(m)) {
             bsd += 1;
         }
-        if WEEKDAYS.iter().any(|d| line.starts_with(d)) {
+        if WEEKDAYS_SSR.iter().any(|d| line.starts_with(d)) {
             apache_err += 1;
         }
         if line.contains('-') && line.contains(':') &&
-            LOG_LEVELS.iter().any(|lvl| line.contains(lvl))
+            LOG_LEVELS_SSR.iter().any(|lvl| line.contains(lvl))
         {
             structured += 1;
         }

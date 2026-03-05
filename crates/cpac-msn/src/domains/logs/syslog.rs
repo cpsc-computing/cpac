@@ -38,6 +38,12 @@ fn strip_pid_suffix(app: &str) -> &str {
     s
 }
 
+const BSD_MONTHS_SYSLOG: &[&str] = &[
+    "Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ",
+    "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec ",
+];
+const LOG_LEVELS_SYSLOG: &[&str] = &[" INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL "];
+
 /// Syslog domain handler.
 ///
 /// Supports RFC 5424 (`<PRI>VERSION TIMESTAMP HOSTNAME APP-NAME ...`) and
@@ -87,14 +93,10 @@ impl Domain for SyslogDomain {
 
         // BSD syslog pattern: "Mon DD HH:MM:SS hostname app: msg"
         // e.g. "Jun 14 15:16:01 combo sshd[19939]: ..."
-        const BSD_MONTHS: &[&str] = &[
-            "Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ",
-            "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec ",
-        ];
         let bsd_count = text
             .lines()
             .take(10)
-            .filter(|line| BSD_MONTHS.iter().any(|m| line.starts_with(m)))
+            .filter(|line| BSD_MONTHS_SYSLOG.iter().any(|m| line.starts_with(m)))
             .count();
         if bsd_count > 5 {
             // Size gate: very small BSD syslog blocks have too little repetition for MSN benefit.
@@ -112,8 +114,6 @@ impl Domain for SyslogDomain {
             return 0.6;
         }
 
-        const LOG_LEVELS: &[&str] = &[" INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL "];
-
         // OpenStack structured log: field[0] is a log filename prefix (contains ".log") +
         // ISO date + log level. MSN extracts the repeated filename prefix token for meaningful
         // savings (~34 bytes/line × line_count).
@@ -121,8 +121,8 @@ impl Domain for SyslogDomain {
             .lines()
             .take(10)
             .filter(|line| {
-                let first = line.splitn(2, ' ').next().unwrap_or("");
-                first.contains(".log") && LOG_LEVELS.iter().any(|lvl| line.contains(lvl))
+                let first = line.split_once(' ').map_or("", |(a, _)| a);
+                first.contains(".log") && LOG_LEVELS_SYSLOG.iter().any(|lvl| line.contains(lvl))
             })
             .count();
         if openstack_count > 5 {
@@ -139,7 +139,7 @@ impl Domain for SyslogDomain {
             .filter(|line| {
                 line.contains('-')
                     && line.contains(':')
-                    && LOG_LEVELS.iter().any(|lvl| line.contains(lvl))
+                    && LOG_LEVELS_SYSLOG.iter().any(|lvl| line.contains(lvl))
             })
             .count();
         if structured_count > 5 {
