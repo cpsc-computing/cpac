@@ -464,6 +464,8 @@ fn cmd_compress(
             msn_confidence,
             msn_domain: msn_domain.clone(),
             level,
+            // -vvv enables per-block MSN decision trace to stderr.
+            msn_verbose: verbose >= 3,
             ..Default::default()
         };
 

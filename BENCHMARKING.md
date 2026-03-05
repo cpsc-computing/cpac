@@ -82,6 +82,154 @@ pwsh scripts/download-corpus.ps1 -Corpus "canterbury,silesia"
 - **Use Case**: Classic text compression benchmark
 - **License**: Public domain
 
+## Benchmark Results (2026-03-05 — Session 18, MSN Regression Fixes + Verbose Tracing)
+
+> **Context**: Four bugs addressed via verbose tracing analysis:
+> 1. **NASA/large-file parallel decompression crash** — `compress()` now performs a roundtrip verification after the safety check. If `cpac_msn::reconstruct()` produces bytes that don't match the original block, MSN is bypassed. This fixes all `String::replace()` global-substitution collisions that were causing size mismatches.
+> 2. **Apache_2k.log -0.00x regression** (was -0.05x) — `apache.rs` filename hint now only fires for `data.len() < 100`; HTTP methods ≤ 3 chars (GET, PUT) excluded (placeholder `@M0` is same length); error log levels < 9 chars excluded.
+> 3. **silesia/xml 0.00x** (was -0.12x) — Two-layer fix: (a) `xml.rs` early-return passthrough when `compacted.len() >= data.len()`; (b) `XmlDomain::detect()` content-based `</` confidence lowered from 0.60 to 0.40 (below 0.50 min-threshold) — Zstd already exploits XML tag repetition natively (6–8x), MSN hurts even with 10–30% raw savings.
+> 4. **NASA HTTP logs 0.00x** (was -0.09x from syslog false positive) — `SyslogDomain` RFC 5424 timestamp check now requires digit-T-digit pattern (ISO 8601); prevents HTTP log lines containing `HTTP/1.0` from matching.
+> 5. **MSN verbose tracing** — `cpac compress -vvv` or `CPAC_MSN_VERBOSE=1` prints per-block domain/confidence/savings and APPLIED/BYPASSED decision to stderr.
+
+### Session 18 — MSN Track 1 Results: Loghub-2.0 2k Corpus (Quick Mode)
+
+| File | Size | Track | SSR/Zstd | MSN/Zstd | Delta | MSN Status | vs S17 |
+|------|------|-------|----------|----------|-------|------------|--------|
+| Linux_2k.log | 0.20 MB | T1 | 11.53x | **11.72x** | **+0.19x** | ✅ Gain | → Same |
+| Mac_2k.log | 0.30 MB | T2 | 4.88x | **4.93x** | **+0.05x** | ✅ Gain | → Same |
+| Hadoop_2k.log | 0.37 MB | T2 | 20.71x | 20.71x | ~0 | 〰️ Neutral | → Same |
+| BGL_2k.log | 0.30 MB | T2 | 4.54x | 4.54x | ~0 | 〰️ Neutral | → Same |
+| HDFS_2k.log | 0.27 MB | T2 | 4.11x | 4.11x | ~0 | 〰️ Neutral | → Same |
+| Spark_2k.log | 0.19 MB | T1 | 11.95x | 11.95x | ~0 | 〰️ Neutral | → Same |
+| Thunderbird_2k.log | 0.31 MB | T2 | 10.76x | 10.76x | ~0 | 〰️ Neutral | → Same |
+| Zookeeper_2k.log | 0.27 MB | T2 | 10.86x | 10.86x | ~0 | 〰️ Neutral | → Same |
+| HealthApp_2k.log | 0.18 MB | T1 | 9.36x | 9.36x | ~0 | 〰️ Neutral | → Same |
+| OpenSSH_2k.log | 0.21 MB | T1 | 14.51x | 14.50x | -0.01x | ❌ Micro-regress | → Same |
+| OpenStack_2k.log | 0.57 MB | T2 | 9.27x | 9.24x | -0.03x | ❌ Micro-regress | ⚠️ -0.01x vs S17 |
+| Apache_2k.log | 0.16 MB | T1 | 15.02x | 15.02x | **0.00x** | ✅ Fixed | ✅ was -0.05x |
+| Proxifier_2k.log | 0.23 MB | T1 | 7.77x | 7.77x | **0.00x** | ✅ Fixed | ✅ was -0.03x |
+
+### Session 18 — MSN Track 1 Results: NASA HTTP Logs (Quick Mode)
+
+| File | Size | SSR/Zstd | MSN/Zstd | Delta | Note |
+|------|------|----------|----------|-------|------|
+| NASA_access_log_Jul95 | 195.73 MB | 7.99x | **7.99x** | **0.00x** | ✅ Fixed — was ERROR in S17 |
+| NASA_access_log_Aug95 | 160.04 MB | 8.24x | **8.24x** | **0.00x** | ✅ Fixed — was ERROR in S17 |
+
+### Session 18 — MSN Track 1 Results: Silesia Corpus (Quick Mode)
+
+| File | Size | Track | SSR/Zstd | MSN/Zstd | Delta | Note |
+|------|------|-------|----------|----------|-------|------|
+| silesia/xml | 5.10 MB | T2 | 6.09x | **6.09x** | **0.00x** | ✅ Fixed — was -0.12x in S17 |
+| silesia/nci | 32.00 MB | T2 | 11.58x | 11.58x | ~0 | 〰️ Neutral |
+| silesia/dickens | 9.72 MB | T2 | 2.73x | 2.73x | ~0 | 〰️ Neutral |
+| silesia/osdb | 9.62 MB | T2 | 2.62x | 2.62x | ~0 | 〰️ Neutral |
+| silesia/samba | 21.73 MB | T2 | 3.32x | 3.32x | ~0 | 〰️ Neutral |
+
+### Session 18 — MSN Impact Summary
+
+**Net verdict on MSN across real corpus (as of Session 18):**
+- **2 files gain** from MSN: Linux_2k.log (+0.19x), Mac_2k.log (+0.05x)
+- **15 files are neutral**: MSN passthrough or savings gate fires, no overhead, no benefit
+- **2 files regress slightly**: OpenStack (-0.03x), OpenSSH (-0.01x) — both pre-existing micro-regressions
+- **0 files have critical MSN bugs** — NASA decompression failure and silesia/xml regression both resolved
+
+**Outstanding issues:**
+1. **OpenStack_2k.log micro-regression (-0.03x)**: Consistent across sessions; syslog domain extracts the OpenStack log prefix token but the metadata overhead slightly exceeds savings at this file size (579 KB). Not worth further investigation unless file size increases.
+2. **OpenSSH_2k.log micro-regression (-0.01x)**: Within measurement noise; syslog extraction overhead barely exceeds savings on this file.
+
+**Root cause analysis from verbose tracing:**
+The `-vvv` / `CPAC_MSN_VERBOSE=1` tracing was critical for diagnosing all three regressions. Key findings:
+- Zstd already exploits XML/HTTP tag/token repetition at 6–8x; MSN's raw-byte savings (10–30%) don't compensate because Zstd's compression ratio on the residual drops proportionally.
+- Syslog RFC 5424 detection was too broad: `contains('T') && contains(':') && contains('-')` matched HTTP access log lines via `HTTP/1.0` containing 'T'. Fixed by requiring digit-T-digit (ISO 8601 date-time separator).
+- The parallel compression path (files > 256 KB) applies MSN per-block independently; domain detection on mid-file blocks relies purely on content (no filename extension), so confidence gates are critical.
+
+---
+
+## Benchmark Results (2026-03-05 — Session 17, First Real-Corpus MSN Evaluation)
+
+> **Context**: All prior benchmark sessions used a synthetic `bench-corpus/` directory of generated files. That corpus has been deleted and is prohibited (see AGENTS.md). This is the **first session benchmarking MSN against real, downloaded corpus data**. Quick mode (1 iter) run across 27 files; full mode (50 iter) run on all 14 loghub-2k files + silesia/xml + silesia/nci for stable ratios. Results are consistent across both modes.
+>
+> **Critical bug discovered**: MSN causes a **decompression failure on NASA HTTP logs** (`size mismatch: expected 1048576, got 1053533`) — affects large files processed via the parallel path when MSN transforms block boundaries. NASA log results below are SSR-only (MSN skipped).
+
+### Session 17 — MSN Track 1 Results: Loghub-2.0 2k Corpus (Full Mode, 50 iter)
+
+| File | Size | Track | SSR/Zstd | MSN/Zstd | Delta | Brotli-11 | zstd-3 | MSN Status |
+|------|------|-------|----------|----------|-------|-----------|--------|------------|
+| Linux_2k.log | 0.20 MB | T1 | 11.53x | **11.72x** | **+0.19x** | 13.92x | 14.39x | ✅ Gain |
+| Mac_2k.log | 0.30 MB | T2 | 4.88x | **4.93x** | **+0.05x** | — | — | ✅ Gain |
+| Hadoop_2k.log | 0.37 MB | T2 | 20.71x | 20.71x | ~0 | — | — | 〰️ Neutral |
+| BGL_2k.log | 0.30 MB | T2 | 4.54x | 4.54x | ~0 | — | — | 〰️ Neutral |
+| HDFS_2k.log | 0.27 MB | T2 | 4.11x | 4.11x | ~0 | — | — | 〰️ Neutral |
+| HPC_2k.log | 0.14 MB | T1 | 4.53x | 4.53x | ~0 | — | — | 〰️ Neutral |
+| Spark_2k.log | 0.19 MB | T1 | 11.95x | 11.95x | ~0 | — | — | 〰️ Neutral |
+| Thunderbird_2k.log | 0.31 MB | T2 | 10.76x | 10.76x | ~0 | — | — | 〰️ Neutral |
+| Zookeeper_2k.log | 0.27 MB | T2 | 10.86x | 10.86x | ~0 | — | — | 〰️ Neutral |
+| HealthApp_2k.log | 0.18 MB | T1 | 9.36x | 9.36x | ~0 | — | — | 〰️ Neutral |
+| OpenStack_2k.log | 0.57 MB | T2 | 9.27x | 9.24x | -0.02x | 11.82x | 11.59x | ❌ Micro-regress |
+| OpenSSH_2k.log | 0.21 MB | T1 | 14.51x | 14.50x | -0.01x | — | — | ❌ Micro-regress |
+| Proxifier_2k.log | 0.23 MB | T1 | 7.77x | 7.74x | **-0.03x** | — | — | ❌ Small regress |
+| Apache_2k.log | 0.16 MB | T1 | 15.02x | 14.97x | **-0.05x** | 16.44x | 15.91x | ❌ Small regress |
+
+### Session 17 — MSN Track 1 Results: NASA HTTP Logs (Quick Mode)
+
+| File | Size | SSR/Zstd | MSN/Zstd | Note |
+|------|------|----------|----------|------|
+| NASA_access_log_Jul95 | 195.73 MB | 7.99x | **ERROR** | ❌ MSN decompression failure: size mismatch (parallel block boundary bug) |
+| NASA_access_log_Aug95 | 160.04 MB | 8.24x | **ERROR** | ❌ Same bug |
+
+### Session 17 — MSN Track 1 Results: Silesia Corpus (Quick Mode)
+
+| File | Size | Track | SSR/Zstd | MSN/Zstd | Delta | Note |
+|------|------|-------|----------|----------|-------|------|
+| silesia/xml | 5.10 MB | T2 | 6.09x | 5.97x | **-0.12x** | ❌ XML domain regression (was -0.84x in Sess15, improved but not fixed) |
+| silesia/nci | 32.00 MB | T2 | 11.58x | 11.58x | ~0 | 〰️ Neutral |
+| silesia/dickens | 9.72 MB | T2 | 2.73x | 2.73x | ~0 | 〰️ Neutral |
+| silesia/mozilla | 48.85 MB | T2 | 2.26x | 2.26x | ~0 | 〰️ Neutral |
+| silesia/osdb | 9.62 MB | T2 | 2.62x | 2.62x | ~0 | 〰️ Neutral |
+
+### Session 17 — MSN Track 1 Results: Calgary & Canterbury (Quick Mode)
+
+| File | Size | SSR/Zstd | MSN/Zstd | Delta |
+|------|------|----------|----------|-------|
+| calgary/paper1 | 0.05 MB | 2.72x | 2.72x | ~0 |
+| calgary/bib | 0.11 MB | 3.00x | 3.00x | ~0 |
+| calgary/geo | 0.10 MB | 1.55x | 1.55x | ~0 |
+| canterbury/alice29.txt | 0.15 MB | 2.67x | 2.67x | ~0 |
+| canterbury/lcet10.txt | 0.41 MB | 3.03x | 3.03x | ~0 |
+| canterbury/kennedy.xls | 0.98 MB | 5.84x | 5.84x | ~0 |
+
+### Session 17 — Comparison vs Session 15 (Real Corpus)
+
+Session 16 fixes (validated on synthetic data) translate to real-corpus improvements:
+
+| File | Session 15 Delta | Session 17 Delta | Change |
+|------|-----------------|-----------------|--------|
+| Linux_2k.log | +0.21x | **+0.19x** | ✅ Consistent gain |
+| Mac_2k.log | +0.05x | **+0.05x** | ✅ Consistent gain |
+| Hadoop_2k.log | **-0.57x** | ~0 | ✅ **Fixed** (SyslogDomain .log override bug) |
+| BGL_2k.log | **-0.09x** | ~0 | ✅ **Fixed** |
+| Apache_2k.log | -0.05x | -0.05x | ⚠️ Unchanged |
+| silesia/xml | -0.84x | **-0.12x** | ✅ Improved (but not fixed) |
+| NASA Jul95 | -0.25x | **ERROR** | ❌ Worse — decompression failure |
+| NASA Aug95 | -0.32x | **ERROR** | ❌ Worse — decompression failure |
+
+### Session 17 — MSN Impact Summary
+
+**Net verdict on MSN across real corpus (as of 2026-03-05):**
+- **2 files gain** from MSN: Linux_2k.log (+0.19x), Mac_2k.log (+0.05x)
+- **12 files are neutral**: MSN passthrough, no overhead, no benefit
+- **4 files regress slightly**: Apache (-0.05x), Proxifier (-0.03x), OpenStack (-0.02x), OpenSSH (-0.01x)
+- **1 file regresses meaningfully**: silesia/xml (-0.12x)
+- **2 files have critical MSN bug**: NASA logs — decompression failure
+
+**Outstanding issues to fix:**
+1. **NASA/large-file MSN decompression failure**: Parallel block size boundary mismatch (`expected 1048576, got 1053533`). MSN metadata is expanding block size beyond what the frame header declares. Must be fixed before MSN can be enabled on files > ~100 MB.
+2. **Apache_2k.log persistent -0.05x regression**: SyslogDomain is incorrectly extracting or degrading Apache Combined Log Format. Investigate `apache_clf` detection path.
+3. **silesia/xml -0.12x regression**: XML domain extraction is still net-negative. Either disable XML MSN or improve the extraction quality.
+
+---
+
 ## Benchmark Results (2026-03-05 — Session 16, MSN Regression Fixes)
 
 > **Build note (2026-03-05, Session 16):** Three MSN bugs causing regressions were identified and fixed:

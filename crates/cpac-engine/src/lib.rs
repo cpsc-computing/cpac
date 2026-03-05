@@ -117,28 +117,103 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     //    Pass the actual filename from config so extension-based domain detection
     //    (e.g. ".jsonl", ".log") works in addition to content-based probing.
     let msn_filename = config.filename.as_deref();
+    // Verbose tracing: enabled by config flag (-vvv CLI) or CPAC_MSN_VERBOSE=1 env var.
+    let msn_verbose = config.msn_verbose
+        || std::env::var("CPAC_MSN_VERBOSE").map_or(false, |v| v == "1" || v == "true");
     let (msn_data, msn_metadata) = if config.enable_msn && ssr.track == Track::Track1 {
         match cpac_msn::extract(data, msn_filename, config.msn_confidence) {
             Ok(result) if result.applied => {
-                // MSN succeeded - use residual as input, store metadata (without residual)
+                // MSN succeeded - use residual as input, store metadata (without residual).
                 // Encode as compact MessagePack (~30-40% smaller than JSON).
                 let metadata = cpac_msn::encode_metadata_compact(&result.metadata())?;
                 // Safety check: only use MSN if residual + metadata is strictly
                 // smaller than the original.  If not, the metadata overhead
                 // (stored in the frame) would negate any compression gain.
                 if result.residual.len() + metadata.len() < data.len() {
-                    (result.residual, metadata)
+                    // Roundtrip verification: reconstruct from the residual and confirm
+                    // the output bytes exactly match the original block.  This catches
+                    // extraction bugs where global String::replace interactions produce a
+                    // residual whose reconstruction differs in size or content from the
+                    // source (e.g. NASA access logs where short IP sub-strings collide
+                    // with placeholder tokens, inflating the reconstructed output).
+                    match cpac_msn::reconstruct(&result) {
+                        Ok(ref reconstructed) if reconstructed.as_slice() == data => {
+                            if msn_verbose {
+                                let savings_pct = (1.0
+                                    - result.residual.len() as f64 / data.len() as f64)
+                                    * 100.0;
+                                eprintln!(
+                                    "[MSN] domain={} conf={:.2} fields={} \
+                                     residual={}B original={}B ({:.1}% saved) → APPLIED",
+                                    result.domain_id.as_deref().unwrap_or("?"),
+                                    result.confidence,
+                                    result.fields.len(),
+                                    result.residual.len(),
+                                    data.len(),
+                                    savings_pct,
+                                );
+                            }
+                            (result.residual, metadata)
+                        }
+                        Ok(ref reconstructed) => {
+                            if msn_verbose {
+                                eprintln!(
+                                    "[MSN] domain={} conf={:.2} → BYPASSED \
+                                     (roundtrip mismatch: expected {}B got {}B)",
+                                    result.domain_id.as_deref().unwrap_or("?"),
+                                    result.confidence,
+                                    data.len(),
+                                    reconstructed.len(),
+                                );
+                            }
+                            (data.to_vec(), Vec::new())
+                        }
+                        Err(e) => {
+                            if msn_verbose {
+                                eprintln!(
+                                    "[MSN] domain={} conf={:.2} → BYPASSED \
+                                     (roundtrip error: {e})",
+                                    result.domain_id.as_deref().unwrap_or("?"),
+                                    result.confidence,
+                                );
+                            }
+                            (data.to_vec(), Vec::new())
+                        }
+                    }
                 } else {
+                    if msn_verbose {
+                        eprintln!(
+                            "[MSN] domain={} conf={:.2} → BYPASSED \
+                             (no size savings: residual+meta={}B original={}B)",
+                            result.domain_id.as_deref().unwrap_or("?"),
+                            result.confidence,
+                            result.residual.len() + metadata.len(),
+                            data.len(),
+                        );
+                    }
                     (data.to_vec(), Vec::new())
                 }
             }
-            _ => {
-                // MSN failed or not applicable - passthrough
+            Ok(_) => {
+                // Domain detected but applied=false — confidence below threshold.
+                if msn_verbose {
+                    eprintln!(
+                        "[MSN] → BYPASSED (no domain above conf threshold {:.2})",
+                        config.msn_confidence,
+                    );
+                }
+                (data.to_vec(), Vec::new())
+            }
+            Err(_) => {
+                // MSN extraction error — fall back to passthrough.
                 (data.to_vec(), Vec::new())
             }
         }
     } else {
-        // MSN disabled or Track 2 - passthrough
+        // MSN disabled or Track 2 — passthrough.
+        if msn_verbose && config.enable_msn {
+            eprintln!("[MSN] → BYPASSED (Track 2 data, SSR confidence too low)");
+        }
         (data.to_vec(), Vec::new())
     };
 

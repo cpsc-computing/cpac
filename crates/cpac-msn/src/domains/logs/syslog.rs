@@ -102,14 +102,22 @@ impl Domain for SyslogDomain {
             return if data.len() >= MIN_USEFUL_SIZE { 0.85 } else { 0.4 };
         }
 
-        // RFC 5424 ISO timestamp: contains 'T', ':', '-'
-        let has_timestamp = text
+        // RFC 5424 ISO timestamp: requires digit-T-digit pattern (ISO 8601 separator).
+        // e.g. "2003-10-11T22:14:15" matches because '1' precedes 'T' and '2' follows it.
+        // HTTP access logs are excluded: "HTTP/1.0" has 'T' but NOT between two digits.
+        let has_iso_timestamp = text
             .lines()
             .take(10)
-            .filter(|line| line.contains('T') && line.contains(':') && line.contains('-'))
+            .filter(|line| {
+                line.as_bytes()
+                    .windows(3)
+                    .any(|w| w[0].is_ascii_digit() && w[1] == b'T' && w[2].is_ascii_digit())
+                    && line.contains(':')
+                    && line.contains('-')
+            })
             .count()
             > 5;
-        if has_timestamp {
+        if has_iso_timestamp {
             return 0.6;
         }
 

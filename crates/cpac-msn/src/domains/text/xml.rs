@@ -46,9 +46,13 @@ impl Domain for XmlDomain {
         if data.starts_with(b"<!DOCTYPE html") || data.starts_with(b"<html") {
             return 0.9;
         }
-        // Check for closing tags
+        // Check for closing tags — low confidence, below default 0.5 min-threshold.
+        // Intentionally does NOT trigger MSN for generic XML blocks without an
+        // explicit extension or <?xml declaration.  Zstd already exploits XML tag
+        // repetition natively (6-8x on silesia/xml); our tag extraction hurts its
+        // compression even when raw residual < original (10-30% savings observed).
         if data.windows(2).any(|w| w == b"</") && data.contains(&b'>') {
-            return 0.6;
+            return 0.4;
         }
 
         0.0
@@ -123,6 +127,21 @@ impl Domain for XmlDomain {
             compacted = compacted.replace(&format!("</{tag}"), &format!("</{placeholder}"));
             compacted = compacted.replace(&format!("<{tag} "), &format!("<{placeholder} "));
             compacted = compacted.replace(&format!("<{tag}>"), &format!("<{placeholder}>"));
+        }
+
+        // Savings gate: only proceed if tag extraction made the residual smaller.
+        // For files with short tag names (e.g. <id>, <dt>) the placeholder strings
+        // (<@T0>, <@T1>, ...) can be LONGER than the originals, inflating the
+        // residual and degrading the final compression ratio (e.g. silesia/xml).
+        // Returning original data as residual causes the engine safety check to
+        // reject this MSN result (residual + metadata >= original → passthrough).
+        if compacted.len() >= data.len() {
+            return Ok(ExtractionResult {
+                fields: HashMap::new(),
+                residual: data.to_vec(),
+                metadata: HashMap::new(),
+                domain_id: "text.xml".to_string(),
+            });
         }
 
         let mut fields = HashMap::new();

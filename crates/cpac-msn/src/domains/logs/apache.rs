@@ -28,18 +28,11 @@ impl Domain for ApacheDomain {
     }
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
-        // Case-insensitive filename hint: high confidence for explicitly named access/error logs.
-        if let Some(fname) = filename {
-            let fname_lower = fname.to_ascii_lowercase();
-            if fname_lower.contains("access") || fname_lower.contains("apache") {
-                return 0.7;
-            }
-        }
 
         let text = std::str::from_utf8(data).unwrap_or("");
 
         // Apache error log pattern: "[Day Mon DD HH:MM:SS YYYY] [level] message"
-        // e.g. "[Sun Dec 04 04:47:44 2005] [notice] workerEnv.init()..."
+        // Content check has highest priority — reliable and format-specific.
         let error_log_count = text
             .lines()
             .take(10)
@@ -52,15 +45,26 @@ impl Domain for ApacheDomain {
 
         // Apache/NCSA access log: IP - - [timestamp] "METHOD /path HTTP/..."
         // Content-only confidence is intentionally low (0.4, below the default min_confidence of
-        // 0.5) to prevent regression on large, diverse access logs (e.g. NASA server logs) where
-        // IP/UA table overhead exceeds the savings from substitution.  Files with an explicit
-        // 'access' or 'apache' filename already get 0.7 confidence from the branch above.
+        // 0.5) to prevent MSN from firing on large diverse access logs (e.g. NASA server logs)
+        // where IP/UA table overhead exceeds savings.
         let has_access_pattern = text
             .lines()
             .take(10)
             .filter(|line| line.contains("] \"") && line.contains("HTTP/"))
             .count()
             > 5;
+        // Filename hint: only applied when data is too small to analyse reliably
+        // (e.g. CLI format-override or first streaming block). For real data blocks
+        // (>= 100 bytes) we rely entirely on content checks so that diverse access
+        // logs with "access"/"apache" in the path don't force MSN on net-negative
+        // extraction cases.
+        if let Some(fname) = filename {
+            let fname_lower = fname.to_ascii_lowercase();
+            if (fname_lower.contains("access") || fname_lower.contains("apache")) && data.len() < 100
+            {
+                return 0.7;
+            }
+        }
 
         if has_access_pattern {
             return 0.4;
@@ -160,9 +164,12 @@ impl ApacheDomain {
             }
         }
 
+        // Only extract level tokens that are long enough to beat Zstd's built-in
+        // match reuse. Standard levels like "[notice]" / "[error]" are typically
+        // too short; placeholder + metadata overhead can regress ratio.
         let mut repeated_levels: Vec<(String, usize)> = level_freq
             .into_iter()
-            .filter(|(_, count)| *count >= 2)
+            .filter(|(level, count)| *count >= 2 && level.len() >= 9)
             .collect();
         repeated_levels.sort_by(|a, b| b.1.cmp(&a.1));
 
@@ -234,9 +241,11 @@ impl ApacheDomain {
             .collect();
         repeated_ips.sort_by(|a, b| b.1.cmp(&a.1));
 
+        // Exclude 3-char methods (GET/PUT): "@M{n}" is same length, so this
+        // replacement yields no direct savings.
         let mut repeated_methods: Vec<(String, usize)> = method_freq
             .into_iter()
-            .filter(|(_, count)| *count >= 2)
+            .filter(|(method, count)| *count >= 2 && method.len() > 3)
             .collect();
         repeated_methods.sort_by(|a, b| b.1.cmp(&a.1));
 
@@ -375,13 +384,23 @@ unicom016.unicom.net - - [01/Jul/1995:00:00:05 -0400] \"GET /shuttle/countdown/ 
 
     #[test]
     fn apache_access_log_filename_hint() {
-        // Explicit 'access' in filename should trigger high confidence.
+        // Filename hint only fires for empty/tiny data (< 100 bytes) — used for CLI
+        // format overrides where no content is available to analyse.
         let domain = ApacheDomain;
         let confidence = domain.detect(b"", Some("access_log"));
         assert!(confidence >= 0.7, "access_log filename confidence={confidence}");
-        // Case-insensitive: 'Apache' should also match.
+        // Case-insensitive: 'Apache' should also match for tiny data.
         let confidence2 = domain.detect(b"", Some("Apache_2k.log"));
         assert!(confidence2 >= 0.7, "Apache_ filename confidence={confidence2}");
+        // For large data blocks (>= 100 bytes) the filename hint is ignored;
+        // real access log content returns 0.4 (below default min_confidence 0.5).
+        let access_line = b"199.72.81.55 - - [01/Jul/1995:00:00:01 -0400] \"GET /path HTTP/1.0\" 200 1234\n";
+        let large_data: Vec<u8> = access_line.iter().copied().cycle().take(1000).collect();
+        let confidence3 = domain.detect(&large_data, Some("access_log"));
+        assert!(
+            confidence3 < 0.5,
+            "large access log with 'access_log' filename should be < 0.5, got {confidence3}"
+        );
     }
 
     #[test]
@@ -392,11 +411,30 @@ unicom016.unicom.net - - [01/Jul/1995:00:00:05 -0400] \"GET /shuttle/countdown/ 
 [Sun Dec 04 04:51:08 2005] [notice] jk2_init() Found child 6725\n\
 [Mon Dec 05 04:47:44 2005] [notice] jk2_init() Found child 6726\n";
         let result = domain.extract(data).unwrap();
-        // Should compact: [notice] and [error] replaced with placeholders
+        // Standard short levels like [notice] (8 chars) and [error] (7 chars) are
+        // filtered by the length gate (>= 9 chars required). Residual may equal
+        // the original size, but roundtrip must still be lossless.
+        let reconstructed = domain.reconstruct(&result).unwrap();
+        assert_eq!(data.as_slice(), reconstructed.as_slice());
+    }
+
+    /// Long custom log levels (>= 9 chars) ARE extracted and reduce the residual.
+    #[test]
+    fn apache_error_log_long_level_roundtrip() {
+        let domain = ApacheDomain;
+        // [proxy:error] is 13 chars — qualifies for extraction (>= 9).
+        let data = b"[Sun Dec 04 04:47:44 2005] [proxy:error] connection refused\n\
+[Sun Dec 04 04:47:45 2005] [proxy:error] backend unavailable\n\
+[Sun Dec 04 04:47:46 2005] [proxy:error] timeout occurred\n\
+[Sun Dec 04 04:47:47 2005] [proxy:error] connection reset\n\
+[Mon Dec 05 04:47:48 2005] [proxy:error] upstream gone away\n";
+        let result = domain.extract(data).unwrap();
+        // [proxy:error] (13 chars) → @L0 (3 chars): 10 bytes × 5 occurrences = 50 bytes saved.
         assert!(
             result.residual.len() < data.len(),
-            "error log should compress: residual={} vs input={}",
-            result.residual.len(), data.len()
+            "long level '[proxy:error]' should reduce residual: {} vs {}",
+            result.residual.len(),
+            data.len()
         );
         let reconstructed = domain.reconstruct(&result).unwrap();
         assert_eq!(data.as_slice(), reconstructed.as_slice());

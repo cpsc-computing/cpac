@@ -303,6 +303,10 @@ pub struct CompressConfig {
     /// Compression quality preset.
     /// Controls brotli quality and zstd level. `Default` preserves previous behaviour.
     pub level: CompressionLevel,
+    /// If true, print MSN decision trace per block to stderr.
+    /// Enabled via `-vvv` in the CLI or `CPAC_MSN_VERBOSE=1` env var.
+    /// Default: false.
+    pub msn_verbose: bool,
     /// Internal: disable parallel compression (prevents recursive parallel calls).
     #[doc(hidden)]
     pub disable_parallel: bool,
@@ -320,6 +324,7 @@ impl Default for CompressConfig {
             msn_confidence: 0.5,
             msn_domain: None,
             level: CompressionLevel::Default,
+            msn_verbose: false,
             disable_parallel: false,
         }
     }
