@@ -254,6 +254,9 @@ impl BenchmarkRunner {
             backend: None, // SSR auto-selects
             enable_msn,
             msn_confidence: 0.5,
+            // Pass filename so MSN can use extension-based domain detection
+            // (e.g. .log → syslog confidence bump, .csv → CSV domain, .jsonl → JSONL).
+            filename: Some(path.to_string_lossy().into_owned()),
             ..Default::default()
         };
 

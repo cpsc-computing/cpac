@@ -25,6 +25,16 @@ impl Domain for YamlDomain {
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
         if let Some(fname) = filename {
+            // Non-YAML extensions: explicit exclusions before expensive checks.
+            if std::path::Path::new(fname).extension().is_some_and(|e| {
+                e.eq_ignore_ascii_case("json")
+                    || e.eq_ignore_ascii_case("jsonl")
+                    || e.eq_ignore_ascii_case("csv")
+                    || e.eq_ignore_ascii_case("log")
+                    || e.eq_ignore_ascii_case("xml")
+            }) {
+                return 0.0;
+            }
             if std::path::Path::new(fname)
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("yaml") || e.eq_ignore_ascii_case("yml"))
@@ -33,9 +43,18 @@ impl Domain for YamlDomain {
             }
         }
 
+        // JSON starts with '{' or '[': not YAML.  Checking the first non-whitespace
+        // byte is cheaper than a full parse and avoids false-positives from JSON
+        // content (which has lots of ':' that would otherwise trigger the marker
+        // heuristic below).
+        let first = data.iter().find(|&&b| !b.is_ascii_whitespace());
+        if matches!(first, Some(b'{') | Some(b'[')) {
+            return 0.0;
+        }
+
         let text = std::str::from_utf8(data).unwrap_or("");
 
-        // Check for YAML patterns
+        // Check for YAML patterns: colon-separated key:value lines, list markers, doc separator.
         let has_yaml_markers = text
             .lines()
             .take(20)

@@ -123,7 +123,14 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                 // MSN succeeded - use residual as input, store metadata (without residual)
                 // Encode as compact MessagePack (~30-40% smaller than JSON).
                 let metadata = cpac_msn::encode_metadata_compact(&result.metadata())?;
-                (result.residual, metadata)
+                // Safety check: only use MSN if residual + metadata is strictly
+                // smaller than the original.  If not, the metadata overhead
+                // (stored in the frame) would negate any compression gain.
+                if result.residual.len() + metadata.len() < data.len() {
+                    (result.residual, metadata)
+                } else {
+                    (data.to_vec(), Vec::new())
+                }
             }
             _ => {
                 // MSN failed or not applicable - passthrough

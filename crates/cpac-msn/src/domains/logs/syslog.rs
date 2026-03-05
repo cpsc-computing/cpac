@@ -67,11 +67,10 @@ impl Domain for SyslogDomain {
         const MIN_USEFUL_SIZE: usize = 65536; // 64 KB
 
         if let Some(fname) = filename {
-            if fname.contains("syslog")
-                || std::path::Path::new(fname)
-                    .extension()
-                    .is_some_and(|e| e.eq_ignore_ascii_case("log"))
-            {
+            // "syslog" in the filename is a strong hint — return early.
+            // Generic ".log" extension is too broad (e.g. server logs, app logs)
+            // so we do NOT return early for it; content checks below decide.
+            if fname.contains("syslog") {
                 return 0.6;
             }
         }

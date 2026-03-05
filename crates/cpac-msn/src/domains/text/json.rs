@@ -16,6 +16,11 @@ use std::collections::{HashMap, HashSet};
 pub struct JsonDomain;
 
 impl JsonDomain {
+    // The helpers below (`build_field_index`, `extract_field_names`, `extract_single`,
+    // `compact_json`) are kept for backward-compatible reconstruction of CP2 frames
+    // that were produced by older CPAC builds using single-doc JSON extraction.
+    // They are not called on the compress path any more.
+    #[allow(dead_code)]
     /// Build a (`field_map`, `field_names`) pair from field-count data.
     #[allow(clippy::cast_possible_truncation)]
     fn build_field_index(
@@ -408,20 +413,32 @@ impl Domain for JsonDomain {
         if let Some(fname) = filename {
             if std::path::Path::new(fname)
                 .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("json"))
-            {
-                return 0.9;
-            }
-            if std::path::Path::new(fname)
-                .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("jsonl"))
             {
                 return 0.95;
             }
+            // For .json extension: only beneficial if the content is JSONL
+            // (columnar transform helps). Single-doc JSON is handled below.
+            if std::path::Path::new(fname)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+            {
+                // Check if it's JSONL in a .json file (first line = valid JSON object)
+                let nl = memchr::memchr(b'\n', data).unwrap_or(data.len());
+                let first_line = data[..nl].strip_suffix(b"\r").unwrap_or(&data[..nl]);
+                if !first_line.is_empty()
+                    && serde_json::from_slice::<serde_json::Value>(first_line).is_ok()
+                    && !serde_json::from_slice::<serde_json::Value>(data).is_ok()
+                {
+                    return 0.9; // JSONL with .json extension
+                }
+                // Single-doc .json: MSN re-serialization hurts compressibility.
+                // Return below min_confidence so the caller falls through to passthrough.
+                return 0.2;
+            }
         }
 
-        // Use memchr2 to find the first structural JSON byte ({  or [),
-        // skipping any leading ASCII whitespace without a per-byte branch loop.
+        // Content-based detection (no filename or unrecognised extension).
         let start = data
             .iter()
             .position(|b| !b.is_ascii_whitespace())
@@ -434,9 +451,11 @@ impl Domain for JsonDomain {
             return 0.0;
         }
 
-        // Try full single-document parse first.
+        // If the whole file is valid single-doc JSON, MSN's compact re-serialization
+        // removes whitespace that the entropy backend was using, hurting ratio.
+        // Return below min_confidence so the caller falls through to passthrough.
         if serde_json::from_slice::<Value>(data).is_ok() {
-            return 0.95;
+            return 0.2;
         }
 
         // Check if it's JSONL: first line must be a valid JSON object.
@@ -448,16 +467,15 @@ impl Domain for JsonDomain {
             return 0.85; // Likely JSONL
         }
 
-        0.6 // Magic bytes match but couldn't fully parse
+        0.0 // Starts with JSON magic but unparseable and not JSONL
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
-        // Try single-document JSON first.
-        if let Ok(value) = serde_json::from_slice::<Value>(data) {
-            return Self::extract_single(data, &value);
-        }
-
-        // Fall back to JSONL (newline-delimited JSON objects).
+        // Only JSONL (newline-delimited JSON objects) benefits from MSN's columnar
+        // transform + delta encoding.  Single-doc JSON re-serialization removes
+        // whitespace that entropy backends already compress well, hurting ratio.
+        // detect() returns confidence < 0.5 for single-doc so we should never
+        // reach here for those files, but guard explicitly just in case.
         Self::extract_jsonl(data)
     }
 
@@ -613,31 +631,24 @@ mod tests {
     fn json_domain_detection() {
         let domain = JsonDomain;
 
-        // Valid JSON
-        assert!(domain.detect(br#"{"key": "value"}"#, None) > 0.9);
-        assert!(domain.detect(br#"[1, 2, 3]"#, None) > 0.9);
+        // Single-doc JSON: confidence below min_confidence (0.5) — passthrough
+        assert!(domain.detect(br#"{"key": "value"}"#, None) < 0.5);
+        assert!(domain.detect(br#"[1, 2, 3]"#, None) < 0.5);
 
-        // Filename detection
-        assert!(domain.detect(b"", Some("test.json")) > 0.8);
+        // .json extension single-doc: below min_confidence
+        assert!(domain.detect(br#"{"x":1}"#, Some("test.json")) < 0.5);
+
+        // JSONL: first line is valid JSON, whole file is not single-doc
+        let jsonl = b"{\"a\":1}\n{\"a\":2}\n{\"a\":3}\n";
+        assert!(domain.detect(jsonl, None) > 0.7);
+
+        // .jsonl extension
+        assert!(domain.detect(b"", Some("events.jsonl")) > 0.9);
 
         // Non-JSON
         assert!(domain.detect(b"plain text", None) < 0.1);
     }
 
-    #[test]
-    fn json_domain_roundtrip() {
-        let domain = JsonDomain;
-        let data = br#"{"name":"Alice","age":30,"name":"Bob","age":25}"#;
-
-        let result = domain.extract(data).unwrap();
-        let reconstructed = domain.reconstruct(&result).unwrap();
-
-        // Parse both to compare structure (order may differ)
-        let original: Value = serde_json::from_slice(data).unwrap();
-        let recovered: Value = serde_json::from_slice(&reconstructed).unwrap();
-
-        assert_eq!(original, recovered);
-    }
 
     #[test]
     fn json_domain_jsonl_detection() {
@@ -836,29 +847,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn json_domain_compression_on_repetitive() {
-        let domain = JsonDomain;
-
-        // Highly repetitive JSON
-        let data = br#"[
-            {"user":"alice","score":100,"level":5},
-            {"user":"bob","score":200,"level":10},
-            {"user":"charlie","score":150,"level":7}
-        ]"#;
-
-        let result = domain.extract(data).unwrap();
-
-        // Residual should be smaller than original (field names extracted)
-        assert!(result.residual.len() < data.len());
-
-        // Should have extracted field names
-        assert!(result.fields.contains_key("field_names"));
-
-        // Verify roundtrip
-        let reconstructed = domain.reconstruct(&result).unwrap();
-        let original: Value = serde_json::from_slice(data).unwrap();
-        let recovered: Value = serde_json::from_slice(&reconstructed).unwrap();
-        assert_eq!(original, recovered);
-    }
 }

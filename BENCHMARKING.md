@@ -82,6 +82,29 @@ pwsh scripts/download-corpus.ps1 -Corpus "canterbury,silesia"
 - **Use Case**: Classic text compression benchmark
 - **License**: Public domain
 
+## Benchmark Results (2026-03-05 — Session 16, MSN Regression Fixes)
+
+> **Build note (2026-03-05, Session 16):** Three MSN bugs causing regressions were identified and fixed:
+> 1. **YAML domain false-positive on JSON/log content** — `YamlDomain::detect()` returned 0.7 for any ASCII file with colons, including JSON and log files, causing a damaging key-extraction transform. Fixed: exclude `{`/`[`-prefixed content and non-YAML file extensions.
+> 2. **JSON domain: single-doc extraction hurts compression** — Re-serializing a pretty-printed JSON document to compact JSON removes whitespace patterns the entropy backend uses, degrading ratio. Fixed: `detect()` returns 0.2 (below threshold) for single-doc JSON; `extract()` now only runs JSONL columnar path.
+> 3. **SyslogDomain: generic `.log` extension fires regardless of content** — Returned 0.6 for any `.log` file, incorrectly extracting non-syslog fields. Fixed: generic `.log` extension no longer short-circuits; content checks decide confidence.
+> Additionally: `bench_file_auto` now passes the filename to `CompressConfig` so extension-based domain detection works during benchmarking. A safety check was added to `compress()` to skip MSN if `residual + metadata >= original size`.
+
+### Session 16 MSN Regression Fix Results (Quick mode, bench corpus)
+
+| File | Size | T1/T2(SSR/Zstd) | T1/T2(MSN/Zstd) | Delta | Status |
+|------|------|-----------------|-----------------|-------|--------|
+| data.json | 31 KB | 96.93x | 96.93x | 0.00x | ✅ Fixed (was -31%) |
+| metrics.csv | 37 KB | 13.97x | 13.97x | 0.00x | ✅ Fixed (was -0.2x) |
+| server.log | 50 KB | 35.93x | 35.93x | 0.00x | ✅ Fixed (was -0.8x) |
+| large-data.json | 706 KB | 15.39x | **15.43x** | **+0.04x** | ✅ Slight gain |
+| large-metrics.csv | 1.4 MB | 3.15x | 3.15x | 0.00x | ✅ Neutral |
+| large-server.log | 3.5 MB | 6.66x | 6.66x | 0.00x | ✅ Neutral |
+
+**Key finding:** MSN now causes **zero regressions** on structured corpus files. The prior -31% regression on `data.json` was caused by `YamlDomain` misidentifying JSON as YAML and applying a destructive key-extraction transform. MSN gains on this corpus are modest because the custom bench-corpus files use generic/non-JSONL JSON that doesn't benefit from MSN's columnar JSONL transform. MSN's gains are largest on JSONL files and true BSD/RFC5424 syslog — see the loghub-2k results below.
+
+---
+
 ## Benchmark Results (2026-03-05 — Session 15, Balanced Mode, 3 iterations)
 
 > **Build note (2026-03-05):** The release binary was rebuilt today. CP2+CPBL decompression for MSN frames is now fixed (`msn_metadata_len` widened to u32), and log-domain MSN detection coverage has been expanded (BSD syslog + Apache error logs + structured logs).
