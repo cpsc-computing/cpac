@@ -57,6 +57,9 @@ impl Domain for SyslogDomain {
     }
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
+        // Minimum size below which metadata overhead typically exceeds savings.
+        const MIN_USEFUL_SIZE: usize = 65536; // 64 KB
+
         if let Some(fname) = filename {
             if fname.contains("syslog")
                 || std::path::Path::new(fname)
@@ -94,7 +97,8 @@ impl Domain for SyslogDomain {
             .filter(|line| BSD_MONTHS.iter().any(|m| line.starts_with(m)))
             .count();
         if bsd_count > 5 {
-            return 0.85;
+            // Size gate: very small BSD syslog blocks have too little repetition for MSN benefit.
+            return if data.len() >= MIN_USEFUL_SIZE { 0.85 } else { 0.4 };
         }
 
         // RFC 5424 ISO timestamp: contains 'T', ':', '-'
@@ -108,8 +112,27 @@ impl Domain for SyslogDomain {
             return 0.6;
         }
 
-        // Structured log: ISO date + log level keyword (e.g. OpenStack Nova)
         const LOG_LEVELS: &[&str] = &[" INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL "];
+
+        // OpenStack structured log: field[0] is a log filename prefix (contains ".log") +
+        // ISO date + log level. MSN extracts the repeated filename prefix token for meaningful
+        // savings (~34 bytes/line × line_count).
+        let openstack_count = text
+            .lines()
+            .take(10)
+            .filter(|line| {
+                let first = line.splitn(2, ' ').next().unwrap_or("");
+                first.contains(".log") && LOG_LEVELS.iter().any(|lvl| line.contains(lvl))
+            })
+            .count();
+        if openstack_count > 5 {
+            return if data.len() >= MIN_USEFUL_SIZE { 0.75 } else { 0.4 };
+        }
+
+        // Generic structured log (Hadoop, BGL, HPC, etc.): ISO date + log level, but without a
+        // repeated filename prefix. Zstd handles these natively; MSN adds metadata overhead
+        // without proportional savings. Keep confidence below min_confidence (0.5) to avoid
+        // regression (e.g. Hadoop_2k: -0.57x without this gate).
         let structured_count = text
             .lines()
             .take(10)
@@ -120,7 +143,7 @@ impl Domain for SyslogDomain {
             })
             .count();
         if structured_count > 5 {
-            return 0.75;
+            return 0.45; // below default min_confidence of 0.5 → MSN passthrough
         }
 
         0.0
@@ -132,35 +155,54 @@ impl Domain for SyslogDomain {
 
         let mut hostname_freq: HashMap<String, usize> = HashMap::new();
         let mut appname_freq: HashMap<String, usize> = HashMap::new();
+        // Prefix tokens for OpenStack-style structured logs.
+        // e.g. "nova-api.log.1.2017-05-16_13:53:08" repeated on every line.
+        let mut prefix_freq: HashMap<String, usize> = HashMap::new();
 
         for line in text.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 5 {
                 // Detect BSD syslog by checking whether field[0] is a month abbreviation.
-                // BSD:     "Mon DD HH:MM:SS hostname app[pid]: msg"
-                // RFC5424: "<PRI>VERSION TIMESTAMP HOSTNAME APP-NAME ..."
+                // BSD:       "Mon DD HH:MM:SS hostname app[pid]: msg"
+                // OpenStack: "log-prefix.log.N.date ISO-date ISO-time PID LEVEL module msg"
+                // RFC5424:   "<PRI>VERSION TIMESTAMP HOSTNAME APP-NAME ..."
                 let is_bsd = is_bsd_month(parts[0]);
+                let is_openstack = parts[0].contains(".log");
 
-                // Hostname is always field[3]
-                if let Some(hostname) = parts.get(3) {
-                    *hostname_freq.entry(hostname.to_string()).or_insert(0) += 1;
-                }
-
-                // App-name is field[4].
-                // For BSD, strip the PID bracket so "sshd[19939]:" and "sshd[19937]:"
-                // both map to "sshd", preventing a metadata explosion from unique PIDs.
-                if let Some(appname) = parts.get(4) {
-                    let key = if is_bsd {
-                        strip_pid_suffix(appname)
-                    } else {
-                        appname
-                    };
-                    *appname_freq.entry(key.to_string()).or_insert(0) += 1;
+                if is_openstack {
+                    // Extract the log filename prefix (field[0]): large repeated token.
+                    *prefix_freq.entry(parts[0].to_string()).or_insert(0) += 1;
+                    // Log level is field[4] (e.g. INFO/WARNING/ERROR).
+                    if let Some(level) = parts.get(4) {
+                        *appname_freq.entry(level.to_string()).or_insert(0) += 1;
+                    }
+                } else {
+                    // Regular syslog: hostname=field[3], appname=field[4].
+                    if let Some(hostname) = parts.get(3) {
+                        *hostname_freq.entry(hostname.to_string()).or_insert(0) += 1;
+                    }
+                    // App-name is field[4].
+                    // For BSD, strip the PID bracket so "sshd[19939]:" and "sshd[19937]:"
+                    // both map to "sshd", preventing a metadata explosion from unique PIDs.
+                    if let Some(appname) = parts.get(4) {
+                        let key = if is_bsd {
+                            strip_pid_suffix(appname)
+                        } else {
+                            appname
+                        };
+                        *appname_freq.entry(key.to_string()).or_insert(0) += 1;
+                    }
                 }
             }
         }
 
         // Only keep values that appear at least twice (worth storing in metadata)
+        let mut repeated_prefixes: Vec<(String, usize)> = prefix_freq
+            .into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .collect();
+        repeated_prefixes.sort_by(|a, b| b.1.cmp(&a.1));
+
         let mut repeated_hostnames: Vec<(String, usize)> = hostname_freq
             .into_iter()
             .filter(|(_, count)| *count >= 2)
@@ -174,6 +216,11 @@ impl Domain for SyslogDomain {
         repeated_appnames.sort_by(|a, b| b.1.cmp(&a.1));
 
         // Build replacement maps and compact the log
+        let mut prefix_map: HashMap<String, String> = HashMap::new();
+        for (idx, (prefix, _)) in repeated_prefixes.iter().enumerate() {
+            prefix_map.insert(prefix.clone(), format!("@P{idx}"));
+        }
+
         let mut hostname_map: HashMap<String, String> = HashMap::new();
         for (idx, (hostname, _)) in repeated_hostnames.iter().enumerate() {
             hostname_map.insert(hostname.clone(), format!("@H{idx}"));
@@ -185,6 +232,10 @@ impl Domain for SyslogDomain {
         }
 
         let mut compacted = text.to_string();
+        // Apply prefix substitutions before hostname/appname to avoid partial clobbering.
+        for (orig, replacement) in &prefix_map {
+            compacted = compacted.replace(orig, replacement);
+        }
         for (orig, replacement) in &hostname_map {
             compacted = compacted.replace(orig, replacement);
         }
@@ -193,6 +244,15 @@ impl Domain for SyslogDomain {
         }
 
         let mut fields = HashMap::new();
+        fields.insert(
+            "prefixes".to_string(),
+            serde_json::Value::Array(
+                repeated_prefixes
+                    .iter()
+                    .map(|(p, _)| serde_json::Value::String(p.clone()))
+                    .collect(),
+            ),
+        );
         fields.insert(
             "hostnames".to_string(),
             serde_json::Value::Array(
@@ -250,12 +310,23 @@ impl Domain for SyslogDomain {
             ));
         };
 
+        // Prefixes are optional (only present in OpenStack-style structured logs).
+        let prefixes: Vec<String> = result
+            .fields
+            .get("prefixes")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+
         let mut reconstructed = std::str::from_utf8(&result.residual)
             .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?
             .to_string();
 
         // Expand placeholders in descending index order to avoid partial matches
-        // (e.g. "@H10" being partially replaced by an "@H1" rule).
+        // (e.g. "@P10" being partially replaced by an "@P1" rule).
+        for (idx, prefix) in prefixes.iter().enumerate().rev() {
+            reconstructed = reconstructed.replace(&format!("@P{idx}"), prefix);
+        }
         for (idx, hostname) in hostnames.iter().enumerate().rev() {
             reconstructed = reconstructed.replace(&format!("@H{idx}"), hostname);
         }
@@ -285,7 +356,18 @@ mod tests {
     #[test]
     fn syslog_bsd_detect() {
         let domain = SyslogDomain;
-        // 7 lines starting with BSD month prefix — confidence should be >= 0.8
+        // Build a sample > 64 KB (MIN_USEFUL_SIZE) so the size gate yields full confidence.
+        let line = b"Jun 14 15:16:01 host sshd[1234]: authentication failure\n";
+        let data: Vec<u8> = line.iter().copied().cycle().take(70_000).collect();
+        let confidence = domain.detect(&data, None);
+        assert!(confidence >= 0.8, "BSD syslog large-block confidence={confidence}");
+    }
+
+    #[test]
+    fn syslog_bsd_detect_small_sample_size_gated() {
+        // Small samples (< 64 KB) should be size-gated to confidence 0.4 so MSN
+        // doesn't fire where metadata overhead would exceed savings.
+        let domain = SyslogDomain;
         let data = b"Jun 14 15:16:01 host sshd[1]: msg\n\
 Jun 14 15:16:02 host sshd[2]: msg\n\
 Jun 14 15:16:03 host sshd[3]: msg\n\
@@ -294,7 +376,7 @@ Jun 14 15:16:05 host sshd[5]: msg\n\
 Jun 14 15:16:06 host sshd[6]: msg\n\
 Jun 14 15:16:07 host sshd[7]: msg\n";
         let confidence = domain.detect(data, None);
-        assert!(confidence >= 0.8, "BSD syslog confidence={confidence}");
+        assert_eq!(confidence, 0.4, "small BSD syslog should be size-gated to 0.4");
     }
 
     #[test]
@@ -315,5 +397,70 @@ Jun 14 15:16:03 combo sshd[3]: auth failure\n";
         assert_eq!(strip_pid_suffix("sshd[24200]:"), "sshd");
         assert_eq!(strip_pid_suffix("kernel:"), "kernel");
         assert_eq!(strip_pid_suffix("app[notnum]:"), "app[notnum]");
+    }
+
+    #[test]
+    fn openstack_detect() {
+        let domain = SyslogDomain;
+        let data = b"nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.008 25746 INFO nova.osapi: req 1\n\
+nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.009 25746 INFO nova.osapi: req 2\n\
+nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.010 25746 WARNING nova.osapi: slow\n\
+nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.011 25746 INFO nova.osapi: req 3\n\
+nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.012 25746 INFO nova.osapi: req 4\n\
+nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.013 25746 INFO nova.osapi: req 5\n\
+nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.014 25746 INFO nova.osapi: req 6\n";
+        // Data is > 64 KB? No, it's a small test sample. Size gate applies.
+        // Confidence should reflect size gate (< 64KB → 0.4, which is below default min_conf).
+        // We test the raw detect() score here.
+        let confidence = domain.detect(data, None);
+        // Small sample → 0.4 (size-gated). Large sample would be 0.75.
+        assert!(
+            confidence == 0.4 || confidence == 0.75,
+            "OpenStack confidence={confidence} (expected 0.4 for small sample or 0.75 for large)"
+        );
+    }
+
+    #[test]
+    fn openstack_roundtrip() {
+        let domain = SyslogDomain;
+        // Build a sample > 64 KB so size gate doesn't suppress detection.
+        let line = b"nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.008 25746 INFO nova.osapi_compute.wsgi.server [-] req-abc\n";
+        let data: Vec<u8> = line.iter().copied().cycle().take(70_000).collect();
+        // Trim to a clean line boundary.
+        let end = data.iter().rposition(|&b| b == b'\n').map(|p| p + 1).unwrap_or(data.len());
+        let data = &data[..end];
+
+        let confidence = domain.detect(data, None);
+        assert!(confidence >= 0.75, "OpenStack large block confidence={confidence}");
+
+        let result = domain.extract(data).unwrap();
+        // Prefix should have been extracted — residual must be shorter.
+        assert!(
+            result.residual.len() < data.len(),
+            "OpenStack prefix extraction should reduce residual: residual={} vs input={}",
+            result.residual.len(),
+            data.len()
+        );
+        let reconstructed = domain.reconstruct(&result).unwrap();
+        assert_eq!(data, reconstructed.as_slice(), "OpenStack roundtrip mismatch");
+    }
+
+    #[test]
+    fn generic_structured_log_confidence_below_threshold() {
+        // Hadoop-style logs (ISO date + log level, no .log prefix) must NOT trigger MSN
+        // (confidence < 0.5) to avoid the -0.57x regression observed on Hadoop_2k.log.
+        let domain = SyslogDomain;
+        let data = b"2015-10-17 15:37:28,955 INFO org.apache.hadoop.mapred.MapTask: Processing split\n\
+2015-10-17 15:37:29,001 INFO org.apache.hadoop.mapred.MapTask: Map output\n\
+2015-10-17 15:37:29,100 WARNING org.apache.hadoop.ipc.Server: Error processing\n\
+2015-10-17 15:37:29,200 INFO org.apache.hadoop.mapred.MapTask: Done\n\
+2015-10-17 15:37:29,300 INFO org.apache.hadoop.mapred.ReduceTask: Reducing\n\
+2015-10-17 15:37:29,400 INFO org.apache.hadoop.mapred.MapTask: Processing split\n\
+2015-10-17 15:37:29,500 ERROR org.apache.hadoop.ipc.Server: Connection reset\n";
+        let confidence = domain.detect(data, None);
+        assert!(
+            confidence < 0.5,
+            "Hadoop-style log confidence should be < 0.5 to avoid MSN regression, got {confidence}"
+        );
     }
 }

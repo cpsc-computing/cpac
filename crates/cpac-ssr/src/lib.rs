@@ -186,6 +186,7 @@ fn detect_domain(data: &[u8]) -> Option<DomainHint> {
 /// Recognises:
 /// - BSD syslog:    `Mon DD HH:MM:SS hostname app[pid]: msg`
 /// - Apache error:  `[Day Mon DD HH:MM:SS YYYY] [level] msg`
+/// - Apache/NCSA access log: `IP - - [timestamp] "METHOD /path HTTP/x.x" status bytes`
 /// - Structured:    ISO date + log-level keyword (OpenStack, Nova, etc.)
 fn detect_log(data: &[u8]) -> bool {
     // Sample at most 4 KB so this stays O(1) for large files.
@@ -209,6 +210,7 @@ fn detect_log(data: &[u8]) -> bool {
     let mut bsd = 0usize;
     let mut apache_err = 0usize;
     let mut structured = 0usize;
+    let mut access_log = 0usize;
 
     for line in text.lines().take(10) {
         if BSD_MONTHS.iter().any(|m| line.starts_with(m)) {
@@ -222,9 +224,14 @@ fn detect_log(data: &[u8]) -> bool {
         {
             structured += 1;
         }
+        // Apache/NCSA access log: `IP - - [timestamp] "METHOD /path HTTP/x.x"`
+        // Identified by `] "` (timestamp close + quoted request) + HTTP/ version.
+        if line.contains("] \"") && line.contains("HTTP/") {
+            access_log += 1;
+        }
     }
 
-    bsd > 5 || apache_err > 5 || structured > 5
+    bsd > 5 || apache_err > 5 || structured > 5 || access_log > 5
 }
 
 #[cfg(test)]
@@ -313,5 +320,19 @@ svc.log 2017-05-16 00:00:06.007 123 INFO ns.api: ok\n";
         // JSON arrays start with '['; must not be classified as log
         let r = analyze(b"[{\"a\": 1}, {\"b\": 2}]");
         assert_eq!(r.domain_hint, Some(DomainHint::Json));
+    }
+
+    #[test]
+    fn detect_access_log() {
+        // Classic Combined Log Format (NASA/Apache access logs)
+        let data = b"199.72.81.55 - - [01/Jul/1995:00:00:01 -0400] \"GET /history/apollo/ HTTP/1.0\" 200 6245\n\
+205.212.115.106 - - [01/Jul/1995:00:00:02 -0400] \"GET /shuttle/countdown/ HTTP/1.0\" 200 3985\n\
+129.94.144.152 - - [01/Jul/1995:00:00:03 -0400] \"GET / HTTP/1.0\" 200 7074\n\
+199.166.62.154 - - [01/Jul/1995:00:00:04 -0400] \"GET /images/NASA-logosmall.gif HTTP/1.0\" 200 786\n\
+ unicom016.unicom.net - - [01/Jul/1995:00:00:05 -0400] \"GET /shuttle/countdown/ HTTP/1.0\" 200 3985\n\
+199.72.81.55 - - [01/Jul/1995:00:00:06 -0400] \"GET /images/NASA-logosmall.gif HTTP/1.0\" 200 786\n\
+205.212.115.106 - - [01/Jul/1995:00:00:07 -0400] \"GET /images/KSC-logosmall.gif HTTP/1.0\" 200 1204\n";
+        let r = analyze(data);
+        assert_eq!(r.domain_hint, Some(DomainHint::Log));
     }
 }
