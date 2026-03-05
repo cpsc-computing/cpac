@@ -71,7 +71,7 @@ cargo bench -p cpac-engine --bench dag        # DAG compile/execute
 - **Doc comments** on all public items.
 - **Unit tests** in each crate (`#[cfg(test)] mod tests`).
 - **Integration tests** in `tests/` directory of `cpac-engine`.
-- **NO SYNTHETIC DATA**: Tests must use only existing corpus data. Never generate fake/synthetic test data.
+- **NO SYNTHETIC DATA — HARD RULE**: This applies to **tests AND benchmarks**. Never generate, create, or use synthetic/fake data for any test or benchmark purpose. Benchmark results derived from synthetic data are invalid and must be deleted. All benchmarks must run exclusively against the official corpus files downloaded via the corpus profiles in `benches/configs/`. Never create files under `.work/benchmarks/bench-corpus/` or any ad-hoc corpus directory — this is explicitly prohibited.
 - **Copyright header** on every `.rs` file:
   ```
   // Copyright (c) 2026 BitConcepts, LLC

@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Block-based streaming I/O and parallel compression for CPAC.
 //!
 //! Splits large data into fixed-size blocks, compresses each independently

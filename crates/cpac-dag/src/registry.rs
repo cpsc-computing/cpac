@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Transform registry — maps transform IDs and names to `TransformNode` instances.
 
 use std::collections::HashMap;

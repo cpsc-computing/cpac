@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Debug MSN data flow to understand size mismatches.
 
 use cpac_engine::{compress, decompress, CompressConfig};

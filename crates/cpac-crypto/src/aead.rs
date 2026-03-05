@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! AEAD encryption: ChaCha20-Poly1305 and AES-256-GCM.
 
 use aes_gcm::aead::Aead;

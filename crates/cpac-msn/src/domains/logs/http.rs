@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! HTTP domain handler for HTTP request/response logs.
 
 use crate::domain::{Domain, DomainInfo, ExtractionResult};

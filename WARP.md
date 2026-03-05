@@ -3,7 +3,7 @@
 ## Identity
 - Repository: `BitConcepts/cpac`
 - Tool name: **CPAC** (Constraint-Projected Adaptive Compression)
-- License: CPAC Research & Evaluation License v1.0
+- License: CPSC Research & Evaluation License v1.0
 
 ## Build Commands
 ```bash

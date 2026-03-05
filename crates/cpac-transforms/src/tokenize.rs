@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Tokenize: per-column dictionary encoding for categorical strings.
 //!
 //! Builds a frequency-ordered dictionary, replaces each value with a

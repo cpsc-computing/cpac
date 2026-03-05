@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Configuration file support for CPAC CLI.
 //!
 //! Lookup chain: `./cpac.toml` → parent dirs → `~/.config/cpac/config.toml`.

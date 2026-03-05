@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Entropy coding backends: Zstd, Brotli, Gzip, LZMA, Raw passthrough.
 
 #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]

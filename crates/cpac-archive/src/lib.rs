@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Multi-file archive format (.cpar) for CPAC.
 
 #![allow(clippy::cast_possible_truncation, clippy::missing_errors_doc)]

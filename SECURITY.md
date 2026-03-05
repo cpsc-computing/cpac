@@ -1,44 +1,92 @@
 # Security Policy
+Constraint-Projected State Computing (CPSC)
 
-## Supported Versions
+This document describes how to report security vulnerabilities related to
+the CPSC specifications, reference materials, and associated artifacts.
 
-| Version | Supported |
-|---------|-----------|
-| 0.1.x   | Yes       |
+---
 
 ## Reporting a Vulnerability
 
-**Do not file security vulnerabilities as public GitHub issues.**
+If you believe you have discovered a security vulnerability, **do not open a public issue**.
 
-Please report security issues by emailing: **security@bitconcepts.com**
+Please report security issues privately via email:
 
-Include:
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact assessment
-- Suggested fix (if any)
+- **Email:** support@bitconcepts.tech
+- **Subject:** CPSC Security Disclosure
 
-We will acknowledge receipt within 48 hours and provide a detailed
-response within 7 business days.
+This applies to:
+- specification ambiguities with security impact
+- binary format parsing issues
+- potential exploit vectors
+- hardware or reconstruction edge cases
+- denial-of-service or integrity concerns
 
-## Scope
+---
 
-The following are in scope for security reports:
-- Memory safety issues in compression/decompression
-- Cryptographic implementation flaws (AEAD, KDF, PQC, hybrid encryption)
-- Wire format parsing vulnerabilities (buffer overflows, integer overflows)
-- Key material leakage
-- Denial of service via crafted input
+## What to Include
 
-## Encryption Algorithms
+When reporting a vulnerability, please include:
 
-CPAC uses the following cryptographic primitives:
-- ChaCha20-Poly1305 (AEAD)
-- AES-256-GCM (AEAD)
-- X25519 (key exchange)
-- ML-KEM-768 (post-quantum KEM, FIPS 203)
-- ML-DSA-65 (post-quantum signatures, FIPS 204)
-- Argon2id (password KDF)
-- HKDF-SHA256 (key derivation)
+- A clear description of the issue
+- The affected document(s) or component(s)
+- Steps to reproduce (if applicable)
+- Potential impact
+- Any suggested mitigations (optional)
 
-All implementations use audited Rust crates from the RustCrypto project.
+Clear and concise reports help us respond faster.
+
+---
+
+## Disclosure Process
+
+1. We will acknowledge receipt of your report.
+2. The issue will be reviewed privately.
+3. If confirmed, we will determine appropriate remediation.
+4. Fixes or clarifications may be released in a future specification update.
+5. Public disclosure will occur only after mitigation or at our discretion.
+
+---
+
+## Supported Scope
+
+This security policy applies to:
+
+- CPSC specifications
+- CAS-YAML specification
+- CPSC binary format
+- RTL mapping guidance
+- Reference documentation in this organization
+
+It does **not** apply to:
+- third-party implementations
+- external tools or libraries
+- experimental or unofficial forks
+
+---
+
+## Coordinated Disclosure
+
+We follow a **coordinated disclosure** model.
+
+We ask reporters to:
+- allow reasonable time for investigation and response
+- avoid public disclosure before coordination
+- refrain from exploiting issues beyond proof-of-concept
+
+---
+
+## Licensing and Legal
+
+Reporting a security issue does not grant any rights beyond those explicitly
+stated in the repository license.
+
+All intellectual property rights remain with BitConcepts, LLC.
+
+---
+
+## Contact
+
+For all security-related matters:
+
+support@bitconcepts.tech

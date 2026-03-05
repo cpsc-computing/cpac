@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Range pack: integer narrowing by subtracting min and downcasting.
 //!
 //! Detects `[min, max]`, subtracts min, packs values in the smallest

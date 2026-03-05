@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! JSON domain handler — decomposes JSON arrays into typed columns.
 
 use cpac_types::{CpacError, CpacResult, CpacType, DomainHint};

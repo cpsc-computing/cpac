@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Field LZ: Structure-aware LZ compression at field boundaries.
 //!
 //! Matches occur at fixed-width element boundaries instead of arbitrary

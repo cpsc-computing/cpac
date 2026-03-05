@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Encoding transforms for the CPAC compression pipeline.
 //!
 //! Provides four core transforms (delta, zigzag, transpose, ROLZ) and a

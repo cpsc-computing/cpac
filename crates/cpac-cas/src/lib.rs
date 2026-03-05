@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Constraint-based Auto-CAS: inference, cost model, `DoF` extraction.
 //!
 //! Analyzes structured data to discover constraints (ranges, enumerations,

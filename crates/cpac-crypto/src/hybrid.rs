@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Hybrid encryption: X25519 (classical) + ML-KEM-768 (post-quantum).
 //!
 //! Defence-in-depth: even if one primitive is broken, the other still

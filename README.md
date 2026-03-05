@@ -1,10 +1,19 @@
 # CPAC
 
-**Constraint-Projected Adaptive Compression**
+**Constraint-Projected Adaptive Compression engine for Rust**
 
 High-performance, lossless compression engine with SIMD-accelerated transforms,
 DAG-based pipelines, block-parallel I/O, post-quantum encryption, and a
 drop-in CLI for gzip/zstd/brotli workflows. Written in Rust.
+
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/cpsc-computing/cpac)
+[![License](https://img.shields.io/badge/license-Research%20%26%20Evaluation-orange.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-blue.svg)](https://www.rust-lang.org)
+
+> ⚠️ **Status:** Research & Evaluation | **License:** CPSC Research & Evaluation License v1.0  
+> This repository is released for non-commercial research, evaluation, and educational purposes only. Commercial use requires a separate license. See LICENSE for full terms.
+
+---
 
 ## Features
 
@@ -32,15 +41,27 @@ drop-in CLI for gzip/zstd/brotli workflows. Written in Rust.
 - **413+ tests** — comprehensive regression suite, golden vectors, property-based tests,
   determinism validation, transform-specific tests
 
-## AI Agent Workflow
+## Agent Quick Start
 
-If you're an AI agent opening this repository for the first time:
+This repository supports AI agent workflows with session commands.
 
-1. **Read AGENTS.md** — Complete codebase onboarding (architecture, entry points, conventions)
-2. **Read WARP.md** — Project rules (build commands, presubmit checklist, commit style)
-3. **Set Windows PATH** (if on Windows): `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"`
-4. **Verify build**: `cargo build --workspace && cargo test --workspace`
-5. **Run presubmit** before any commits: build, test, clippy, fmt (see WARP.md)
+When starting a new conversation with an AI agent (Warp, Claude, etc.) in this
+repository, use the following prompt to establish context:
+
+**Standard load session:**
+```
+You are in the cpac repository (CPAC compression engine). First read AGENTS.md
+and WARP.md, then verify build with cargo build --workspace && cargo test --workspace.
+```
+
+On startup, an agent SHOULD:
+1. Read `AGENTS.md` (architecture, entry points, conventions)
+2. Read `WARP.md` (build commands, presubmit checklist, commit style)
+3. Set Windows PATH if needed: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"`
+4. Verify build: `cargo build --workspace && cargo test --workspace`
+5. Run presubmit before any commits: build, test, clippy, fmt (see WARP.md)
+
+For full agent conventions and session behavior, see `AGENTS.md`.
 
 ## Quick Start
 
@@ -307,7 +328,11 @@ All future optimizations are **bottleneck signal-driven**. See `BENCHMARKING.md`
 
 ## License
 
-CPAC Research & Evaluation License v1.0 — Copyright (c) 2026 BitConcepts, LLC.
+CPSC Research & Evaluation License v1.0 — Copyright (c) 2026 BitConcepts, LLC.
 
 See [LICENSE](LICENSE) for full terms. Commercial licensing available —
 contact info@bitconcepts.tech.
+
+---
+
+**CPAC v0.1.0** | © 2026 BitConcepts, LLC | Licensed under CPSC Research & Evaluation License v1.0

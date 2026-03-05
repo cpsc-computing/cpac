@@ -1,80 +1,113 @@
-CPAC Research & Evaluation License v1.0
+CPSC Research & Evaluation License
+Version 1.0
+Published: January 19, 2026
 
-Copyright (c) 2026 BitConcepts, LLC. All rights reserved.
+Copyright © 2026
+BitConcepts, LLC
+All rights reserved.
 
-DEFINITIONS
+PURPOSE
 
-"Software" means the CPAC compression engine source code, compiled
-binaries, documentation, wire format specifications, and all associated
-files distributed under this license.
+This license governs the use of the Constraint-Projected State Computing (CPSC)
+specification, documentation, and related materials (the "Licensed Materials").
 
-"Research Use" means use of the Software solely for non-commercial
-academic research, personal learning, or internal technical evaluation.
+The Licensed Materials are made available for research, evaluation, and
+educational purposes only.
 
-"Commercial Use" means any use of the Software, in whole or in part,
-in a product, service, or process that is sold, licensed, offered as a
-service, or used to generate revenue, directly or indirectly.
+This license is intended to enable academic study, technical review, and
+non-commercial experimentation, while reserving all commercial and patent
+rights to BitConcepts, LLC.
 
 GRANT OF RIGHTS
 
-Subject to the terms of this License, BitConcepts, LLC grants you a
-non-exclusive, non-transferable, revocable, royalty-free license to:
+Subject to the terms of this license, BitConcepts, LLC grants you a
+non-exclusive, non-transferable, revocable license to:
 
-  1. Use, copy, and modify the Software for Research Use only.
-  2. Publish results, benchmarks, and analyses derived from Research Use,
-     provided that the Software is cited as:
-       "CPAC - Constraint-Projected Adaptive Compression, BitConcepts, LLC"
-  3. Redistribute unmodified copies of the Software for Research Use,
-     provided this License and copyright notice are retained in full.
+read, copy, and share the Licensed Materials in unmodified or modified form;
+use the Licensed Materials solely for non-commercial research, evaluation,
+or educational purposes;
+cite or reference the Licensed Materials in academic publications,
+presentations, or research;
+create derivative works of the Licensed Materials solely for non-commercial
+research or evaluation, provided that such derivative works are not used to
+design, implement, or inform any commercial product, service, or system.
+
+Publication or disclosure of the Licensed Materials does not constitute a
+dedication to the public domain and does not authorize the practice of any
+patented or patent-pending invention.
 
 RESTRICTIONS
 
-  1. COMMERCIAL USE IS NOT PERMITTED without a separate commercial license
-     agreement with BitConcepts, LLC. Contact: info@bitconcepts.tech
-  2. You may not sublicense, sell, rent, or lease the Software or any
-     derivative works.
-  3. You may not remove, alter, or obscure any copyright, trademark, or
-     attribution notices contained in the Software.
-  4. You may not use the Software to create a competing compression product
-     or service without prior written consent from BitConcepts, LLC.
-  5. Wire format specifications (CPAC, CPBL, CPHE, CPAR, TP, CS) are
-     proprietary. Interoperable implementations require a separate format
-     license.
+You may not, directly or indirectly:
 
-CONTRIBUTIONS
+use the Licensed Materials, or any derivative thereof, for any commercial
+purpose;
+implement the Licensed Materials in any commercial product, service, or
+system;
+deploy implementations of the Licensed Materials in production or
+revenue-generating environments;
+sell, license, sublicense, or otherwise commercially exploit the Licensed
+Materials;
+use the Licensed Materials to provide paid services, hosted offerings, or
+commercial consulting;
+circumvent the intent of this license through clean-room implementation,
+functional reimplementation, or similar methods intended to avoid licensing
+obligations.
 
-If you submit contributions (pull requests, patches, issues) to the
-Software, you grant BitConcepts, LLC a perpetual, irrevocable, worldwide,
-royalty-free license to use, reproduce, modify, and distribute your
-contributions under any license, including this one and any future
-commercial license.
+Any commercial use requires a separate, explicit commercial license from
+BitConcepts, LLC.
 
 PATENT RIGHTS
 
-This License does not grant any patent rights. BitConcepts, LLC reserves
-all patent rights related to the algorithms, methods, and wire formats
-implemented in the Software.
+This license does not grant any patent rights.
 
-DISCLAIMER
+The Licensed Materials may describe technologies that are subject to existing or
+future patent applications. All patent rights are expressly reserved.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
-BITCONCEPTS, LLC BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
-WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT
-OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+NO IMPLIED LICENSE
+
+Nothing in this license shall be construed as granting, by implication,
+estoppel, or otherwise, any rights under any patent or patent application,
+whether existing now or filed in the future.
+
+ATTRIBUTION
+
+Any redistribution or publication of the Licensed Materials or derivative works
+must include the following attribution:
+
+Constraint-Projected State Computing (CPSC) — used under the CPSC Research &
+Evaluation License.
+
+NO WARRANTY
+
+The Licensed Materials are provided "as is", without warranty of any kind,
+express or implied, including but not limited to warranties of merchantability,
+fitness for a particular purpose, or non-infringement.
+
+LIMITATION OF LIABILITY
+
+In no event shall BitConcepts, LLC or any contributors be liable for any claim,
+damages, or other liability, whether in an action of contract, tort, or
+otherwise, arising from, out of, or in connection with the Licensed Materials
+or their use.
 
 TERMINATION
 
-This License is automatically terminated if you violate any of its terms.
-Upon termination, you must destroy all copies of the Software in your
-possession or control.
+This license terminates automatically if you violate any of its terms. Upon
+termination, you must immediately cease all use of the Licensed Materials and
+destroy any copies in your possession or control.
+
+COMMERCIAL LICENSING
+
+Commercial use, production deployment, or incorporation of the Licensed
+Materials into products or services requires a separate commercial license.
+
+For commercial licensing inquiries, contact BitConcepts, LLC.
 
 GOVERNING LAW
 
-This License shall be governed by and construed in accordance with the
-laws of the State of Texas, United States of America, without regard to
-conflict of law principles.
+This license shall be governed by and construed in accordance with the laws of
+the jurisdiction in which BitConcepts, LLC is organized, without regard to
+conflict-of-law principles.
 
-SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+END OF LICENSE

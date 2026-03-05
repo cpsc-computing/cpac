@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Golden vector generator - run manually to create test fixtures.
 //!
 //! Usage: cargo test -p cpac-engine --test generate_golden_vectors -- --ignored --nocapture

@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 # Copyright (c) 2026 BitConcepts, LLC
-# SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+# SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 #
 # download-corpus.ps1 — Download benchmark corpora for CPAC.
 #

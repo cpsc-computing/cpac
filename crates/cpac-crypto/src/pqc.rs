@@ -1,5 +1,5 @@
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Post-Quantum Cryptography — ML-KEM (FIPS 203) + ML-DSA (FIPS 204).
 //!
 //! Uses pure-Rust `RustCrypto` implementations. Feature-gated behind `pqc`.

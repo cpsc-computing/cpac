@@ -1,6 +1,6 @@
 #![no_main]
 // Copyright (c) 2026 BitConcepts, LLC
-// SPDX-License-Identifier: LicenseRef-CPAC-Research-Evaluation-1.0
+// SPDX-License-Identifier: LicenseRef-CPSC-Research-Evaluation-1.0
 //! Fuzz the streaming decompressor: parse_header() and process() must
 //! never panic on arbitrary input — only return Err.
 use libfuzzer_sys::fuzz_target;

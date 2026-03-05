@@ -276,6 +276,6 @@ int main(void) {
 
 Copyright (c) 2026 BitConcepts, LLC
 
-Licensed under LicenseRef-CPAC-Research-Evaluation-1.0
+Licensed under LicenseRef-CPSC-Research-Evaluation-1.0
 
 For licensing inquiries, contact: info@bitconcepts.tech
