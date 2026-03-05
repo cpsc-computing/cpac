@@ -82,9 +82,41 @@ pwsh scripts/download-corpus.ps1 -Corpus "canterbury,silesia"
 - **Use Case**: Classic text compression benchmark
 - **License**: Public domain
 
-## Benchmark Results (2026-03-04 — Session 14, Balanced Mode, 3 iterations)
+## Benchmark Results (2026-03-05 — Session 15, Balanced Mode, 3 iterations)
 
-> **Build note (2026-03-04):** The release binary was rebuilt today. CPAC Brotli now correctly uses quality 11 (`brotli_quality(Default) = 11`), matching the brotli-11 baseline. All Brotli values below reflect this corrected build.
+> **Build note (2026-03-05):** The release binary was rebuilt today. CP2+CPBL decompression for MSN frames is now fixed (`msn_metadata_len` widened to u32), and log-domain MSN detection coverage has been expanded (BSD syslog + Apache error logs + structured logs).
+
+### Session 15 Log/MSN Update (Latest)
+
+| File | Size | SSR (MSN off) | Track1+MSN | Delta |
+|------|------|----------------|------------|-------|
+| Linux_2k.log | 0.20 MB | 11.53x | **11.74x** | **+0.21x** |
+| Apache_2k.log | 0.16 MB | **15.02x** | 14.97x | -0.05x |
+| OpenStack_2k.log | 0.57 MB | 9.27x | 9.27x | 0.00x |
+| OpenSSH_2k.log | 0.21 MB | **14.51x** | 14.50x | -0.01x |
+| Mac_2k.log | 0.30 MB | 4.88x | **4.93x** | +0.05x |
+| HDFS_2k.log | 0.27 MB | **4.11x** | 4.10x | -0.01x |
+| BGL_2k.log | 0.30 MB | **4.54x** | 4.45x | -0.09x |
+| Hadoop_2k.log | 0.37 MB | **20.71x** | 20.14x | -0.57x |
+| HPC_2k.log | 0.14 MB | **4.53x** | 4.52x | -0.01x |
+| Spark_2k.log | 0.19 MB | **11.95x** | 11.93x | -0.02x |
+| Thunderbird_2k.log | 0.31 MB | **10.76x** | 10.75x | -0.01x |
+| Zookeeper_2k.log | 0.27 MB | **10.86x** | 10.84x | -0.02x |
+| Proxifier_2k.log | 0.23 MB | **7.77x** | 7.76x | -0.01x |
+| HealthApp_2k.log | 0.18 MB | 9.36x | 9.36x | 0.00x |
+
+**NASA access logs (newly measured):**
+
+| File | Size | SSR (MSN off) | Track1+MSN | Delta |
+|------|------|----------------|------------|-------|
+| NASA_access_log_Jul95 | 195.73 MB | **7.99x** | 7.74x | -0.25x |
+| NASA_access_log_Aug95 | 160.04 MB | **8.24x** | 7.92x | -0.32x |
+
+**Silesia XML CP2+CPBL regression check (bug fixed):**
+
+| File | Size | SSR (MSN off) | Track1+MSN | Note |
+|------|------|----------------|------------|------|
+| silesia/xml | 5 MB | **6.09x** | 5.25x | Decompression now lossless with MSN enabled |
 
 ### CPAC Gzip = gzip-9 Baseline ✓
 
@@ -319,19 +351,19 @@ Files ≥ 256 KB trigger `compress_parallel` which reports T2 at the top level r
 |------|------|-------|-----------|-----------|------|
 | alice29.txt | 152 KB | **T1** | 2.67x | 2.67x | No domain match → MSN passthrough |
 | paper1 | 52 KB | **T1** | 2.72x | 2.72x | No domain match → MSN passthrough |
-| Linux_2k.log | 209 KB | **T1** | 11.53x | 11.51x | Syslog not in MSN registry → passthrough |
-| Apache_2k.log | 165 KB | **T1** | 15.02x | 14.98x | Syslog not in MSN registry → passthrough |
+| Linux_2k.log | 209 KB | **T1** | 11.53x | **11.74x** | BSD syslog domain → MSN active |
+| Apache_2k.log | 165 KB | **T1** | 15.02x | 14.97x | Apache error log domain → MSN active |
 | kennedy.xls | 1 MB | T2\* | 5.84x | 5.84x | Parallel path; binary → MSN skipped |
 | plrabn12.txt | 482 KB | T2\* | 2.51x | 2.51x | Parallel path; large text |
 | silesia/dickens | 10 MB | T2\* | 2.73x | 2.73x | Parallel path |
-| silesia/xml | 5 MB | T2\* | 6.09x | **ERROR** | Parallel path; CP2+CPBL bug (see below) |
+| silesia/xml | 5 MB | T2\* | 6.09x | 5.25x | Parallel path; CP2+CPBL bug fixed (Session 15) |
 | OpenStack_2k.log | 579 KB | T2\* | 9.27x | 9.27x | Parallel path |
 
 \* Reported T2 because `compress_parallel` hardcodes `Track::Track2` in its return value; individual 1 MB blocks are still SSR-analyzed internally.
 
-**Key MSN finding:** MSN does **not** improve ratios on these corpus files. The current MSN implementation applies to JSON, CSV, and XML domains. The log files in these benchmarks (Linux syslog, Apache, OpenStack) use formats not yet in the MSN domain registry, so MSN falls back to passthrough. On structured JSON data, MSN achieves 85%+ improvement (see test suite).
+**Key MSN finding (updated Session 15):** Log-domain MSN is now active. BSD syslog (Linux), Apache error log, and structured log formats are detected and MSN-extracted. Linux_2k.log gains +0.21x with MSN; Apache/OpenSSH are near-neutral. OpenStack, HDFS, BGL, Hadoop are small files where metadata overhead dominates (see Session 15 log/MSN table above). NASA access logs regress (-0.25x / -0.32x) — access log pattern detection is a known gap. On structured JSON data, MSN achieves 85%+ improvement (see test suite).
 
-**Known issue — CP2+parallel decompression bug:** Files that trigger `compress_parallel` (> 256 KB) AND have MSN enabled on blocks routed to Track 1 produce `CP2` frames inside the `CPBL` block structure. The `decompress` path for these frames fails with `zstd: Unknown frame descriptor`. This is being investigated (`cpac-frame` CP2 framing in parallel context).
+**Status update — CP2+parallel decompression bug:** Resolved in Session 15. `CP2` frames now store `msn_metadata_len` as `u32` (instead of `u16`), preventing metadata length truncation for large MSN payloads inside `CPBL` blocks.
 
 ---
 
@@ -461,6 +493,6 @@ When publishing results using CPAC benchmarks, please cite:
 
 ---
 
-**Last Updated**: 2026-03-04 (Session 14 — pedantic cleanup, MSN streaming, JSONL columnar fix)  
+**Last Updated**: 2026-03-05 (Session 15 — CP2+CPBL fix, expanded log MSN detection, log benchmark refresh)  
 **CPAC Version**: 0.1.0  
 **Benchmark Suite Version**: 1.1
