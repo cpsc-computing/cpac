@@ -311,6 +311,76 @@ impl BenchmarkRunner {
         })
     }
 
+    /// Benchmark a file with a forced track override (discovery/research mode).
+    ///
+    /// `force_track = Some(Track::Track1)` — MSN applied to ALL blocks regardless of SSR.
+    /// `force_track = Some(Track::Track2)` — MSN never applied (same as enable_msn=false).
+    /// `force_track = None` — normal SSR auto-routing.
+    pub fn bench_file_forced_track(
+        &self,
+        path: &Path,
+        force_track: Option<Track>,
+    ) -> CpacResult<BenchResult> {
+        let data = std::fs::read(path)
+            .map_err(|e| CpacError::IoError(format!("{}: {e}", path.display())))?;
+        let original_size = data.len();
+        let iterations = self.profile.iterations();
+        let enable_msn = force_track != Some(Track::Track2);
+        let config = CompressConfig {
+            backend: None,
+            enable_msn,
+            msn_confidence: 0.5,
+            force_track,
+            filename: Some(path.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+
+        let mut total_compress = Duration::ZERO;
+        let mut compressed_data = Vec::new();
+        let mut selected_backend = Backend::Zstd;
+
+        for _ in 0..iterations {
+            let start = Instant::now();
+            let result = crate::compress(&data, &config)?;
+            total_compress += start.elapsed();
+            selected_backend = result.backend;
+            compressed_data = result.data;
+        }
+        let avg_compress = total_compress / iterations as u32;
+        let compressed_size = compressed_data.len();
+
+        let decompressed = crate::decompress(&compressed_data)?;
+        let lossless_verified = decompressed.data == data;
+
+        let mut total_decompress = Duration::ZERO;
+        for _ in 0..iterations {
+            let start = Instant::now();
+            let _r = crate::decompress(&compressed_data)?;
+            total_decompress += start.elapsed();
+        }
+        let avg_decompress = total_decompress / iterations as u32;
+
+        let label = match force_track {
+            Some(Track::Track1) => format!("ForceT1(MSN/{selected_backend:?})"),
+            Some(Track::Track2) => format!("ForceT2(noMSN/{selected_backend:?})"),
+            None => format!("Auto(SSR/{selected_backend:?})"),
+        };
+
+        Ok(BenchResult {
+            file: path.to_path_buf(),
+            engine_label: label,
+            original_size,
+            compressed_size,
+            ratio: calc_ratio(original_size, compressed_size),
+            compress_time: avg_compress,
+            decompress_time: avg_decompress,
+            compress_throughput_mbs: calc_throughput(original_size, &avg_compress),
+            decompress_throughput_mbs: calc_throughput(original_size, &avg_decompress),
+            peak_memory_bytes: original_size + compressed_size + original_size,
+            lossless_verified,
+        })
+    }
+
     /// Benchmark a file against a baseline engine (gzip, lzma, etc.).
     pub fn bench_baseline(&self, path: &Path, engine: BaselineEngine) -> CpacResult<BenchResult> {
         let data = std::fs::read(path)

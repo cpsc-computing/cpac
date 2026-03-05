@@ -165,6 +165,11 @@ enum Commands {
         /// Shows what CPAC actually does in production vs. the individual backends above.
         #[arg(long)]
         track1: bool,
+        /// Discovery mode: run with forced Track 1 (MSN on every block) and forced Track 2
+        /// (MSN on no block) to compare MSN ceiling vs floor across the file.
+        /// Use with --skip-baselines to reduce runtime.
+        #[arg(long)]
+        discovery: bool,
     },
     /// Analyze file with Auto-CAS constraint inference.
     #[command(alias = "cas")]
@@ -824,6 +829,7 @@ fn cmd_benchmark(
     skip_baselines: bool,
     json: bool,
     track1: bool,
+    discovery: bool,
 ) {
     use cpac_engine::{BaselineEngine, BenchProfile, BenchmarkRunner};
 
@@ -928,6 +934,31 @@ fn cmd_benchmark(
                     all_results.push(result);
                 }
                 Err(e) => eprintln!("  Track1({})  ERROR: {}", if enable_msn { "MSN" } else { "SSR" }, e),
+            }
+        }
+    }
+
+    // Discovery: forced-T1 (MSN on every block) vs forced-T2 (MSN on no block).
+    // This reveals MSN's ceiling: what happens if we apply domain extraction everywhere,
+    // and MSN's floor: pure entropy coding with no semantic extraction.
+    if discovery {
+        use cpac_engine::Track;
+        println!();
+        println!("  --- Discovery: forced track override ---");
+        for force_track in [Some(Track::Track2), Some(Track::Track1)] {
+            match runner.bench_file_forced_track(&input, force_track) {
+                Ok(result) => {
+                    println!(
+                        "  {:26}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  verified: {}",
+                        result.engine_label,
+                        result.ratio,
+                        result.compress_throughput_mbs,
+                        result.decompress_throughput_mbs,
+                        if result.lossless_verified { "YES" } else { "NO" }
+                    );
+                    all_results.push(result);
+                }
+                Err(e) => eprintln!("  ForceTrack  ERROR: {e}"),
             }
         }
     }
@@ -1461,7 +1492,8 @@ fn main() {
             skip_baselines,
             json,
             track1,
-        } => cmd_benchmark(input, iterations, quick, full, skip_baselines, json, track1),
+            discovery,
+        } => cmd_benchmark(input, iterations, quick, full, skip_baselines, json, track1, discovery),
         Commands::AutoCas { input, compress } => cmd_auto_cas(input, compress),
         Commands::Encrypt {
             input,

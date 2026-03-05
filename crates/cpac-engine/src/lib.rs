@@ -120,7 +120,11 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // Verbose tracing: enabled by config flag (-vvv CLI) or CPAC_MSN_VERBOSE=1 env var.
     let msn_verbose = config.msn_verbose
         || std::env::var("CPAC_MSN_VERBOSE").map_or(false, |v| v == "1" || v == "true");
-    let (msn_data, msn_metadata) = if config.enable_msn && ssr.track == Track::Track1 {
+    // force_track overrides SSR's track assignment (used for discovery/research benchmarks).
+    // When Some(Track::Track1), MSN runs on every block regardless of entropy estimate.
+    // When Some(Track::Track2), MSN is always bypassed.
+    let effective_track = config.force_track.unwrap_or(ssr.track);
+    let (msn_data, msn_metadata) = if config.enable_msn && effective_track == Track::Track1 {
         match cpac_msn::extract(data, msn_filename, config.msn_confidence) {
             Ok(result) if result.applied => {
                 // MSN succeeded - use residual as input, store metadata (without residual).
@@ -212,7 +216,12 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     } else {
         // MSN disabled or Track 2 — passthrough.
         if msn_verbose && config.enable_msn {
-            eprintln!("[MSN] → BYPASSED (Track 2 data, SSR confidence too low)");
+            let why = if config.force_track == Some(Track::Track2) {
+                "force_track=T2"
+            } else {
+                "Track 2 data, SSR confidence too low"
+            };
+            eprintln!("[MSN] → BYPASSED ({why})");
         }
         (data.to_vec(), Vec::new())
     };

@@ -138,11 +138,45 @@ pwsh scripts/download-corpus.ps1 -Corpus "canterbury,silesia"
 1. **OpenStack_2k.log micro-regression (-0.03x)**: Consistent across sessions; syslog domain extracts the OpenStack log prefix token but the metadata overhead slightly exceeds savings at this file size (579 KB). Not worth further investigation unless file size increases.
 2. **OpenSSH_2k.log micro-regression (-0.01x)**: Within measurement noise; syslog extraction overhead barely exceeds savings on this file.
 
-**Root cause analysis from verbose tracing:**
+|**Root cause analysis from verbose tracing:**
 The `-vvv` / `CPAC_MSN_VERBOSE=1` tracing was critical for diagnosing all three regressions. Key findings:
 - Zstd already exploits XML/HTTP tag/token repetition at 6–8x; MSN's raw-byte savings (10–30%) don't compensate because Zstd's compression ratio on the residual drops proportionally.
 - Syslog RFC 5424 detection was too broad: `contains('T') && contains(':') && contains('-')` matched HTTP access log lines via `HTTP/1.0` containing 'T'. Fixed by requiring digit-T-digit (ISO 8601 date-time separator).
 - The parallel compression path (files > 256 KB) applies MSN per-block independently; domain detection on mid-file blocks relies purely on content (no filename extension), so confidence gates are critical.
+
+### Session 18 — Discovery Benchmark: ForceT1 (MSN everywhere) vs ForceT2 (MSN nowhere)
+
+> **What is this?** `cpac benchmark <file> --discovery` runs the compressor twice with a forced track override: once with every block forced to Track 1 (MSN attempted on all blocks — the **ceiling**) and once with every block forced to Track 2 (MSN never applied — the **floor**). The delta reveals MSN's theoretical upside per file. All safety gates (savings gate, roundtrip check, confidence threshold) remain active — if MSN can't safely help a block, it still bypasses itself.
+>
+> **How to run:** `cpac benchmark <file> --discovery --track1 --skip-baselines --quick`
+
+| File | ForceT2 (no MSN) | ForceT1 (MSN all) | Delta | Interpretation |
+|------|-----------------|-------------------|-------|----------------|
+| Linux_2k.log | 11.53x | **11.73x** | **+0.19x** | BSD syslog extraction active |
+| Mac_2k.log | 4.88x | **4.92x** | **+0.04x** | BSD syslog extraction active |
+| Apache_2k.log | 15.02x | 15.02x | 0.00x | Safety gate prevents extraction |
+| OpenStack_2k.log | 9.27x | 9.24x | -0.03x | Syslog prefix overhead > savings |
+| HDFS_2k.log | 4.11x | 4.11x | 0.00x | No domain fires on HDFS format |
+| Hadoop_2k.log | 20.71x | 20.71x | 0.00x | No domain fires on Hadoop format |
+| Spark_2k.log | 11.95x | 11.95x | 0.00x | Domain not detected / gates fire |
+| Zookeeper_2k.log | 10.86x | 10.86x | 0.00x | Domain not detected / gates fire |
+| BGL_2k.log | 4.54x | 4.54x | 0.00x | Domain not detected / gates fire |
+| Thunderbird_2k.log | 10.76x | 10.76x | 0.00x | Domain not detected / gates fire |
+| HealthApp_2k.log | 9.36x | 9.36x | 0.00x | Domain not detected / gates fire |
+| OpenSSH_2k.log | 14.51x | 14.50x | -0.01x | Syslog overhead marginally > savings |
+| Proxifier_2k.log | 7.77x | 7.77x | 0.00x | Gates prevent extraction |
+| silesia/xml | 6.09x | 6.09x | 0.00x | XML detect lowered below threshold |
+| silesia/nci | 11.58x | 11.58x | 0.00x | Chemical DB — no domain matches |
+| silesia/osdb | 2.62x | 2.62x | 0.00x | SQL dump — no domain matches |
+| silesia/dickens | 2.73x | 2.73x | 0.00x | Plain text — no domain matches |
+| silesia/samba | 3.32x | 3.32x | 0.00x | Tarball — no domain matches |
+| NASA_access_log_Jul95 | 7.99x | 7.99x | 0.00x | HTTP logs: syslog FP fixed |
+
+**Key findings from discovery benchmark:**
+- **The safety architecture is sound.** Forcing T1 on everything barely changes outcomes: the savings gate, roundtrip check, and confidence threshold together ensure MSN bypasses itself on files where it can't help. ForceT1 ≈ ForceT2 on 17/19 files.
+- **MSN's ceiling on this corpus is +0.19x / +0.04x** on BSD syslog files only. No other format currently has a domain that produces net-positive extractions after entropy coding.
+- **The bottleneck is not the track routing** — it is the absence of domain implementations that produce net-positive extractions for the other 17 file types. Adding new domains (e.g. JSONL columnar, CSV, structured database formats) would directly expand MSN's useful coverage.
+- **ForceT2 ≡ SSR-noMSN** on all files — confirms that the forced mode correctly isolates MSN's contribution.
 
 ---
 
