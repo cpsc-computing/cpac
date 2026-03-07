@@ -79,6 +79,20 @@ cargo bench -p cpac-engine --bench dag        # DAG compile/execute
   ```
 - **Commit messages**: include `Co-Authored-By: Oz <oz-agent@warp.dev>` when AI-assisted.
 
+## Agent Output Limits — HARD RULE
+
+**CRITICAL**: AI agents must never allow unbounded test/build output to flood the
+context window. Violating this has caused session crashes (403 errors).
+
+1. **Never run `cargo test --workspace` raw.** Always limit output:
+   - Preferred: run per-crate (`cargo test -p cpac-engine`) to isolate failures.
+   - If workspace-wide is needed: use `cargo test --workspace -- --format terse 2>&1 | Select-Object -Last 30` (PowerShell) or `| tail -30` (bash) to capture only the summary.
+   - Alternative: redirect full output to `.work/temp/test-output.txt` and then read only the last N lines.
+2. **Never use `--nocapture` on workspace-wide test runs.** Test println!/dbg! output is captured by default — only use `--nocapture` on a single targeted test.
+3. **Clippy/build warnings**: pipe through `Select-Object -Last 50` or equivalent.
+4. **Benchmark output**: always redirect to `.work/benchmarks/`, never stream raw to the agent context.
+5. **If a command might produce >4 KB of output**, either redirect to a file or use summarization/tail strategies.
+
 ## Known Gotchas (Rust 1.93 / Clippy)
 
 - Use `.is_multiple_of()` instead of `% == 0`

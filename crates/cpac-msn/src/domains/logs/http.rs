@@ -70,45 +70,83 @@ impl Domain for HttpDomain {
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("HTTP decode: {e}")))?;
 
-        // Extract common HTTP headers
-        let mut common_headers = HashMap::new();
-        let lines: Vec<&str> = text.lines().collect();
-
-        // Count header occurrences
-        let mut header_counts: HashMap<String, usize> = HashMap::new();
-        for line in &lines {
+        // Count occurrences of each "Header-Name:" token.
+        let mut header_freq: HashMap<String, usize> = HashMap::new();
+        for line in text.lines() {
             if let Some(colon_pos) = line.find(':') {
-                let header = line[..colon_pos].trim().to_lowercase();
-                *header_counts.entry(header).or_insert(0) += 1;
+                let name = &line[..colon_pos];
+                // Valid HTTP header names: letters, digits, hyphens only (no spaces).
+                if !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+                {
+                    *header_freq.entry(name.to_string()).or_insert(0) += 1;
+                }
             }
         }
 
-        // Store headers that appear more than twice
-        for (header, count) in header_counts {
-            if count > 2 {
-                common_headers.insert(header.clone(), serde_json::Value::Number(count.into()));
-            }
+        // Keep headers that appear ≥ 2 times; sort longest-first to avoid partial matches.
+        let mut repeated: Vec<(String, usize)> = header_freq
+            .into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .collect();
+        repeated.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then(b.1.cmp(&a.1)));
+
+        // Build replacement map: "Header-Name:" → "@H{n}:"
+        let mut header_map: HashMap<String, String> = HashMap::new();
+        for (idx, (name, _)) in repeated.iter().enumerate() {
+            header_map.insert(format!("{name}:"), format!("@H{idx}:"));
+        }
+
+        let mut compacted = text.to_string();
+        for (orig, replacement) in &header_map {
+            compacted = compacted.replace(orig.as_str(), replacement.as_str());
         }
 
         let mut fields = HashMap::new();
-        if !common_headers.is_empty() {
-            fields.insert(
-                "common_headers".to_string(),
-                serde_json::Value::Object(common_headers.into_iter().collect()),
-            );
-        }
+        fields.insert(
+            "headers".to_string(),
+            serde_json::Value::Array(
+                repeated
+                    .iter()
+                    .map(|(n, _)| serde_json::Value::String(n.clone()))
+                    .collect(),
+            ),
+        );
 
         Ok(ExtractionResult {
             fields,
-            residual: data.to_vec(),
+            residual: compacted.into_bytes(),
             metadata: HashMap::new(),
             domain_id: "log.http".to_string(),
         })
     }
 
     fn reconstruct(&self, result: &ExtractionResult) -> CpacResult<Vec<u8>> {
-        // Simple passthrough - HTTP structure is complex
-        Ok(result.residual.clone())
+        let headers: Vec<String> = result
+            .fields
+            .get("headers")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if headers.is_empty() {
+            return Ok(result.residual.clone());
+        }
+
+        let raw = std::str::from_utf8(&result.residual)
+            .map_err(|e| CpacError::DecompressFailed(format!("HTTP decode: {e}")))?;
+        let mut s = raw.to_string();
+        // Expand placeholders in reverse index order so @H10 expands before @H1.
+        for (idx, name) in headers.iter().enumerate().rev() {
+            s = s.replace(&format!("@H{idx}:"), &format!("{name}:"));
+        }
+        Ok(s.into_bytes())
     }
 }
 

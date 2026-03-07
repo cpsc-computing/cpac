@@ -1,0 +1,44 @@
+# 01 — Individual Serial-accepting transforms
+# Compare each transform that works on raw bytes against zstd-only baseline.
+# Run with: cargo run --release -p cpac-lab --bin transform_study -- \
+#   -e crates/cpac-lab/experiments/01_serial_transforms.yaml \
+#   -c .work/benchdata/silesia --all-types --quiet
+
+name: serial_transforms
+description: >
+  Individual Serial-accepting transforms vs zstd-only baseline.
+  Measures raw compression delta of each transform on unprocessed file bytes.
+zstd_level: 3
+max_file_size: 104857600
+group_by: [directory]
+
+trials:
+  - name: baseline
+
+  - name: delta
+    transforms:
+      - name: delta
+
+  - name: byte_plane
+    transforms:
+      - name: byte_plane
+
+  - name: rle
+    transforms:
+      - name: rle
+
+  - name: normalize
+    transforms:
+      - name: normalize
+
+  - name: bwt_chain
+    transforms:
+      - name: bwt_chain
+
+  - name: context_split
+    transforms:
+      - name: context_split
+
+  - name: arith_decomp
+    transforms:
+      - name: arith_decomp

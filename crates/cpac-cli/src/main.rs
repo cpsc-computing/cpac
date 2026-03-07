@@ -88,6 +88,12 @@ enum Commands {
         /// best    = brotli-11 / zstd-9  (maximum ratio)
         #[arg(long, default_value = "default")]
         level: String,
+        /// Enable data-driven smart transform selection.
+        /// Uses the structure analyzer to recommend transforms based on SSR/MSN analysis
+        /// and empirical corpus benchmarks. Automatically picks the best transform(s)
+        /// via adaptive trials.
+        #[arg(long)]
+        smart: bool,
         /// Use incremental streaming compression (bounded memory, large files).
         /// Output uses the CPAC streaming wire format (.cpac-stream).
         #[arg(long)]
@@ -171,6 +177,12 @@ enum Commands {
         #[arg(long)]
         discovery: bool,
     },
+    /// Analyze file structure and recommend optimal compression strategy.
+    #[command(alias = "a")]
+    Analyze {
+        /// Input file to analyze.
+        input: PathBuf,
+    },
     /// Analyze file with Auto-CAS constraint inference.
     #[command(alias = "cas")]
     AutoCas {
@@ -232,10 +244,38 @@ enum Commands {
         #[command(subcommand)]
         action: PqcAction,
     },
+    /// Transform Laboratory tools.
+    #[command(alias = "l")]
+    Lab {
+        #[command(subcommand)]
+        action: LabAction,
+    },
     /// Generate shell completions.
     Completions {
         /// Shell to generate completions for.
         shell: Shell,
+    },
+}
+
+/// Lab sub-commands.
+#[derive(Subcommand)]
+enum LabAction {
+    /// Calibrate the analyzer from benchmark CSV results.
+    ///
+    /// Reads all .csv files from the benchmark directory, computes per-transform
+    /// win-rates by file extension, and writes calibration.json.
+    Calibrate {
+        /// Directory containing benchmark CSV files.
+        /// Default: .work/benchmarks/transform-study/
+        #[arg(short, long)]
+        dir: Option<PathBuf>,
+        /// Output path for calibration.json.
+        /// Default: .work/benchmarks/calibration.json
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Print results to stdout as JSON instead of writing a file.
+        #[arg(long)]
+        stdout: bool,
     },
 }
 
@@ -433,6 +473,7 @@ fn cmd_compress(
     msn_confidence: f64,
     msn_domain: Option<String>,
     level: CompressionLevel,
+    smart: bool,
     streaming: bool,
     stream_block: usize,
 ) {
@@ -469,6 +510,7 @@ fn cmd_compress(
             msn_confidence,
             msn_domain: msn_domain.clone(),
             level,
+            enable_smart_transforms: smart,
             // -vvv enables per-block MSN decision trace to stderr.
             msn_verbose: verbose >= 3,
             ..Default::default()
@@ -821,6 +863,7 @@ fn cmd_list_domains() {
     println!("Default: auto-detect based on content.");
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_benchmark(
     input: PathBuf,
     iterations: Option<usize>,
@@ -1421,6 +1464,82 @@ fn cmd_pqc(action: PqcAction) {
     }
 }
 
+fn cmd_analyze(input: PathBuf) {
+    let data = read_input(&input);
+    let filename = input.to_str();
+    let profile = cpac_engine::analyze_structure(&data, filename);
+    print!("{}", cpac_engine::format_profile(&profile));
+}
+
+fn cmd_lab(action: LabAction) {
+    match action {
+        LabAction::Calibrate {
+            dir,
+            output,
+            stdout,
+        } => {
+            let bench_dir = dir.unwrap_or_else(|| {
+                PathBuf::from(".work/benchmarks/transform-study")
+            });
+            if !bench_dir.is_dir() {
+                eprintln!(
+                    "Error: benchmark directory not found: {}",
+                    bench_dir.display()
+                );
+                eprintln!("Hint: Run transform_study experiments first, or specify --dir.");
+                process::exit(1);
+            }
+
+            let csvs = cpac_lab::calibrate::discover_csvs(&bench_dir);
+            if csvs.is_empty() {
+                eprintln!("No CSV files found in {}", bench_dir.display());
+                process::exit(1);
+            }
+            eprintln!("Reading {} CSV files from {}", csvs.len(), bench_dir.display());
+
+            let cal = cpac_lab::calibrate::calibrate(&bench_dir);
+            let json = serde_json::to_string_pretty(&cal).unwrap();
+
+            if stdout {
+                println!("{json}");
+            } else {
+                let out_path = output.unwrap_or_else(|| {
+                    PathBuf::from(".work/benchmarks/calibration.json")
+                });
+                if let Some(parent) = out_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::write(&out_path, &json).unwrap_or_else(|e| {
+                    eprintln!("Error writing calibration: {e}");
+                    process::exit(1);
+                });
+                println!("Calibration written to {}", out_path.display());
+                println!(
+                    "  {} transforms, {} data rows from {} CSV files",
+                    cal.transforms.len(),
+                    cal.total_rows,
+                    cal.csv_files.len(),
+                );
+
+                // Print a quick summary
+                println!();
+                println!(
+                    "{:<24}  {:>5}  {:>7}  {:>8}  {:>12}",
+                    "Transform", "Files", "WinRate", "Wins", "TotalGain"
+                );
+                println!("{}", "─".repeat(62));
+                for (name, tc) in &cal.transforms {
+                    let o = &tc.overall;
+                    println!(
+                        "{:<24}  {:>5}  {:>6.1}%  {:>8}  {:>+12}",
+                        name, o.files, o.win_rate * 100.0, o.win_count, o.total_gain_bytes,
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn cmd_completions(shell: Shell) {
     let mut cmd = Cli::command();
     generate(shell, &mut cmd, "cpac", &mut io::stdout());
@@ -1448,6 +1567,7 @@ fn main() {
             msn_confidence,
             msn_domain,
             level,
+            smart,
             streaming,
             stream_block,
         } => cmd_compress(
@@ -1465,6 +1585,7 @@ fn main() {
             msn_confidence,
             msn_domain,
             parse_level(&level),
+            smart,
             streaming,
             stream_block,
         ),
@@ -1494,6 +1615,7 @@ fn main() {
             track1,
             discovery,
         } => cmd_benchmark(input, iterations, quick, full, skip_baselines, json, track1, discovery),
+        Commands::Analyze { input } => cmd_analyze(input),
         Commands::AutoCas { input, compress } => cmd_auto_cas(input, compress),
         Commands::Encrypt {
             input,
@@ -1509,6 +1631,7 @@ fn main() {
         Commands::ArchiveExtract { input, output } => cmd_archive_extract(input, output),
         Commands::ArchiveList { input } => cmd_archive_list(input),
         Commands::Pqc { action } => cmd_pqc(action),
+        Commands::Lab { action } => cmd_lab(action),
         Commands::Completions { shell } => cmd_completions(shell),
     }
 }

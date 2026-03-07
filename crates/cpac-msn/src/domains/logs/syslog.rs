@@ -44,6 +44,17 @@ const BSD_MONTHS_SYSLOG: &[&str] = &[
 ];
 const LOG_LEVELS_SYSLOG: &[&str] = &[" INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL "];
 
+/// Minimum occurrences for a token to be stored in metadata.
+const MIN_FREQUENCY: usize = 3;
+/// Dynamic frequency scale factor (same as java.rs).
+const DYN_FREQ_RATIO: f64 = 0.005;
+/// Tokens appearing on more than this fraction of lines are excluded
+/// (already handled efficiently by zstd back-references).
+const MAX_FREQ_FRACTION: f64 = 0.25;
+/// Minimum combined raw-byte savings before committing to extraction.
+/// Prevents metadata overhead from exceeding savings on short files.
+const MIN_SAVINGS_BYTES: usize = 256;
+
 /// Syslog domain handler.
 ///
 /// Supports RFC 5424 (`<PRI>VERSION TIMESTAMP HOSTNAME APP-NAME ...`) and
@@ -166,6 +177,13 @@ impl Domain for SyslogDomain {
         // e.g. "nova-api.log.1.2017-05-16_13:53:08" repeated on every line.
         let mut prefix_freq: HashMap<String, usize> = HashMap::new();
 
+        let line_count = text.lines().count().max(1);
+        // Dynamic minimum frequency: scales with file size so large diverse files
+        // don't over-extract low-frequency tokens.
+        #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        let dyn_min_freq =
+            ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
+
         for line in text.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 5 {
@@ -203,24 +221,70 @@ impl Domain for SyslogDomain {
             }
         }
 
-        // Only keep values that appear at least twice (worth storing in metadata)
+        // Keep tokens that:
+        //   1. Meet the dynamic minimum frequency (scales with file size)
+        //   2. Don't appear on more than MAX_FREQ_FRACTION of lines
+        //      (very common tokens are already handled efficiently by zstd)
+        //   3. For appnames: are longer than 5 chars
+        //      (filters out short level tokens like INFO/WARN/ERROR)
+        #[allow(clippy::cast_precision_loss)]
+        let freq_ok = |count: usize| -> bool {
+            count >= dyn_min_freq
+                && count as f64 / line_count as f64 <= MAX_FREQ_FRACTION
+        };
+
+        // Prefixes (OpenStack-style): no MAX_FREQ_FRACTION cap — the whole point
+        // is that the long prefix token appears on *every* line, and extracting it
+        // is always worthwhile regardless of frequency.
         let mut repeated_prefixes: Vec<(String, usize)> = prefix_freq
             .into_iter()
-            .filter(|(_, count)| *count >= 2)
+            .filter(|(_, count)| *count >= dyn_min_freq)
             .collect();
         repeated_prefixes.sort_by(|a, b| b.1.cmp(&a.1));
 
         let mut repeated_hostnames: Vec<(String, usize)> = hostname_freq
             .into_iter()
-            .filter(|(_, count)| *count >= 2)
+            .filter(|(_, count)| freq_ok(*count))
             .collect();
         repeated_hostnames.sort_by(|a, b| b.1.cmp(&a.1));
 
         let mut repeated_appnames: Vec<(String, usize)> = appname_freq
             .into_iter()
-            .filter(|(_, count)| *count >= 2)
+            .filter(|(tok, count)| freq_ok(*count) && tok.len() > 5)
             .collect();
         repeated_appnames.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Savings gate: if the combined raw-byte savings fall below the threshold
+        // the metadata overhead (even as msgpack) exceeds compression benefit.
+        // For prefixes/hostnames/appnames: savings ≈ (len - 4) * count.
+        #[allow(clippy::cast_precision_loss)]
+        let gross_savings: usize = repeated_prefixes
+            .iter()
+            .map(|(tok, count)| tok.len().saturating_sub(4) * count)
+            .sum::<usize>()
+            + repeated_hostnames
+                .iter()
+                .map(|(tok, count)| tok.len().saturating_sub(4) * count)
+                .sum::<usize>()
+            + repeated_appnames
+                .iter()
+                .map(|(tok, count)| tok.len().saturating_sub(4) * count)
+                .sum::<usize>();
+
+        if gross_savings < MIN_SAVINGS_BYTES {
+            // Return a "passthrough" extraction: residual unchanged, empty field lists.
+            // The engine's size check will see residual+meta >= original and bypass MSN.
+            let mut fields = HashMap::new();
+            fields.insert("prefixes".to_string(), serde_json::Value::Array(vec![]));
+            fields.insert("hostnames".to_string(), serde_json::Value::Array(vec![]));
+            fields.insert("appnames".to_string(), serde_json::Value::Array(vec![]));
+            return Ok(ExtractionResult {
+                fields,
+                residual: data.to_vec(),
+                metadata: HashMap::new(),
+                domain_id: "log.syslog".to_string(),
+            });
+        }
 
         // Build replacement maps and compact the log
         let mut prefix_map: HashMap<String, String> = HashMap::new();

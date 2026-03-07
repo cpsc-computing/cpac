@@ -1,0 +1,24 @@
+[package]
+name = "cpac-lab"
+description = "Transform Laboratory: YAML-driven benchmarking harness for CPAC transforms"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpac-types = { workspace = true }
+cpac-transforms = { workspace = true }
+cpac-dag = { workspace = true }
+cpac-ssr = { workspace = true }
+cpac-msn = { workspace = true }
+cpac-cas = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+zstd = { workspace = true }
+clap = { workspace = true }
+rayon = { workspace = true }
+
+[[bin]]
+name = "transform_study"
+path = "src/bin/transform_study.rs"

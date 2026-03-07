@@ -1,0 +1,41 @@
+# 04 — Structured text transforms
+# Focus on normalize + text-oriented transforms for HTML/JSON/XML/YAML.
+
+name: structured_text
+description: >
+  Text-oriented transforms on structured markup and config files.
+  Normalize strips whitespace; BWT exploits repeated patterns.
+zstd_level: 3
+max_file_size: 104857600
+extensions: [json, jsonl, yaml, yml, xml, html, htm, sql, conf, tf]
+group_by: [extension, directory]
+
+trials:
+  - name: baseline
+
+  - name: normalize
+    transforms:
+      - name: normalize
+
+  - name: bwt_chain
+    transforms:
+      - name: bwt_chain
+
+  - name: context_split
+    transforms:
+      - name: context_split
+
+  - name: normalize_bwt
+    transforms:
+      - name: normalize
+      - name: bwt_chain
+
+  - name: normalize_delta
+    transforms:
+      - name: normalize
+      - name: delta
+
+  - name: normalize_context
+    transforms:
+      - name: normalize
+      - name: context_split

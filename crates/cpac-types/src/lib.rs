@@ -307,6 +307,12 @@ pub struct CompressConfig {
     /// Enabled via `-vvv` in the CLI or `CPAC_MSN_VERBOSE=1` env var.
     /// Default: false.
     pub msn_verbose: bool,
+    /// Enable data-driven smart transform selection.
+    /// When enabled, the analyzer recommends transforms based on SSR/MSN analysis
+    /// and empirical calibration from corpus benchmarks. The selected transforms
+    /// are serialized into the frame header as a DAG descriptor.
+    /// Default: true.
+    pub enable_smart_transforms: bool,
     /// Internal: disable parallel compression (prevents recursive parallel calls).
     #[doc(hidden)]
     pub disable_parallel: bool,
@@ -325,6 +331,7 @@ impl Default for CompressConfig {
             msn_domain: None,
             level: CompressionLevel::Default,
             msn_verbose: false,
+            enable_smart_transforms: true,
             disable_parallel: false,
         }
     }

@@ -40,6 +40,7 @@ impl JsonDomain {
     }
 
     /// Extract field names from JSON value recursively.
+    #[allow(dead_code)]
     fn extract_field_names(value: &Value, fields: &mut Vec<String>) {
         match value {
             Value::Object(map) => {
@@ -107,6 +108,7 @@ impl JsonDomain {
     }
 
     /// Internal: extract a single-document JSON block.
+    #[allow(dead_code)]
     fn extract_single(data: &[u8], value: &Value) -> CpacResult<ExtractionResult> {
         let mut all_field_names = Vec::new();
         Self::extract_field_names(value, &mut all_field_names);
@@ -428,7 +430,7 @@ impl Domain for JsonDomain {
                 let first_line = data[..nl].strip_suffix(b"\r").unwrap_or(&data[..nl]);
                 if !first_line.is_empty()
                     && serde_json::from_slice::<serde_json::Value>(first_line).is_ok()
-                    && !serde_json::from_slice::<serde_json::Value>(data).is_ok()
+                    && serde_json::from_slice::<serde_json::Value>(data).is_err()
                 {
                     return 0.9; // JSONL with .json extension
                 }
@@ -460,6 +462,11 @@ impl Domain for JsonDomain {
 
         // Check if it's JSONL: first line must be a valid JSON object.
         let nl = memchr::memchr(b'\n', data).unwrap_or(data.len());
+        // Guard: if the file starts with newlines (start > nl), the first line
+        // is empty — not JSONL.
+        if start > nl {
+            return 0.0;
+        }
         let first_line = data[start..nl]
             .strip_suffix(b"\r")
             .unwrap_or(&data[start..nl]);

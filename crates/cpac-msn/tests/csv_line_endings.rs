@@ -6,10 +6,11 @@ use cpac_msn::{extract, reconstruct};
 
 #[test]
 fn csv_unix_line_endings() {
+    // Pass a .csv filename so extension-based detection fires regardless of row count.
     let data = b"name,age\nAlice,30\nBob,25\n";
 
-    let result = extract(data, None, 0.5).unwrap();
-    assert!(result.applied, "CSV should be detected");
+    let result = extract(data, Some("test.csv"), 0.5).unwrap();
+    assert!(result.applied, "CSV should be detected via .csv extension");
 
     let reconstructed = reconstruct(&result).unwrap();
     assert_eq!(reconstructed, data, "Roundtrip should be lossless");
@@ -19,8 +20,8 @@ fn csv_unix_line_endings() {
 fn csv_no_trailing_newline() {
     let data = b"name,age\nAlice,30\nBob,25";
 
-    let result = extract(data, None, 0.5).unwrap();
-    assert!(result.applied, "CSV should be detected");
+    let result = extract(data, Some("test.csv"), 0.5).unwrap();
+    assert!(result.applied, "CSV should be detected via .csv extension");
 
     let reconstructed = reconstruct(&result).unwrap();
     assert_eq!(reconstructed, data, "Roundtrip should be lossless");
@@ -30,8 +31,8 @@ fn csv_no_trailing_newline() {
 fn csv_windows_line_endings() {
     let data = b"name,age\r\nAlice,30\r\nBob,25\r\n";
 
-    let result = extract(data, None, 0.5).unwrap();
-    assert!(result.applied, "CSV should be detected");
+    let result = extract(data, Some("test.csv"), 0.5).unwrap();
+    assert!(result.applied, "CSV should be detected via .csv extension");
 
     let reconstructed = reconstruct(&result).unwrap();
     assert_eq!(

@@ -15,12 +15,14 @@
     clippy::missing_panics_doc
 )]
 
+pub mod analyzer;
 pub mod bench;
 pub mod corpus;
 pub mod host;
 pub mod parallel;
 pub mod pool;
 
+pub use analyzer::{analyze_structure, format_profile, ColumnProfile, StructureProfile};
 pub use bench::{check_regressions, load_baseline, save_baseline};
 pub use bench::{
     BaselineEngine, BaselineEntry, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary,
@@ -119,7 +121,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     let msn_filename = config.filename.as_deref();
     // Verbose tracing: enabled by config flag (-vvv CLI) or CPAC_MSN_VERBOSE=1 env var.
     let msn_verbose = config.msn_verbose
-        || std::env::var("CPAC_MSN_VERBOSE").map_or(false, |v| v == "1" || v == "true");
+        || std::env::var("CPAC_MSN_VERBOSE").is_ok_and(|v| v == "1" || v == "true");
     // force_track overrides SSR's track assignment (used for discovery/research benchmarks).
     // When Some(Track::Track1), MSN runs on every block regardless of entropy estimate.
     // When Some(Track::Track2), MSN is always bypassed.
@@ -234,23 +236,66 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // - Small files (< 4KB) where overhead exceeds benefit
     let should_preprocess = backend != Backend::Raw && original_size >= PREPROCESS_THRESHOLD;
 
+    // Track DAG descriptor for the frame header (non-empty when smart transforms used).
+    let mut dag_descriptor: Vec<u8> = Vec::new();
+
     let preprocessed = if should_preprocess {
-        let transform_ctx = cpac_transforms::TransformContext {
-            entropy_estimate: ssr.entropy_estimate,
-            ascii_ratio: ssr.ascii_ratio,
-            data_size: ssr.data_size,
+        // Re-analyze entropy from the actual data being preprocessed.  When MSN
+        // extraction was applied the residual can have meaningfully different
+        // entropy characteristics from the original (e.g. FQCN removal lowers
+        // text entropy), so we let SSR re-measure rather than re-using the
+        // original estimate for transform selection.
+        let residual_ssr = if !msn_metadata.is_empty() {
+            cpac_ssr::analyze(data_to_compress)
+        } else {
+            ssr
         };
-        // Use SSR-guided TP preprocess (generic profile / default)
-        let (preprocessed, _transform_meta) =
-            cpac_transforms::preprocess(data_to_compress, &transform_ctx);
-        preprocessed
+        let transform_ctx = cpac_transforms::TransformContext {
+            entropy_estimate: residual_ssr.entropy_estimate,
+            ascii_ratio: residual_ssr.ascii_ratio,
+            data_size: residual_ssr.data_size,
+        };
+
+        // Try smart transform path first (data-driven, DAG-based).
+        let smart_result = if config.enable_smart_transforms {
+            smart_preprocess(data_to_compress, config.filename.as_deref())
+        } else {
+            None
+        };
+
+        if let Some((smart_data, smart_dag_desc)) = smart_result {
+            // Smart path produced a smaller output — use it.
+            dag_descriptor = smart_dag_desc;
+            smart_data
+        } else {
+            // Fall back to SSR-guided TP preprocess (generic profile / default)
+            let (preprocessed, _transform_meta) =
+                cpac_transforms::preprocess(data_to_compress, &transform_ctx);
+            preprocessed
+        }
     } else {
         data_to_compress.clone()
     };
 
-    // 6. Entropy coding (level-aware, with optional dictionary for Zstd)
+    // 6. Entropy coding (level-aware, with optional dictionary for Zstd).
+    //
+    // If MSN metadata is present, prepend it to the preprocessed residual *before*
+    // entropy coding so both are compressed in the same stream.  Sharing a
+    // single zstd context lets the encoder discover cross-references between the
+    // repeated token strings that appear in both the metadata dictionary and the
+    // residual body, eliminating the per-frame uncompressed metadata overhead.
+    let inline_msn_meta_len = msn_metadata.len();
+    let data_for_entropy: Vec<u8> = if !msn_metadata.is_empty() {
+        let mut combined = Vec::with_capacity(msn_metadata.len() + preprocessed.len());
+        combined.extend_from_slice(&msn_metadata);
+        combined.extend_from_slice(&preprocessed);
+        combined
+    } else {
+        preprocessed
+    };
+
     let compressed_payload = cpac_entropy::compress_at_level(
-        &preprocessed,
+        &data_for_entropy,
         backend,
         config.level,
         if backend == Backend::Zstd {
@@ -260,16 +305,19 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         },
     )?;
 
-    // 7. Frame encoding (CP2 if MSN enabled, CP otherwise)
+    // 7. Frame encoding.
+    //   - No MSN + no DAG: standard CP v1 frame.
+    //   - MSN present: CP2 inline frame (FLAG_MSN_INLINE).
+    //   - DAG descriptor is embedded in the frame header for both versions.
     let frame = if msn_metadata.is_empty() {
-        cpac_frame::encode_frame(&compressed_payload, backend, original_size, &[])
+        cpac_frame::encode_frame(&compressed_payload, backend, original_size, &dag_descriptor)
     } else {
-        cpac_frame::encode_frame_cp2(
+        cpac_frame::encode_frame_cp2_inline(
             &compressed_payload,
             backend,
             original_size,
-            &[],
-            &msn_metadata,
+            &dag_descriptor,
+            inline_msn_meta_len,
         )
     };
 
@@ -279,9 +327,126 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         data: frame,
         original_size,
         compressed_size,
-        track: ssr.track,
+        track: effective_track,
         backend,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Smart preprocess (data-driven, DAG-based)
+// ---------------------------------------------------------------------------
+
+/// Minimum confidence threshold for a recommended transform to be included
+/// in the smart preprocess pipeline.
+const SMART_MIN_CONFIDENCE: f64 = 0.50;
+
+/// Maximum number of individual transforms to trial in adaptive mode.
+const MAX_ADAPTIVE_TRIALS: usize = 3;
+
+/// Quick zstd-1 compressed size for comparing transform effectiveness.
+/// Uses the fast level to keep overhead low while still reflecting real
+/// compressibility (raw size is a poor proxy — a transform can make data
+/// smaller in raw bytes but larger after entropy coding).
+fn quick_zstd_size(data: &[u8]) -> usize {
+    zstd::bulk::compress(data, 1)
+        .map(|z| z.len())
+        .unwrap_or(data.len())
+}
+
+/// Attempt data-driven preprocessing using the structure analyzer.
+///
+/// Two strategies are tried:
+/// 1. **Full chain**: apply all recommended transforms as a DAG.
+/// 2. **Adaptive trials**: try each candidate transform individually,
+///    pick the one that produces the smallest output.
+///
+/// Effectiveness is measured by **compressed size** (quick zstd-1 trial),
+/// not raw size, because transforms can alter entropy characteristics.
+///
+/// Returns `Some((transformed_bytes, dag_descriptor))` if any approach
+/// compresses strictly smaller than the original; `None` otherwise.
+fn smart_preprocess(data: &[u8], filename: Option<&str>) -> Option<(Vec<u8>, Vec<u8>)> {
+    let profile = analyzer::analyze_structure(data, filename);
+
+    // Filter to transforms that accept Serial input and have sufficient confidence.
+    let registry = TransformRegistry::with_builtins();
+    let candidates: Vec<&str> = profile
+        .recommended_chain
+        .iter()
+        .filter(|r| r.confidence >= SMART_MIN_CONFIDENCE)
+        .filter(|r| {
+            // Only include transforms that accept Serial (raw bytes).
+            registry
+                .get_by_name(&r.name)
+                .map(|n| n.accepts().contains(&cpac_types::TypeTag::Serial))
+                .unwrap_or(false)
+        })
+        .map(|r| r.name.as_str())
+        .collect();
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    let ssr = cpac_ssr::analyze(data);
+    let ctx = cpac_transforms::TransformContext {
+        entropy_estimate: ssr.entropy_estimate,
+        ascii_ratio: ssr.ascii_ratio,
+        data_size: data.len(),
+    };
+
+    // Baseline: compressed size of the untransformed input.
+    // The total frame cost is approximately: compressed_payload + dag_descriptor.
+    // We compare against this total cost, not just the compressed payload alone.
+    let baseline_z = quick_zstd_size(data);
+
+    // Track the best result across all trials.
+    let mut best: Option<(Vec<u8>, Vec<u8>)> = None;
+    let mut best_cost = baseline_z; // baseline has no descriptor overhead
+
+    // Maximum DAG descriptor size: u16 in the frame header (65535 bytes).
+    // Per-step metadata also uses u16.  Reject any trial that would overflow.
+    const MAX_DESC_SIZE: usize = u16::MAX as usize;
+
+    // --- Strategy 1: full chain ---
+    if candidates.len() > 1 {
+        if let Ok(dag) = TransformDAG::compile(&registry, &candidates) {
+            let input = cpac_types::CpacType::Serial(data.to_vec());
+            if let Ok((cpac_types::CpacType::Serial(bytes), meta_chain)) =
+                dag.execute_forward(input, &ctx)
+            {
+                let desc = cpac_dag::serialize_dag_descriptor(&meta_chain);
+                if desc.len() <= MAX_DESC_SIZE {
+                    let total_cost = quick_zstd_size(&bytes) + desc.len();
+                    if total_cost < best_cost {
+                        best_cost = total_cost;
+                        best = Some((bytes, desc));
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Strategy 2: adaptive trials (each candidate individually) ---
+    for &name in candidates.iter().take(MAX_ADAPTIVE_TRIALS) {
+        if let Ok(dag) = TransformDAG::compile(&registry, &[name]) {
+            let input = cpac_types::CpacType::Serial(data.to_vec());
+            if let Ok((cpac_types::CpacType::Serial(bytes), meta_chain)) =
+                dag.execute_forward(input, &ctx)
+            {
+                let desc = cpac_dag::serialize_dag_descriptor(&meta_chain);
+                if desc.len() <= MAX_DESC_SIZE {
+                    let total_cost = quick_zstd_size(&bytes) + desc.len();
+                    if total_cost < best_cost {
+                        best_cost = total_cost;
+                        best = Some((bytes, desc));
+                    }
+                }
+            }
+        }
+    }
+
+    best
 }
 
 /// Decompress CPAC-framed data.
@@ -334,10 +499,30 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
     // 2. Entropy decompress
     let decompressed_payload = cpac_entropy::decompress(payload, header.backend)?;
 
-    // 3. Reverse transforms
+    // 2.5 If MSN metadata was inlined, split it off before transform reversal.
+    //     The compressed payload contains [msn_metadata][tp_framed_residual];
+    //     msn_meta_len from the frame header gives the split point in the
+    //     *decompressed* buffer.
+    let (inline_meta_bytes, data_to_unpreprocess) =
+        if header.flags & cpac_frame::FLAG_MSN_INLINE != 0 && header.msn_meta_len > 0 {
+            let split = header.msn_meta_len;
+            if decompressed_payload.len() < split {
+                return Err(CpacError::DecompressFailed(format!(
+                    "inline MSN meta split {split} > decompressed payload {}",
+                    decompressed_payload.len()
+                )));
+            }
+            let meta = decompressed_payload[..split].to_vec();
+            let rest = decompressed_payload[split..].to_vec();
+            (Some(meta), rest)
+        } else {
+            (None, decompressed_payload)
+        };
+
+    // 3. Reverse transforms (applied only to the TP-framed residual portion)
     let mut result = if header.dag_descriptor.is_empty() {
         // TP-frame based decompression (generic/default)
-        cpac_transforms::unpreprocess(&decompressed_payload, &[])
+        cpac_transforms::unpreprocess(&data_to_unpreprocess, &[])
     } else {
         // DAG-based decompression: deserialize descriptor and execute backward
         let (ids, metas, _consumed) = cpac_dag::deserialize_dag_descriptor(&header.dag_descriptor)?;
@@ -345,7 +530,7 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
         let dag = TransformDAG::compile_from_ids(&registry, &ids)?;
         let meta_chain: Vec<(u8, Vec<u8>)> = ids.into_iter().zip(metas).collect();
         let output = dag.execute_backward(
-            cpac_types::CpacType::Serial(decompressed_payload),
+            cpac_types::CpacType::Serial(data_to_unpreprocess),
             &meta_chain,
         )?;
         match output {
@@ -358,10 +543,20 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
         }
     };
 
-    // 4. MSN reconstruction (if metadata present in CP2 frame)
-    if !header.msn_metadata.is_empty() {
+    // 4. MSN reconstruction.
+    //    Inline format: metadata extracted from split above.
+    //    Legacy CP2 format: metadata is in header.msn_metadata.
+    let msn_bytes = inline_meta_bytes
+        .or_else(|| {
+            if !header.msn_metadata.is_empty() {
+                Some(header.msn_metadata.clone())
+            } else {
+                None
+            }
+        });
+    if let Some(mb) = msn_bytes {
         // Auto-detect encoding: 0x01 prefix = MessagePack (new), '{' prefix = JSON (legacy).
-        let msn_metadata = cpac_msn::decode_metadata_compact(&header.msn_metadata)?;
+        let msn_metadata = cpac_msn::decode_metadata_compact(&mb)?;
         let msn_result = msn_metadata.with_residual(result);
         result = cpac_msn::reconstruct(&msn_result)?;
     }
@@ -460,6 +655,46 @@ mod tests {
         assert!(is_cpbl(&compressed.data), "expected CPBL frame");
         let result = decompress(&compressed.data).expect("CP2+CPBL decompress failed");
         assert_eq!(result.data, data, "CP2+CPBL roundtrip data mismatch");
+    }
+
+    #[test]
+    fn roundtrip_smart_transforms_text() {
+        // Text data large enough to trigger preprocessing (> 4KB).
+        // normalize should be recommended (ascii_ratio > 0.80) and applied.
+        let data: Vec<u8> = b"The quick brown fox jumps over the lazy dog. ".repeat(200);
+        let config = CompressConfig {
+            enable_smart_transforms: true,
+            ..Default::default()
+        };
+        let compressed = compress(&data, &config).unwrap();
+        let decompressed = decompress(&compressed.data).unwrap();
+        assert_eq!(decompressed.data, data, "smart transforms roundtrip failed");
+    }
+
+    #[test]
+    fn roundtrip_smart_transforms_binary() {
+        // Binary data — smart path should either help or fall back gracefully.
+        let data: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
+        let config = CompressConfig {
+            enable_smart_transforms: true,
+            ..Default::default()
+        };
+        let compressed = compress(&data, &config).unwrap();
+        let decompressed = decompress(&compressed.data).unwrap();
+        assert_eq!(decompressed.data, data, "smart transforms binary roundtrip failed");
+    }
+
+    #[test]
+    fn roundtrip_smart_transforms_small() {
+        // Small data below PREPROCESS_THRESHOLD — smart transforms skipped.
+        let data = b"small data";
+        let config = CompressConfig {
+            enable_smart_transforms: true,
+            ..Default::default()
+        };
+        let compressed = compress(data, &config).unwrap();
+        let decompressed = decompress(&compressed.data).unwrap();
+        assert_eq!(decompressed.data, data);
     }
 
     #[test]

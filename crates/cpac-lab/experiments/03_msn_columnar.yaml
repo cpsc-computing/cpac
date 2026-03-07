@@ -1,0 +1,47 @@
+# 03 — MSN extraction + columnar transforms on structured data
+# Tests MSN-extracted columns with column-specific transforms.
+# Target: CSV, JSON, YAML, XML files from cloud corpus.
+
+name: msn_columnar
+description: >
+  MSN extraction followed by column-specific transforms on structured data.
+  Measures benefit of domain-aware decomposition before compression.
+zstd_level: 3
+max_file_size: 104857600
+extensions: [csv, json, jsonl, yaml, yml, xml]
+group_by: [extension, directory]
+
+trials:
+  - name: baseline
+
+  - name: msn_only
+    msn_extract: true
+    msn_confidence: 0.3
+
+  - name: msn_delta
+    msn_extract: true
+    msn_confidence: 0.3
+    transforms:
+      - name: delta
+
+  - name: msn_rle
+    msn_extract: true
+    msn_confidence: 0.3
+    transforms:
+      - name: rle
+
+  - name: msn_bwt
+    msn_extract: true
+    msn_confidence: 0.3
+    transforms:
+      - name: bwt_chain
+
+  - name: normalize_only
+    transforms:
+      - name: normalize
+
+  - name: normalize_msn
+    msn_extract: true
+    msn_confidence: 0.3
+    transforms:
+      - name: normalize

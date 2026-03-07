@@ -174,6 +174,8 @@ impl From<CpacCompressConfig> for CompressConfig {
             enable_msn: false, // FFI defaults to MSN disabled
             msn_confidence: 0.5,
             msn_domain: None,
+            msn_verbose: false,
+            enable_smart_transforms: true,
             level: cpac_types::CompressionLevel::Default,
         }
     }

@@ -16,6 +16,7 @@ cpac-msn = { workspace = true }
 cpac-entropy = { workspace = true }
 cpac-frame = { workspace = true }
 cpac-transforms = { workspace = true }
+cpac-cas = { workspace = true }
 cpac-dag = { workspace = true }
 sysinfo = { workspace = true }
 rayon = { workspace = true }

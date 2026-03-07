@@ -8,6 +8,7 @@ use cpac_transforms::{TransformContext, TransformNode};
 use cpac_types::{CpacError, CpacResult, CpacType};
 
 use crate::registry::TransformRegistry;
+use cpac_cas::{analyze_column, recommend_transforms};
 
 /// Metadata chain produced during forward execution: (`transform_id`, `metadata_bytes`) per step.
 pub type MetaChain = Vec<(u8, Vec<u8>)>;
@@ -127,6 +128,28 @@ impl TransformDAG {
         Self { steps }
     }
 
+    /// Compile a DAG guided by CAS constraint analysis.
+    ///
+    /// Analyzes `data` for constraints, maps them to transform recommendations,
+    /// and builds a chain from the transforms found in `registry`.
+    /// Unknown transform names (e.g. `const_elim`) are silently skipped.
+    pub fn compile_with_cas(
+        registry: &TransformRegistry,
+        data: &CpacType,
+        column_name: &str,
+    ) -> CpacResult<Self> {
+        let constraints = analyze_column(column_name, data);
+        let recs = recommend_transforms(&constraints);
+        let mut steps = Vec::new();
+        for rec in &recs {
+            if let Some(node) = registry.get_by_name(&rec.name) {
+                steps.push(Arc::clone(node));
+            }
+            // Skip unknown names (e.g. const_elim sentinel)
+        }
+        Ok(Self { steps })
+    }
+
     /// Number of steps in the DAG.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -238,6 +261,45 @@ mod tests {
     fn compile_unknown_fails() {
         let reg = TransformRegistry::with_builtins();
         assert!(TransformDAG::compile(&reg, &["nonexistent"]).is_err());
+    }
+
+    #[test]
+    fn cas_guided_monotonic_int() {
+        let reg = TransformRegistry::with_builtins();
+        let data = CpacType::IntColumn {
+            values: (0..200).collect(),
+            original_width: 8,
+        };
+        let dag = TransformDAG::compile_with_cas(&reg, &data, "id").unwrap();
+        let names = dag.transform_names();
+        // Monotonic stride-1 int column should get delta + zigzag + range_pack
+        assert!(names.contains(&"delta"), "expected delta in {:?}", names);
+        assert!(names.contains(&"zigzag"), "expected zigzag in {:?}", names);
+        assert!(names.contains(&"range_pack"), "expected range_pack in {:?}", names);
+    }
+
+    #[test]
+    fn cas_guided_string_enum() {
+        let reg = TransformRegistry::with_builtins();
+        let data = CpacType::StringColumn {
+            values: vec!["A", "B", "C", "A", "B", "A", "C", "B"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            total_bytes: 8,
+        };
+        let dag = TransformDAG::compile_with_cas(&reg, &data, "status").unwrap();
+        let names = dag.transform_names();
+        assert!(names.contains(&"vocab"), "expected vocab in {:?}", names);
+    }
+
+    #[test]
+    fn cas_guided_empty_serial() {
+        let reg = TransformRegistry::with_builtins();
+        let data = CpacType::Serial(vec![1, 2, 3]);
+        let dag = TransformDAG::compile_with_cas(&reg, &data, "raw").unwrap();
+        // Serial data yields no CAS constraints → empty DAG
+        assert!(dag.is_empty());
     }
 
     #[test]

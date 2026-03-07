@@ -7,11 +7,222 @@ use cpac_types::{CpacError, CpacResult};
 use std::collections::HashMap;
 // memchr provides SIMD-accelerated byte search on x86/aarch64.
 
+// ---------------------------------------------------------------------------
+// Columnar extraction helper
+// ---------------------------------------------------------------------------
+
+struct ColumnarData {
+    /// Per-column type: "int", "float", or "str".
+    col_types: Vec<String>,
+    /// Delta-encoded integer columns keyed by column index.
+    int_columns: serde_json::Map<String, serde_json::Value>,
+    /// Residual: non-integer column values, row line endings.
+    residual: Vec<u8>,
+}
+
+/// Attempt columnar extraction on CSV body rows.
+///
+/// Returns `Some(ColumnarData)` if ≥50 rows and ≥1 integer column found.
+fn try_columnar_extraction(body: &[u8], _headers: &[&str]) -> Option<ColumnarData> {
+    if body.is_empty() {
+        return None;
+    }
+
+    // Parse rows (quick scan, no full CSV parser needed for simple CSVs)
+    let body_str = std::str::from_utf8(body).ok()?;
+    let mut rows: Vec<Vec<&str>> = Vec::new();
+    let mut line_endings: Vec<&str> = Vec::new();
+
+    for line in body_str.split_inclusive('\n') {
+        let (content, ending) = if let Some(stripped) = line.strip_suffix("\r\n") {
+            (stripped, "\r\n")
+        } else if let Some(stripped) = line.strip_suffix('\n') {
+            (stripped, "\n")
+        } else {
+            (line, "")
+        };
+        if content.is_empty() && ending.is_empty() {
+            continue;
+        }
+        let cols: Vec<&str> = content.split(',').collect();
+        rows.push(cols);
+        line_endings.push(ending);
+    }
+
+    if rows.len() < 50 {
+        return None;
+    }
+
+    let num_cols = rows.first().map(|r| r.len()).unwrap_or(0);
+    if num_cols == 0 {
+        return None;
+    }
+
+    // Classify columns
+    let mut col_types = vec!["str".to_string(); num_cols];
+    let mut int_cols: Vec<Option<Vec<i64>>> = vec![None; num_cols];
+
+    for ci in 0..num_cols {
+        // Check if all values in this column are parseable as i64
+        let mut all_int = true;
+        let mut vals = Vec::with_capacity(rows.len());
+        for row in &rows {
+            if ci >= row.len() {
+                all_int = false;
+                break;
+            }
+            match row[ci].parse::<i64>() {
+                Ok(v) => vals.push(v),
+                Err(_) => {
+                    all_int = false;
+                    break;
+                }
+            }
+        }
+        if all_int && !vals.is_empty() {
+            col_types[ci] = "int".to_string();
+            int_cols[ci] = Some(vals);
+        }
+    }
+
+    // Need at least 1 integer column to justify columnar mode
+    if int_cols.iter().all(|c| c.is_none()) {
+        return None;
+    }
+
+    // Build int_columns map with delta encoding
+    let mut int_columns = serde_json::Map::new();
+    for (ci, opt_vals) in int_cols.iter().enumerate() {
+        if let Some(vals) = opt_vals {
+            // Delta encode
+            let mut deltas = Vec::with_capacity(vals.len());
+            deltas.push(serde_json::Value::Number(vals[0].into()));
+            for i in 1..vals.len() {
+                let d = vals[i] - vals[i - 1];
+                deltas.push(serde_json::Value::Number(d.into()));
+            }
+            int_columns.insert(ci.to_string(), serde_json::Value::Array(deltas));
+        }
+    }
+
+    // Build residual: for integer columns, replace values with placeholder "@"
+    let mut residual = Vec::new();
+    for (ri, row) in rows.iter().enumerate() {
+        for (ci, &val) in row.iter().enumerate() {
+            if ci > 0 {
+                residual.push(b',');
+            }
+            if int_cols[ci].is_some() {
+                residual.push(b'@');
+            } else {
+                residual.extend_from_slice(val.as_bytes());
+            }
+        }
+        residual.extend_from_slice(line_endings[ri].as_bytes());
+    }
+
+    Some(ColumnarData {
+        col_types,
+        int_columns,
+        residual,
+    })
+}
+
 /// CSV domain handler.
 ///
 /// Extracts column headers and structure from CSV data.
 /// Target compression: 20-50x on structured CSV.
 pub struct CsvDomain;
+
+impl CsvDomain {
+    /// Reconstruct from columnar mode: replace '@' placeholders with delta-decoded integers.
+    fn reconstruct_columnar(
+        &self,
+        result: &ExtractionResult,
+        header_line: &str,
+        header_sep: &str,
+    ) -> CpacResult<Vec<u8>> {
+        // Decode delta-encoded integer columns
+        let int_columns = result
+            .fields
+            .get("int_columns")
+            .and_then(|v| v.as_object())
+            .ok_or_else(|| CpacError::DecompressFailed("CSV: missing int_columns".into()))?;
+
+        // Build per-column iterators: delta-decode and convert to string
+        let mut col_iters: HashMap<usize, Vec<String>> = HashMap::new();
+        for (key, arr_val) in int_columns {
+            let ci: usize = key
+                .parse()
+                .map_err(|_| CpacError::DecompressFailed("CSV: invalid column index".into()))?;
+            let deltas: Vec<i64> = arr_val
+                .as_array()
+                .ok_or_else(|| CpacError::DecompressFailed("CSV: int_columns not array".into()))?
+                .iter()
+                .filter_map(|v| v.as_i64())
+                .collect();
+            // Un-delta
+            let mut values = Vec::with_capacity(deltas.len());
+            let mut acc = 0i64;
+            for (i, &d) in deltas.iter().enumerate() {
+                if i == 0 {
+                    acc = d;
+                } else {
+                    acc += d;
+                }
+                values.push(acc.to_string());
+            }
+            col_iters.insert(ci, values);
+        }
+
+        // Walk the residual, replacing '@' placeholders with decoded values
+        let residual_str = std::str::from_utf8(&result.residual)
+            .map_err(|e| CpacError::DecompressFailed(format!("CSV: residual UTF-8: {e}")))?;
+
+        let mut output =
+            Vec::with_capacity(header_line.len() + header_sep.len() + result.residual.len() * 2);
+        output.extend_from_slice(header_line.as_bytes());
+        output.extend_from_slice(header_sep.as_bytes());
+
+        // Track row index per column for value lookup
+        let mut col_row_idx: HashMap<usize, usize> = HashMap::new();
+
+        for line in residual_str.split_inclusive('\n') {
+            let (content, ending) = if let Some(stripped) = line.strip_suffix("\r\n") {
+                (stripped, "\r\n")
+            } else if let Some(stripped) = line.strip_suffix('\n') {
+                (stripped, "\n")
+            } else {
+                (line, "")
+            };
+
+            if content.is_empty() && ending.is_empty() {
+                continue;
+            }
+
+            let cols: Vec<&str> = content.split(',').collect();
+            for (ci, &val) in cols.iter().enumerate() {
+                if ci > 0 {
+                    output.push(b',');
+                }
+                if val == "@" {
+                    if let Some(values) = col_iters.get(&ci) {
+                        let ri = col_row_idx.entry(ci).or_insert(0);
+                        if *ri < values.len() {
+                            output.extend_from_slice(values[*ri].as_bytes());
+                            *ri += 1;
+                        }
+                    }
+                } else {
+                    output.extend_from_slice(val.as_bytes());
+                }
+            }
+            output.extend_from_slice(ending.as_bytes());
+        }
+
+        Ok(output)
+    }
+}
 
 impl Domain for CsvDomain {
     fn info(&self) -> DomainInfo {
@@ -40,17 +251,23 @@ impl Domain for CsvDomain {
             }
         }
 
-        // Use memchr for SIMD-accelerated newline and comma scanning.
+        // Content-based CSV detection: require ≥3 columns AND ≥10 data rows
+        // before firing.  The previous threshold (≥1 comma in first line) was
+        // too loose — it matched conf files, bash scripts, and YAML lists that
+        // have incidental commas, accumulating -40KB overhead with no benefit.
         let first_nl = memchr::memchr(b'\n', data).unwrap_or(data.len());
-        if first_nl == 0 {
+        if first_nl == 0 || first_nl >= data.len() {
             return 0.0;
         }
         let first_line = &data[..first_nl];
-
-        // Count commas in the first line using memchr::memchr_iter (SIMD-backed).
         let comma_count = memchr::memchr_iter(b',', first_line).count();
-        if comma_count >= 1 && first_nl < data.len() {
-            // At least one more line exists (data.len() > first_nl).
+        if comma_count < 2 {
+            // Need at least 3 columns to justify columnar extraction overhead.
+            return 0.0;
+        }
+        // Count newlines in the rest of the file to estimate row count.
+        let row_count = memchr::memchr_iter(b'\n', &data[first_nl + 1..]).count();
+        if row_count >= 10 {
             return 0.7;
         }
 
@@ -64,27 +281,23 @@ impl Domain for CsvDomain {
         })?;
 
         // Determine the separator written after the header (CRLF vs LF).
-        // We look only at THIS specific newline, not the whole file, so that
-        // mixed-ending files are handled correctly.
         let (header_content_end, header_sep) = if newline_pos > 0 && data[newline_pos - 1] == b'\r'
         {
-            (newline_pos - 1, "\r\n") // CRLF: header content ends before the \r
+            (newline_pos - 1, "\r\n")
         } else {
-            (newline_pos, "\n") // LF-only: header content ends before the \n
+            (newline_pos, "\n")
         };
 
-        // Parse header column names from the raw header bytes.
-        // We do NOT trim so that reconstruct produces the byte-exact original.
         let header_bytes = &data[..header_content_end];
         let header_str = std::str::from_utf8(header_bytes)
             .map_err(|e| CpacError::CompressFailed(format!("CSV header decode: {e}")))?;
         let headers: Vec<&str> = header_str.split(',').collect();
 
-        // Body = every byte after the first newline, stored verbatim.
-        // This preserves all original line endings (including mixed CRLF/LF)
-        // so reconstruct can produce a byte-exact copy of the original.
         let body_start = newline_pos + 1;
         let body = data[body_start..].to_vec();
+
+        // Try columnar extraction on data rows (≥50 rows, ≥1 int column)
+        let columnar = try_columnar_extraction(&body, &headers);
 
         let mut fields = HashMap::new();
         fields.insert(
@@ -101,12 +314,46 @@ impl Domain for CsvDomain {
             serde_json::Value::String(header_sep.to_string()),
         );
 
-        Ok(ExtractionResult {
-            fields,
-            residual: body,
-            metadata: HashMap::new(),
-            domain_id: "text.csv".to_string(),
-        })
+        if let Some(col_data) = columnar {
+            // Store delta-encoded integer columns in fields
+            fields.insert(
+                "int_columns".to_string(),
+                serde_json::Value::Object(col_data.int_columns),
+            );
+            fields.insert(
+                "col_types".to_string(),
+                serde_json::Value::Array(
+                    col_data
+                        .col_types
+                        .iter()
+                        .map(|t| serde_json::Value::String(t.clone()))
+                        .collect(),
+                ),
+            );
+            fields.insert(
+                "mode".to_string(),
+                serde_json::Value::String("columnar".to_string()),
+            );
+
+            Ok(ExtractionResult {
+                fields,
+                residual: col_data.residual,
+                metadata: HashMap::new(),
+                domain_id: "text.csv".to_string(),
+            })
+        } else {
+            fields.insert(
+                "mode".to_string(),
+                serde_json::Value::String("header_only".to_string()),
+            );
+
+            Ok(ExtractionResult {
+                fields,
+                residual: body,
+                metadata: HashMap::new(),
+                domain_id: "text.csv".to_string(),
+            })
+        }
     }
 
     fn extract_with_fields(
@@ -177,8 +424,6 @@ impl Domain for CsvDomain {
             return Err(CpacError::DecompressFailed("Invalid headers format".into()));
         };
 
-        // header_sep is the separator written after the header line during extraction.
-        // Defaults to "\n" for frames written before this field was introduced.
         let header_sep = result
             .fields
             .get("header_sep")
@@ -187,8 +432,17 @@ impl Domain for CsvDomain {
 
         let header_line = headers.join(",");
 
-        // The residual already contains the exact original bytes that followed the
-        // header line (all line endings preserved).  Simply prepend the header.
+        let mode = result
+            .fields
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("header_only");
+
+        if mode == "columnar" {
+            return self.reconstruct_columnar(result, &header_line, header_sep);
+        }
+
+        // header_only mode: prepend header to residual body
         let mut output =
             Vec::with_capacity(header_line.len() + header_sep.len() + result.residual.len());
         output.extend_from_slice(header_line.as_bytes());
@@ -206,8 +460,18 @@ mod tests {
     #[test]
     fn csv_domain_detection() {
         let domain = CsvDomain;
-        assert!(domain.detect(b"a,b,c\n1,2,3", None) > 0.6);
+        // Extension-based detection still fires.
         assert!(domain.detect(b"", Some("test.csv")) > 0.8);
+        assert!(domain.detect(b"", Some("data.tsv")) > 0.8);
+        // Content detection: requires >=3 columns AND >=10 data rows.
+        let few_rows = b"a,b,c\n1,2,3";
+        assert_eq!(domain.detect(few_rows, None), 0.0, "too few rows should not fire");
+        let many_rows = {
+            let mut v: Vec<u8> = b"id,value,status\n".to_vec();
+            for i in 0..10u32 { v.extend_from_slice(format!("{i},{},{i}\n", i * 2).as_bytes()); }
+            v
+        };
+        assert!(domain.detect(&many_rows, None) > 0.6, ">=10 rows with 3 cols should fire");
     }
 
     #[test]

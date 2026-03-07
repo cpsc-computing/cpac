@@ -19,8 +19,10 @@ cpac-crypto = { workspace = true, features = ["pqc"] }
 cpac-streaming = { workspace = true }
 cpac-cas = { workspace = true }
 cpac-archive = { workspace = true }
+cpac-lab = { workspace = true }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 indicatif = { workspace = true }

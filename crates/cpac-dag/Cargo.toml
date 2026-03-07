@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 cpac-types = { workspace = true }
 cpac-transforms = { workspace = true }
+cpac-cas = { workspace = true }
 serde = { workspace = true }
 rmp-serde = { workspace = true }
 

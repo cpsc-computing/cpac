@@ -44,8 +44,12 @@ impl Domain for CborDomain {
             return 0.0;
         }
 
+        // Probe only the first 4 KB to avoid stack overflow from deeply-nested CBOR.
+        // ciborium::from_reader is recursive and will overflow the stack on adversarial
+        // or accidentally-matching binary data with thousands of nesting levels.
+        let probe = &data[..data.len().min(4096)];
         // Try to parse as CBOR and check structure
-        match ciborium::from_reader::<ciborium::Value, _>(data) {
+        match ciborium::from_reader::<ciborium::Value, _>(probe) {
             Ok(value) => {
                 // Only consider structured data (objects/arrays)
                 match value {
@@ -59,6 +63,12 @@ impl Domain for CborDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        // Guard against stack overflow from deeply-nested CBOR: cap at 8MB.
+        if data.len() > 8 * 1024 * 1024 {
+            return Err(CpacError::CompressFailed(
+                "CBOR: file exceeds 8MB extraction limit".into(),
+            ));
+        }
         let cbor_value: ciborium::Value = ciborium::from_reader(data)
             .map_err(|e| CpacError::CompressFailed(format!("CBOR decode: {e}")))?;
 
@@ -107,6 +117,50 @@ impl Domain for CborDomain {
 
         Ok(ExtractionResult {
             fields,
+            residual,
+            metadata: HashMap::new(),
+            domain_id: "binary.cbor".to_string(),
+        })
+    }
+
+    fn extract_with_fields(
+        &self,
+        data: &[u8],
+        fields: &HashMap<String, serde_json::Value>,
+    ) -> CpacResult<ExtractionResult> {
+        let cbor_value: ciborium::Value = ciborium::from_reader(data)
+            .map_err(|e| CpacError::CompressFailed(format!("CBOR decode: {e}")))?;
+
+        let json_value = cbor_to_json(&cbor_value)
+            .map_err(|e| CpacError::CompressFailed(format!("CBOR to JSON: {e}")))?;
+
+        // Re-use key list from detection phase for stable indices across streaming blocks.
+        let keys: Vec<String> = fields
+            .get("keys")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+
+        if keys.is_empty() {
+            return self.extract(data);
+        }
+
+        let mut key_map: HashMap<String, u32> = HashMap::new();
+        #[allow(clippy::cast_possible_truncation)]
+        for (idx, key) in keys.iter().enumerate() {
+            key_map.insert(key.clone(), idx as u32);
+        }
+
+        let compacted = compact_value(&json_value, &key_map);
+        let compacted_cbor = json_to_cbor(&compacted)
+            .map_err(|e| CpacError::CompressFailed(format!("JSON to CBOR: {e}")))?;
+
+        let mut residual = Vec::new();
+        ciborium::into_writer(&compacted_cbor, &mut residual)
+            .map_err(|e| CpacError::CompressFailed(format!("CBOR encode: {e}")))?;
+
+        Ok(ExtractionResult {
+            fields: fields.clone(),
             residual,
             metadata: HashMap::new(),
             domain_id: "binary.cbor".to_string(),

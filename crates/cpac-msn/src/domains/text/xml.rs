@@ -23,38 +23,13 @@ impl Domain for XmlDomain {
         }
     }
 
-    fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
-        if let Some(fname) = filename {
-            if std::path::Path::new(fname)
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("xml") || e.eq_ignore_ascii_case("svg"))
-            {
-                return 0.9;
-            }
-            if std::path::Path::new(fname)
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("xhtml"))
-            {
-                return 0.85;
-            }
-        }
-
-        // Check for XML declaration or common tags
-        if data.starts_with(b"<?xml") {
-            return 0.95;
-        }
-        if data.starts_with(b"<!DOCTYPE html") || data.starts_with(b"<html") {
-            return 0.9;
-        }
-        // Check for closing tags — low confidence, below default 0.5 min-threshold.
-        // Intentionally does NOT trigger MSN for generic XML blocks without an
-        // explicit extension or <?xml declaration.  Zstd already exploits XML tag
-        // repetition natively (6-8x on silesia/xml); our tag extraction hurts its
-        // compression even when raw residual < original (10-30% savings observed).
-        if data.windows(2).any(|w| w == b"</") && data.contains(&b'>') {
-            return 0.4;
-        }
-
+    fn detect(&self, _data: &[u8], _filename: Option<&str>) -> f64 {
+        // Disabled: tag-name token substitution is net-negative against zstd on
+        // real XML/HTML corpora (-117KB aggregate on the benchmark set).  zstd's
+        // LZ77 back-references already exploit tag repetition at 6-8x compression;
+        // our replacement disrupts those back-references and adds metadata overhead.
+        // Re-enable once a structure-aware transform that preserves backend
+        // compressibility is implemented (Phase 4 redesign).
         0.0
     }
 
@@ -250,10 +225,11 @@ mod tests {
 
     #[test]
     fn xml_domain_detection() {
+        // Detection is disabled (returns 0.0 for all inputs) pending redesign.
         let domain = XmlDomain;
-        assert!(domain.detect(b"<?xml version=\"1.0\"?>", None) > 0.9);
-        assert!(domain.detect(b"<html><body></body></html>", None) > 0.5);
-        assert!(domain.detect(b"", Some("test.xml")) > 0.8);
+        assert_eq!(domain.detect(b"<?xml version=\"1.0\"?>", None), 0.0);
+        assert_eq!(domain.detect(b"<html><body></body></html>", None), 0.0);
+        assert_eq!(domain.detect(b"", Some("test.xml")), 0.0);
     }
 
     #[test]

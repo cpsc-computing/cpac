@@ -1,0 +1,58 @@
+# 02 — Multi-transform chain experiments
+# Test promising combinations of Serial-accepting transforms.
+
+name: transform_chains
+description: >
+  Multi-transform chains to find synergistic combinations.
+  All chains start from raw Serial bytes.
+zstd_level: 3
+max_file_size: 104857600
+group_by: [directory]
+
+trials:
+  - name: baseline
+
+  - name: delta_rle
+    transforms:
+      - name: delta
+      - name: rle
+
+  - name: delta_byte_plane
+    transforms:
+      - name: delta
+      - name: byte_plane
+
+  - name: rle_delta
+    transforms:
+      - name: rle
+      - name: delta
+
+  - name: rle_bwt_chain
+    transforms:
+      - name: rle
+      - name: bwt_chain
+
+  - name: normalize_delta
+    transforms:
+      - name: normalize
+      - name: delta
+
+  - name: normalize_bwt
+    transforms:
+      - name: normalize
+      - name: bwt_chain
+
+  - name: context_split_delta
+    transforms:
+      - name: context_split
+      - name: delta
+
+  - name: delta_arith
+    transforms:
+      - name: delta
+      - name: arith_decomp
+
+  - name: bwt_delta
+    transforms:
+      - name: bwt_chain
+      - name: delta

@@ -19,35 +19,53 @@
     clippy::missing_panics_doc
 )]
 
+pub mod arith_decomp;
 pub mod bwt;
+pub mod bwt_chain;
+pub mod byte_plane;
+pub mod context_split;
 pub mod dedup;
 pub mod delta;
 pub mod field_lz;
 pub mod float_split;
+pub mod float_xor;
 pub mod mtf;
+pub mod normalize;
 pub mod parse_int;
 pub mod prefix;
 pub mod range_pack;
+pub mod rle;
 pub mod rolz;
+pub mod row_sort;
 pub mod simd;
 pub mod tokenize;
 pub mod traits;
 pub mod transpose;
+pub mod vocab;
 pub mod zigzag;
 
 pub use traits::{TransformContext, TransformNode};
 
 // Re-export transform structs for DAG use
+pub use arith_decomp::ArithDecompTransform;
+pub use bwt_chain::BwtChainTransform;
+pub use byte_plane::BytePlaneTransform;
+pub use context_split::ContextSplitTransform;
 pub use dedup::DedupTransform;
 pub use delta::DeltaTransform;
 pub use field_lz::FieldLzTransform;
 pub use float_split::FloatSplitTransform;
+pub use float_xor::FloatXorTransform;
+pub use normalize::NormalizeTransform;
 pub use parse_int::ParseIntTransform;
 pub use prefix::PrefixTransform;
 pub use range_pack::RangePackTransform;
+pub use rle::RleTransform;
 pub use rolz::RolzTransform;
+pub use row_sort::RowSortTransform;
 pub use tokenize::TokenizeTransform;
 pub use transpose::TransposeTransform;
+pub use vocab::VocabTransform;
 pub use zigzag::ZigzagTransform;
 
 // ---------------------------------------------------------------------------
@@ -159,13 +177,17 @@ pub fn preprocess(data: &[u8], ctx: &TransformContext) -> (Vec<u8>, Vec<u8>) {
     }
 
     // Strategy 4: Medium-entropy data → ROLZ
-    // Text: entropy >= 4.5, Binary: entropy >= 3.0
+    // Text: entropy >= 3.5 (lowered from 4.5 to capture log residuals near the floor).
+    // Binary: entropy >= 3.0.
     if best_transform.is_none() {
-        let min_ent = if is_text { 4.5 } else { 3.0 };
+        let min_ent = if is_text { 3.5 } else { 3.0 };
         if min_ent < ent && ent < 7.0 && n >= 512 {
             let compressed = rolz::rolz_encode(data);
-            // Text: require 25% savings, Binary: require 8% savings
-            let threshold = if is_text { 0.75 } else { 0.92 };
+            // Text: require 20% savings (threshold 0.80, narrowed from original 0.75 / 25%
+            // to capture log residuals with moderate ROLZ gain without accepting marginal
+            // results that hurt zstd's downstream ratio).
+            // Binary: require 8% savings.
+            let threshold = if is_text { 0.80 } else { 0.92 };
             if (compressed.len() as f64) < n as f64 * threshold {
                 best_data = Some(compressed);
                 best_transform = Some(TransformID::Rolz);

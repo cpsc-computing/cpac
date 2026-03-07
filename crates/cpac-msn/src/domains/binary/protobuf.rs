@@ -27,33 +27,12 @@ impl Domain for ProtobufDomain {
         }
     }
 
-    fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
-        if let Some(fname) = filename {
-            if std::path::Path::new(fname)
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("pb"))
-                || std::path::Path::new(fname)
-                    .extension()
-                    .is_some_and(|e| e.eq_ignore_ascii_case("protobuf"))
-            {
-                return 0.8;
-            }
-        }
-
-        // Basic heuristic: check for protobuf wire format patterns
-        // Protobuf uses varint encoding with specific tag patterns
-        if data.len() >= 4 {
-            // Check for valid field tags (low nibble = wire type 0-5)
-            let has_valid_tags = data.windows(2).take(10).any(|w| {
-                let wire_type = w[0] & 0x07;
-                wire_type <= 5
-            });
-
-            if has_valid_tags {
-                return 0.5;
-            }
-        }
-
+    fn detect(&self, _data: &[u8], _filename: Option<&str>) -> f64 {
+        // Disabled: the heuristic wire-type check matches virtually all text and
+        // binary content (any byte with low 3 bits ≤ 5 counts), and the extractor
+        // is a passthrough stub, so applying this domain only adds metadata
+        // overhead with zero benefit.  Re-enable once a schema-aware extractor
+        // is implemented (Phase 4 redesign).
         0.0
     }
 

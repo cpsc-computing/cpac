@@ -53,8 +53,12 @@ impl Domain for MsgPackDomain {
             return 0.0;
         }
 
+        // Probe only the first 4 KB to avoid stack overflow from deeply-nested MessagePack.
+        // rmp-serde::decode is recursive and will overflow the stack on adversarial or
+        // accidentally-matching binary data with thousands of nesting levels.
+        let probe = &data[..data.len().min(4096)];
         // Try to parse as MessagePack and check structure
-        if let Ok(value) = decode::from_slice::<Value>(data) {
+        if let Ok(value) = decode::from_slice::<Value>(probe) {
             // Only consider structured data (objects/arrays)
             match value {
                 Value::Object(ref map) if !map.is_empty() => return 0.7,
@@ -67,6 +71,12 @@ impl Domain for MsgPackDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        // Guard against stack overflow from deeply-nested MessagePack: cap at 8MB.
+        if data.len() > 8 * 1024 * 1024 {
+            return Err(CpacError::CompressFailed(
+                "MessagePack: file exceeds 8MB extraction limit".into(),
+            ));
+        }
         let value: Value = decode::from_slice(data)
             .map_err(|e| CpacError::CompressFailed(format!("MessagePack decode: {e}")))?;
 
@@ -108,6 +118,43 @@ impl Domain for MsgPackDomain {
 
         Ok(ExtractionResult {
             fields,
+            residual,
+            metadata: HashMap::new(),
+            domain_id: "binary.msgpack".to_string(),
+        })
+    }
+
+    fn extract_with_fields(
+        &self,
+        data: &[u8],
+        fields: &HashMap<String, serde_json::Value>,
+    ) -> CpacResult<ExtractionResult> {
+        let value: Value = decode::from_slice(data)
+            .map_err(|e| CpacError::CompressFailed(format!("MessagePack decode: {e}")))?;
+
+        // Re-use key list from detection phase for stable indices across streaming blocks.
+        let keys: Vec<String> = fields
+            .get("keys")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+
+        if keys.is_empty() {
+            return self.extract(data);
+        }
+
+        let mut key_map: HashMap<String, u32> = HashMap::new();
+        #[allow(clippy::cast_possible_truncation)]
+        for (idx, key) in keys.iter().enumerate() {
+            key_map.insert(key.clone(), idx as u32);
+        }
+
+        let compacted = compact_value(&value, &key_map);
+        let residual = encode::to_vec(&compacted)
+            .map_err(|e| CpacError::CompressFailed(format!("MessagePack encode: {e}")))?;
+
+        Ok(ExtractionResult {
+            fields: fields.clone(),
             residual,
             metadata: HashMap::new(),
             domain_id: "binary.msgpack".to_string(),

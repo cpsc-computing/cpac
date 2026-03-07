@@ -1,0 +1,46 @@
+# 05 — Log file study
+# Transforms targeting log data (high repetition, timestamps, IP addresses).
+
+name: log_study
+description: >
+  Transform study on log files. Logs have high line repetition,
+  timestamps, and structured fields that benefit from MSN + delta.
+zstd_level: 3
+max_file_size: 104857600
+extensions: [log, txt, text]
+group_by: [directory]
+
+trials:
+  - name: baseline
+
+  - name: delta
+    transforms:
+      - name: delta
+
+  - name: bwt_chain
+    transforms:
+      - name: bwt_chain
+
+  - name: rle
+    transforms:
+      - name: rle
+
+  - name: msn_only
+    msn_extract: true
+    msn_confidence: 0.3
+
+  - name: msn_delta
+    msn_extract: true
+    msn_confidence: 0.3
+    transforms:
+      - name: delta
+
+  - name: msn_bwt
+    msn_extract: true
+    msn_confidence: 0.3
+    transforms:
+      - name: bwt_chain
+
+  - name: context_split
+    transforms:
+      - name: context_split

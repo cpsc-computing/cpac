@@ -8,6 +8,9 @@ pub mod passthrough;
 pub mod text;
 
 pub use binary::{AvroDomain, CborDomain, MsgPackDomain, ProtobufDomain};
-pub use logs::{ApacheDomain, HttpDomain, JsonLogDomain, SyslogDomain};
+pub use logs::{
+    ApacheDomain, BglLogDomain, HealthAppDomain, HpcLogDomain, HttpDomain, JavaLogDomain,
+    JsonLogDomain, OpenStackLogDomain, ProxifierDomain, SyslogDomain, W3cLogDomain,
+};
 pub use passthrough::PassthroughDomain;
 pub use text::{CsvDomain, JsonDomain, XmlDomain, YamlDomain};

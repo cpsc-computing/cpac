@@ -37,6 +37,11 @@ pub struct MsnResult {
 }
 
 /// Lightweight MSN metadata for frame storage (excludes residual).
+///
+/// Only `version`, `fields`, and `domain_id` are serialised into the frame.
+/// `applied` and `confidence` are runtime-only: they are not written to avoid
+/// wasting ~10 bytes per frame. On deserialisation both default to `false`/`0.0`
+/// so frames produced by older CPAC versions decode without error.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MsnMetadata {
     /// MSN format version (currently 1)
@@ -44,11 +49,14 @@ pub struct MsnMetadata {
     pub version: u8,
     /// Extracted semantic fields
     pub fields: std::collections::HashMap<String, serde_json::Value>,
-    /// Whether MSN was actually applied
+    /// Whether MSN was actually applied (runtime only — not serialised).
+    /// Infer from `domain_id.is_some()` after deserialisation.
+    #[serde(skip_serializing, default)]
     pub applied: bool,
     /// Domain ID used (if applied)
     pub domain_id: Option<String>,
-    /// Detection confidence
+    /// Detection confidence (runtime only — not serialised).
+    #[serde(skip_serializing, default)]
     pub confidence: f64,
 }
 
@@ -84,13 +92,19 @@ impl MsnResult {
 
 impl MsnMetadata {
     /// Convert to `MsnResult` by adding residual.
+    ///
+    /// `applied` is derived from whether `domain_id` is set (the engine only
+    /// stores metadata when extraction was applied, so `domain_id` is always
+    /// `Some` when this struct comes from a real frame).  `confidence` is not
+    /// stored in frames and defaults to `0.0` on the decompression path.
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
     pub fn with_residual(self, residual: Vec<u8>) -> MsnResult {
+        let applied = self.domain_id.is_some();
         MsnResult {
             fields: self.fields,
             residual,
-            applied: self.applied,
+            applied,
             domain_id: self.domain_id,
             confidence: self.confidence,
         }
@@ -169,8 +183,9 @@ pub fn extract(
 ///
 /// Returns [`cpac_types::CpacError::CompressFailed`] if the domain extraction fails.
 pub fn extract_with_metadata(data: &[u8], metadata: &MsnMetadata) -> CpacResult<MsnResult> {
-    if !metadata.applied {
-        // Metadata was passthrough, so just passthrough this data too
+    // `applied` is not stored in frames (skip_serializing); infer from domain_id.
+    if metadata.domain_id.is_none() {
+        // Metadata was passthrough — no domain was applied, so passthrough here too.
         return Ok(MsnResult::passthrough(data));
     }
 
@@ -201,9 +216,10 @@ pub fn extract_with_metadata(data: &[u8], metadata: &MsnMetadata) -> CpacResult<
 
 /// Encode [`MsnMetadata`] to a compact binary representation.
 ///
-/// Uses `MessagePack` (via `rmp-serde`) prefixed with a `0x01` discriminator byte.
-/// This is ~30-40% smaller than JSON for typical metadata payloads and avoids
-/// UTF-8 parsing overhead on the hot decompression path.
+/// Uses `MessagePack` (via `rmp-serde`, named/map format) prefixed with a `0x01`
+/// discriminator byte.  Named format is used so that `#[serde(skip_serializing)]`
+/// fields (`applied`, `confidence`) are cleanly absent from the byte stream while
+/// still being deserializable from older frames that do include them.
 ///
 /// The `decode_metadata_compact` function is forward-compatible: if the first
 /// byte is `{` (0x7B) it falls back to JSON for frames compressed by older
@@ -217,6 +233,7 @@ pub fn extract_with_metadata(data: &[u8], metadata: &MsnMetadata) -> CpacResult<
 /// let meta = MsnMetadata {
 ///     version: 1,
 ///     fields: std::collections::HashMap::new(),
+///     // `applied` and `confidence` are runtime-only and are NOT serialised.
 ///     applied: true,
 ///     domain_id: Some("text.yaml".to_string()),
 ///     confidence: 0.9,
@@ -225,7 +242,8 @@ pub fn extract_with_metadata(data: &[u8], metadata: &MsnMetadata) -> CpacResult<
 /// let compact = encode_metadata_compact(&meta).unwrap();
 /// let decoded = decode_metadata_compact(&compact).unwrap();
 /// assert_eq!(decoded.domain_id, meta.domain_id);
-/// assert_eq!(decoded.applied, true);
+/// // applied is not serialised — infer from domain_id presence:
+/// assert!(decoded.domain_id.is_some());
 /// ```
 ///
 /// # Errors
@@ -233,7 +251,11 @@ pub fn extract_with_metadata(data: &[u8], metadata: &MsnMetadata) -> CpacResult<
 /// Returns [`cpac_types::CpacError::CompressFailed`] if `MessagePack` serialization fails.
 pub fn encode_metadata_compact(meta: &MsnMetadata) -> CpacResult<Vec<u8>> {
     let mut out = vec![0x01u8]; // discriminator: 0x01 = MessagePack
-    let msgpack = rmp_serde::to_vec(meta)
+    // Use named (map) format so absent `skip_serializing` fields are handled
+    // gracefully by `#[serde(default)]` on the decode side.  The positional
+    // (array) format produced by `to_vec` would mis-align when fields in the
+    // middle of the struct are skipped.
+    let msgpack = rmp_serde::to_vec_named(meta)
         .map_err(|e| cpac_types::CpacError::CompressFailed(format!("MSN metadata encode: {e}")))?;
     out.extend_from_slice(&msgpack);
     Ok(out)

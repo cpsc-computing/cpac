@@ -96,9 +96,16 @@ static GLOBAL_REGISTRY: std::sync::LazyLock<DomainRegistry> = std::sync::LazyLoc
     registry.register(Arc::new(crate::domains::ProtobufDomain));
     registry.register(Arc::new(crate::domains::AvroDomain));
     registry.register(Arc::new(crate::domains::SyslogDomain));
+    registry.register(Arc::new(crate::domains::OpenStackLogDomain));
     registry.register(Arc::new(crate::domains::ApacheDomain));
     registry.register(Arc::new(crate::domains::HttpDomain));
     registry.register(Arc::new(crate::domains::JsonLogDomain));
+    registry.register(Arc::new(crate::domains::JavaLogDomain));
+    registry.register(Arc::new(crate::domains::BglLogDomain));
+    registry.register(Arc::new(crate::domains::HealthAppDomain));
+    registry.register(Arc::new(crate::domains::ProxifierDomain));
+    registry.register(Arc::new(crate::domains::HpcLogDomain));
+    registry.register(Arc::new(crate::domains::W3cLogDomain));
 
     registry
 });

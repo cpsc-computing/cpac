@@ -17,6 +17,7 @@ members = [
     "crates/cpac-archive",
     "crates/cpac-dict",
     "crates/cpac-ffi", "crates/cpac-msn",
+    "crates/cpac-lab",
 ]
 
 [workspace.package]
@@ -62,6 +63,7 @@ cpac-crypto = { path = "crates/cpac-crypto" }
 cpac-streaming = { path = "crates/cpac-streaming" }
 cpac-cas = { path = "crates/cpac-cas" }
 cpac-archive = { path = "crates/cpac-archive" }
+cpac-lab = { path = "crates/cpac-lab" }
 
 [profile.release]
 lto = "fat"

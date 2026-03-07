@@ -1,0 +1,44 @@
+# Baseline experiment: measure each built-in transform individually
+# against the full corpus to establish a per-transform profile.
+#
+# Usage:
+#   cargo run -p cpac-lab --bin transform_study -- \
+#     -e crates/cpac-lab/experiments/baseline.yaml \
+#     -c .work/benchdata
+
+name: baseline_transforms
+description: >
+  Individual transform benchmarks. Each trial applies a single transform
+  to every eligible file and measures zstd(transform(data)) vs zstd(data).
+zstd_level: 3
+max_file_size: 104857600  # 100 MB
+
+group_by:
+  - extension
+  - directory
+
+trials:
+  - name: zstd_only
+    # Empty chain = pure baseline
+
+  - name: delta
+    transforms:
+      - name: delta
+
+  - name: transpose
+    transforms:
+      - name: transpose
+
+  - name: rolz
+    transforms:
+      - name: rolz
+
+  - name: msn_extract
+    msn_extract: true
+    msn_confidence: 0.3
+
+  - name: msn_plus_delta
+    msn_extract: true
+    msn_confidence: 0.3
+    transforms:
+      - name: delta

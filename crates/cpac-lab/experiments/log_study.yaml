@@ -1,0 +1,45 @@
+# Log-focused experiment: test MSN extraction + transform chains on log files.
+#
+# Usage:
+#   cargo run -p cpac-lab --bin transform_study -- \
+#     -e crates/cpac-lab/experiments/log_study.yaml \
+#     -c .work/benchdata/logs
+
+name: log_transforms
+description: >
+  Measure MSN domain extraction and transform chains specifically on log files.
+  Compares baseline, MSN-only, and MSN+delta+rolz chains.
+zstd_level: 3
+extensions: [log, txt]
+
+group_by:
+  - extension
+  - domain
+
+trials:
+  - name: baseline
+
+  - name: msn_only
+    msn_extract: true
+    msn_confidence: 0.3
+
+  - name: msn_delta
+    msn_extract: true
+    msn_confidence: 0.3
+    transforms:
+      - name: delta
+
+  - name: msn_delta_rolz
+    msn_extract: true
+    msn_confidence: 0.3
+    transforms:
+      - name: delta
+      - name: rolz
+
+  - name: delta_only
+    transforms:
+      - name: delta
+
+  - name: rolz_only
+    transforms:
+      - name: rolz

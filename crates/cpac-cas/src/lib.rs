@@ -16,6 +16,7 @@
 )]
 
 use std::collections::HashSet;
+use cpac_types::CpacType;
 
 /// A discovered constraint on a column.
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +43,10 @@ pub enum Constraint {
     RunLength { avg_run: usize },
     /// Column contains null / sentinel values (with bitmap).
     Nullable { null_count: usize, sentinel: String },
+    /// Float column benefits from XOR-delta encoding.
+    XorDeltaBenefit { avg_leading_zeros: u32 },
+    /// Float column has clustered values (small variance).
+    FloatClustered { mean: f64, std_dev: f64 },
 }
 
 /// Direction of monotonicity.
@@ -139,6 +144,57 @@ pub fn infer_string_constraints(_name: &str, values: &[String]) -> Vec<Constrain
         constraints.push(Constraint::Enumeration { values: vals });
     }
 
+    // Length bounds
+    let min_len = values.iter().map(String::len).min().unwrap_or(0);
+    let max_len = values.iter().map(String::len).max().unwrap_or(0);
+    if min_len != max_len || max_len <= 64 {
+        constraints.push(Constraint::LengthBounded { min_len, max_len });
+    }
+
+    constraints
+}
+
+/// Infer constraints from float column data.
+#[must_use]
+pub fn infer_float_constraints(values: &[f64]) -> Vec<Constraint> {
+    let mut constraints = Vec::new();
+    if values.len() < 2 {
+        return constraints;
+    }
+
+    // Monotonicity
+    if values.windows(2).all(|w| w[1] >= w[0]) {
+        constraints.push(Constraint::Monotonic {
+            direction: MonotonicDir::Increasing,
+        });
+    } else if values.windows(2).all(|w| w[1] <= w[0]) {
+        constraints.push(Constraint::Monotonic {
+            direction: MonotonicDir::Decreasing,
+        });
+    }
+
+    // XOR-delta benefit: count average leading zeros in XOR of consecutive f64
+    let mut total_lz: u64 = 0;
+    for w in values.windows(2) {
+        let xor = w[0].to_bits() ^ w[1].to_bits();
+        total_lz += u64::from(xor.leading_zeros());
+    }
+    let avg_lz = (total_lz / (values.len() as u64 - 1)) as u32;
+    if avg_lz >= 16 {
+        constraints.push(Constraint::XorDeltaBenefit {
+            avg_leading_zeros: avg_lz,
+        });
+    }
+
+    // Clustering: if std dev is small relative to mean
+    let n = values.len() as f64;
+    let mean = values.iter().sum::<f64>() / n;
+    let variance = values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / n;
+    let std_dev = variance.sqrt();
+    if mean.abs() > f64::EPSILON && std_dev / mean.abs() < 0.1 {
+        constraints.push(Constraint::FloatClustered { mean, std_dev });
+    }
+
     constraints
 }
 
@@ -195,6 +251,35 @@ pub fn infer_structural_constraints(values: &[i64]) -> Vec<Constraint> {
         constraints.push(Constraint::RunLength { avg_run });
     }
     constraints
+}
+
+// ---------------------------------------------------------------------------
+// Unified column analyzer (Phase 3.1)
+// ---------------------------------------------------------------------------
+
+/// Analyze a single `CpacType` column and return discovered constraints.
+///
+/// Dispatches to the appropriate inference functions based on the type variant.
+#[must_use]
+pub fn analyze_column(name: &str, data: &CpacType) -> Vec<Constraint> {
+    match data {
+        CpacType::IntColumn { values, .. } => {
+            let mut c = infer_int_constraints(name, values);
+            c.extend(infer_structural_constraints(values));
+            c
+        }
+        CpacType::FloatColumn { values, .. } => infer_float_constraints(values),
+        CpacType::StringColumn { values, .. } => infer_string_constraints(name, values),
+        CpacType::ColumnSet { columns } => {
+            // Flatten: return union of all sub-column constraints
+            let mut all = Vec::new();
+            for (col_name, col_data) in columns {
+                all.extend(analyze_column(col_name, col_data));
+            }
+            all
+        }
+        _ => Vec::new(), // Serial, Struct — no column-level inference
+    }
 }
 
 /// Full column analysis returning a `CasAnalysis`.
@@ -339,9 +424,101 @@ pub fn constrained_dof(total_dof: f64, constraints: &[Constraint], values_count:
             Constraint::Nullable { .. } => {
                 reduction += total_dof * 0.05;
             }
+            Constraint::XorDeltaBenefit { avg_leading_zeros } => {
+                // More leading zeros → more compressible after XOR
+                let benefit = (*avg_leading_zeros as f64) / 64.0;
+                reduction += total_dof * benefit;
+            }
+            Constraint::FloatClustered { .. } => {
+                reduction += total_dof * 0.2;
+            }
         }
     }
     (total_dof - reduction).max(0.0)
+}
+
+// ---------------------------------------------------------------------------
+// Constraint-to-Transform Recommendation (Phase 3.2)
+// ---------------------------------------------------------------------------
+
+/// A recommended transform with its name and optional parameters.
+#[derive(Clone, Debug)]
+pub struct TransformRecommendation {
+    /// Transform name (matches `TransformNode::name()`).
+    pub name: String,
+    /// Priority (lower = apply first in chain).
+    pub priority: u8,
+    /// Empirical confidence that this transform helps (0.0–1.0).
+    /// Based on observed win-rate from corpus benchmarks.
+    pub confidence: f64,
+}
+
+/// Map discovered constraints to recommended transforms.
+///
+/// Returns a deduplicated list of transforms sorted by priority (chain order).
+#[must_use]
+pub fn recommend_transforms(constraints: &[Constraint]) -> Vec<TransformRecommendation> {
+    let mut recs: Vec<TransformRecommendation> = Vec::new();
+
+    for c in constraints {
+        match c {
+            Constraint::Stride { .. } | Constraint::Monotonic { .. } => {
+                // Delta + zigzag are effective on column data (NOT raw Serial).
+                // Confidence based on benchmark: high on IntColumn, 0% on Serial.
+                push_unique(&mut recs, "delta", 10, 0.85);
+                push_unique(&mut recs, "zigzag", 20, 0.80);
+            }
+            Constraint::Enumeration { values } if values.len() <= 256 => {
+                push_unique(&mut recs, "vocab", 5, 0.75);
+            }
+            Constraint::Enumeration { .. } => {}
+            Constraint::Range { min, max } => {
+                let span = max.saturating_sub(*min);
+                if span <= 65535 {
+                    push_unique(&mut recs, "range_pack", 30, 0.70);
+                }
+            }
+            Constraint::RunLength { avg_run } if *avg_run >= 4 => {
+                // RLE only useful on column data; zero gain on raw Serial per benchmarks.
+                push_unique(&mut recs, "rle", 8, 0.40);
+            }
+            Constraint::RunLength { .. } => {}
+            Constraint::Constant { .. } => {
+                push_unique(&mut recs, "const_elim", 1, 0.99);
+            }
+            Constraint::Periodic { .. } => {
+                push_unique(&mut recs, "delta", 10, 0.85);
+            }
+            Constraint::LengthBounded { max_len, .. } => {
+                if *max_len <= 32 {
+                    push_unique(&mut recs, "vocab", 5, 0.75);
+                }
+            }
+            Constraint::XorDeltaBenefit { .. } => {
+                push_unique(&mut recs, "float_xor", 10, 0.80);
+                push_unique(&mut recs, "byte_plane", 25, 0.60);
+            }
+            Constraint::FloatClustered { .. } => {
+                push_unique(&mut recs, "float_xor", 10, 0.80);
+            }
+            Constraint::Sorted { .. }
+            | Constraint::FunctionalDependency { .. }
+            | Constraint::Nullable { .. } => {}
+        }
+    }
+
+    recs.sort_by_key(|r| r.priority);
+    recs
+}
+
+fn push_unique(recs: &mut Vec<TransformRecommendation>, name: &str, priority: u8, confidence: f64) {
+    if !recs.iter().any(|r| r.name == name) {
+        recs.push(TransformRecommendation {
+            name: name.to_string(),
+            priority,
+            confidence,
+        });
+    }
 }
 
 #[cfg(test)]
@@ -448,5 +625,160 @@ mod tests {
         assert!(compressed.starts_with(b"CAS"));
         let decompressed = cas_decompress(&compressed).unwrap();
         assert_eq!(decompressed, data);
+    }
+
+    // Phase 3.1 tests -------------------------------------------------------
+
+    #[test]
+    fn analyze_column_int() {
+        let data = CpacType::IntColumn {
+            values: (0..100).collect(),
+            original_width: 8,
+        };
+        let cs = analyze_column("id", &data);
+        assert!(cs.iter().any(|c| matches!(c, Constraint::Monotonic { .. })));
+        assert!(cs.iter().any(|c| matches!(c, Constraint::Stride { step: 1 })));
+    }
+
+    #[test]
+    fn analyze_column_float_xor() {
+        // Similar values → high leading zeros in XOR
+        let values: Vec<f64> = (0..100).map(|i| 100.0 + (i as f64) * 0.001).collect();
+        let data = CpacType::FloatColumn {
+            values,
+            precision: cpac_types::FloatPrecision::F64,
+        };
+        let cs = analyze_column("temp", &data);
+        assert!(
+            cs.iter().any(|c| matches!(c, Constraint::Monotonic { .. })),
+            "expected monotonic for increasing float sequence"
+        );
+    }
+
+    #[test]
+    fn analyze_column_string_enum() {
+        let values = vec!["A", "B", "A", "C", "B", "A", "C", "A"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let data = CpacType::StringColumn {
+            values,
+            total_bytes: 8,
+        };
+        let cs = analyze_column("status", &data);
+        assert!(cs.iter().any(|c| matches!(c, Constraint::Enumeration { .. })));
+        assert!(cs.iter().any(|c| matches!(c, Constraint::LengthBounded { .. })));
+    }
+
+    #[test]
+    fn analyze_column_set() {
+        let cols = vec![
+            (
+                "id".to_string(),
+                CpacType::IntColumn {
+                    values: (0..50).collect(),
+                    original_width: 4,
+                },
+            ),
+            (
+                "method".to_string(),
+                CpacType::StringColumn {
+                    values: vec!["GET", "POST", "GET", "PUT", "GET", "POST", "GET", "GET"]
+                        .into_iter()
+                        .map(String::from)
+                        .collect(),
+                    total_bytes: 30,
+                },
+            ),
+        ];
+        let data = CpacType::ColumnSet { columns: cols };
+        let cs = analyze_column("root", &data);
+        assert!(cs.len() >= 2, "should have constraints from both sub-columns");
+    }
+
+    // Phase 3.2 tests -------------------------------------------------------
+
+    #[test]
+    fn recommend_monotonic_int() {
+        let constraints = vec![
+            Constraint::Monotonic { direction: MonotonicDir::Increasing },
+            Constraint::Range { min: 0, max: 1000 },
+        ];
+        let recs = recommend_transforms(&constraints);
+        let names: Vec<&str> = recs.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"delta"));
+        assert!(names.contains(&"zigzag"));
+        assert!(names.contains(&"range_pack"));
+    }
+
+    #[test]
+    fn recommend_enum_vocab() {
+        let constraints = vec![
+            Constraint::Enumeration { values: vec!["A".into(), "B".into(), "C".into()] },
+        ];
+        let recs = recommend_transforms(&constraints);
+        assert!(recs.iter().any(|r| r.name == "vocab"));
+    }
+
+    #[test]
+    fn recommend_rle() {
+        let constraints = vec![
+            Constraint::RunLength { avg_run: 10 },
+        ];
+        let recs = recommend_transforms(&constraints);
+        assert!(recs.iter().any(|r| r.name == "rle"));
+    }
+
+    #[test]
+    fn recommend_float_xor() {
+        let constraints = vec![
+            Constraint::XorDeltaBenefit { avg_leading_zeros: 32 },
+        ];
+        let recs = recommend_transforms(&constraints);
+        let names: Vec<&str> = recs.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"float_xor"));
+        assert!(names.contains(&"byte_plane"));
+    }
+
+    #[test]
+    fn recommend_constant() {
+        let constraints = vec![
+            Constraint::Constant { value: "42".into() },
+        ];
+        let recs = recommend_transforms(&constraints);
+        assert!(recs.iter().any(|r| r.name == "const_elim"));
+    }
+
+    #[test]
+    fn recommend_chain_order() {
+        // vocab (5) < rle (8) < delta (10) < zigzag (20) < range_pack (30)
+        let constraints = vec![
+            Constraint::Monotonic { direction: MonotonicDir::Increasing },
+            Constraint::RunLength { avg_run: 5 },
+            Constraint::Enumeration { values: vec!["X".into()] },
+            Constraint::Range { min: 0, max: 100 },
+        ];
+        let recs = recommend_transforms(&constraints);
+        // Check ordering by priority
+        for w in recs.windows(2) {
+            assert!(w[0].priority <= w[1].priority, "{} should come before {}", w[0].name, w[1].name);
+        }
+    }
+
+    #[test]
+    fn infer_float_monotonic() {
+        let vals: Vec<f64> = (0..50).map(|i| i as f64 * 1.5).collect();
+        let cs = infer_float_constraints(&vals);
+        assert!(cs.iter().any(|c| matches!(c, Constraint::Monotonic { direction: MonotonicDir::Increasing })));
+    }
+
+    #[test]
+    fn infer_string_length_bounds() {
+        let vals: Vec<String> = vec!["abc", "de", "fghij"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let cs = infer_string_constraints("col", &vals);
+        assert!(cs.iter().any(|c| matches!(c, Constraint::LengthBounded { min_len: 2, max_len: 5 })));
     }
 }
