@@ -54,8 +54,7 @@ pub fn rle_decode(data: &[u8]) -> CpacResult<Vec<u8>> {
     if data.len() < 4 {
         return Err(CpacError::Transform("rle: insufficient header".into()));
     }
-    let original_len =
-        u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let original_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
     let mut out = Vec::with_capacity(original_len);
     let mut offset = 4;
 

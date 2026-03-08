@@ -278,13 +278,21 @@ mod tests {
         writeln!(f, "a.txt,txt,,(root),normalize,1000,500,400,100,10,true,,").unwrap();
         writeln!(f, "a.txt,txt,,(root),delta,1000,500,600,-100,10,true,,").unwrap();
         writeln!(f, "b.json,json,,(root),baseline,2000,800,800,0,0,false,,").unwrap();
-        writeln!(f, "b.json,json,,(root),normalize,2000,800,700,100,20,true,,").unwrap();
+        writeln!(
+            f,
+            "b.json,json,,(root),normalize,2000,800,700,100,20,true,,"
+        )
+        .unwrap();
         writeln!(f, "b.json,json,,(root),delta,2000,800,900,-100,20,true,,").unwrap();
         writeln!(f, "c.txt,txt,,(root),baseline,500,300,300,0,0,false,,").unwrap();
         writeln!(f, "c.txt,txt,,(root),normalize,500,300,350,-50,5,true,,").unwrap();
         writeln!(f, "c.txt,txt,,(root),delta,500,300,250,50,5,true,,").unwrap();
         // Row with error — should be skipped
-        writeln!(f, "d.bin,,,(root),normalize,100,90,90,0,1,false,,transform error: foo").unwrap();
+        writeln!(
+            f,
+            "d.bin,,,(root),normalize,100,90,90,0,1,false,,transform error: foo"
+        )
+        .unwrap();
         path
     }
 

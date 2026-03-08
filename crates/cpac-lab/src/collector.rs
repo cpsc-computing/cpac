@@ -6,21 +6,18 @@ use std::path::{Path, PathBuf};
 
 /// Known text-like extensions (passed through to the lab).
 const TEXT_EXTENSIONS: &[&str] = &[
-    "log", "txt", "text", "json", "jsonl", "yaml", "yml", "csv", "xml",
-    "html", "htm", "sql", "rtf", "conf", "cnf", "tf", "java", "c", "h",
-    "sh", "bash", "py", "rs", "go", "tex", "sgml", "ps", "eps", "kml",
-    "pl", "f", "unk", "dump", "script", "lsp", "dist", "disabled", "3",
-    "1", "0",
+    "log", "txt", "text", "json", "jsonl", "yaml", "yml", "csv", "xml", "html", "htm", "sql",
+    "rtf", "conf", "cnf", "tf", "java", "c", "h", "sh", "bash", "py", "rs", "go", "tex", "sgml",
+    "ps", "eps", "kml", "pl", "f", "unk", "dump", "script", "lsp", "dist", "disabled", "3", "1",
+    "0",
 ];
 
 /// Known binary extensions (skip entirely).
 const BINARY_EXTENSIONS: &[&str] = &[
-    "flac", "wav", "mp3", "ogg", "aac", "mp4", "avi", "mkv", "mov",
-    "jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp",
-    "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "pub", "pps",
-    "gz", "zip", "tar", "bz2", "xz", "7z", "rar", "cpac",
-    "bin", "so", "dll", "exe", "obj", "o",
-    "fits", "swf", "kmz", "wp", "hlp", "dbase3",
+    "flac", "wav", "mp3", "ogg", "aac", "mp4", "avi", "mkv", "mov", "jpg", "jpeg", "png", "gif",
+    "bmp", "tiff", "webp", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "pub", "pps", "gz",
+    "zip", "tar", "bz2", "xz", "7z", "rar", "cpac", "bin", "so", "dll", "exe", "obj", "o", "fits",
+    "swf", "kmz", "wp", "hlp", "dbase3",
 ];
 
 /// Options for file collection.
@@ -74,12 +71,7 @@ pub fn collect_files(root: &Path, opts: &CollectOptions) -> Vec<CorpusFile> {
     files
 }
 
-fn collect_recursive(
-    dir: &Path,
-    root: &Path,
-    opts: &CollectOptions,
-    result: &mut Vec<CorpusFile>,
-) {
+fn collect_recursive(dir: &Path, root: &Path, opts: &CollectOptions, result: &mut Vec<CorpusFile>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };

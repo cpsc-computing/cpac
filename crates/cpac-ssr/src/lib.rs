@@ -182,15 +182,12 @@ fn detect_domain(data: &[u8]) -> Option<DomainHint> {
 }
 
 const BSD_MONTHS_SSR: &[&str] = &[
-    "Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ",
-    "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec ",
+    "Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ", "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec ",
 ];
 const WEEKDAYS_SSR: &[&str] = &[
     "[Mon ", "[Tue ", "[Wed ", "[Thu ", "[Fri ", "[Sat ", "[Sun ",
 ];
-const LOG_LEVELS_SSR: &[&str] = &[
-    " INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL ",
-];
+const LOG_LEVELS_SSR: &[&str] = &[" INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL "];
 
 /// Content-based log format detection.
 ///
@@ -219,8 +216,9 @@ fn detect_log(data: &[u8]) -> bool {
         if WEEKDAYS_SSR.iter().any(|d| line.starts_with(d)) {
             apache_err += 1;
         }
-        if line.contains('-') && line.contains(':') &&
-            LOG_LEVELS_SSR.iter().any(|lvl| line.contains(lvl))
+        if line.contains('-')
+            && line.contains(':')
+            && LOG_LEVELS_SSR.iter().any(|lvl| line.contains(lvl))
         {
             structured += 1;
         }

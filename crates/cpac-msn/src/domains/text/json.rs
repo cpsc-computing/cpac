@@ -656,7 +656,6 @@ mod tests {
         assert!(domain.detect(b"plain text", None) < 0.1);
     }
 
-
     #[test]
     fn json_domain_jsonl_detection() {
         let domain = JsonDomain;
@@ -853,5 +852,4 @@ mod tests {
             "reconstructed data should end with newline"
         );
     }
-
 }

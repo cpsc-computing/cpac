@@ -157,9 +157,12 @@ fn extract_proxifier(text: &str) -> CpacResult<ExtractionResult> {
     }
 
     let line_count = text.lines().count().max(1);
-    #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    let dyn_min_freq =
-        ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
+    let dyn_min_freq = ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
 
     let mut repeated_procs: Vec<(String, usize)> = proc_freq
         .into_iter()
@@ -258,10 +261,7 @@ fn compact_proxifier(text: &str, processes: &[String], endpoints: &[String]) -> 
     compacted
 }
 
-fn get_str_vec(
-    fields: &HashMap<String, serde_json::Value>,
-    key: &str,
-) -> Option<Vec<String>> {
+fn get_str_vec(fields: &HashMap<String, serde_json::Value>, key: &str) -> Option<Vec<String>> {
     fields.get(key).and_then(|v| v.as_array()).map(|arr| {
         arr.iter()
             .filter_map(|v| v.as_str().map(String::from))
@@ -299,6 +299,9 @@ mod tests {
         let domain = ProxifierDomain;
         let data: Vec<u8> = SAMPLE.iter().copied().cycle().take(40_000).collect();
         let result = domain.extract(&data).unwrap();
-        assert!(result.residual.len() < data.len(), "Residual should be smaller");
+        assert!(
+            result.residual.len() < data.len(),
+            "Residual should be smaller"
+        );
     }
 }

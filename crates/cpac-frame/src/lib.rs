@@ -236,7 +236,9 @@ pub fn decode_frame(data: &[u8]) -> CpacResult<(FrameHeader, &[u8])> {
             // The metadata is embedded at the start of the compressed payload;
             // msn_len records its *uncompressed* byte length for the decompressor.
             if data.len() < dag_end {
-                return Err(CpacError::InvalidFrame("truncated DAG descriptor (inline)".into()));
+                return Err(CpacError::InvalidFrame(
+                    "truncated DAG descriptor (inline)".into(),
+                ));
             }
             (Vec::new(), msn_len, dag_end)
         } else {
@@ -355,7 +357,11 @@ mod tests {
         let (header, decoded_payload) = decode_frame(&frame).unwrap();
 
         assert_eq!(header.version, VERSION_CP2);
-        assert_eq!(header.msn_metadata.len(), 70_000, "MSN metadata length truncated");
+        assert_eq!(
+            header.msn_metadata.len(),
+            70_000,
+            "MSN metadata length truncated"
+        );
         assert_eq!(header.msn_metadata, msn);
         assert_eq!(decoded_payload, payload);
     }
@@ -391,7 +397,10 @@ mod tests {
 
         assert_eq!(header.version, VERSION_CP2);
         assert_ne!(header.flags & FLAG_MSN_INLINE, 0);
-        assert!(header.msn_metadata.is_empty(), "no raw blob for inline format");
+        assert!(
+            header.msn_metadata.is_empty(),
+            "no raw blob for inline format"
+        );
         assert_eq!(header.msn_meta_len, msn_meta.len());
         assert_eq!(decoded_payload, combined.as_slice());
 
@@ -409,8 +418,7 @@ mod tests {
         let mut combined = msn_meta.to_vec();
         combined.extend_from_slice(payload);
 
-        let frame =
-            encode_frame_cp2_inline(&combined, Backend::Brotli, 500, dag, msn_meta.len());
+        let frame = encode_frame_cp2_inline(&combined, Backend::Brotli, 500, dag, msn_meta.len());
         let (header, decoded_payload) = decode_frame(&frame).unwrap();
 
         assert_eq!(header.backend, Backend::Brotli);

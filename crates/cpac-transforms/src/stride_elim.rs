@@ -188,12 +188,9 @@ impl TransformNode for StrideElimTransform {
                     metadata[15],
                     metadata[16],
                 ]);
-                let count = u32::from_le_bytes([
-                    metadata[17],
-                    metadata[18],
-                    metadata[19],
-                    metadata[20],
-                ]) as usize;
+                let count =
+                    u32::from_le_bytes([metadata[17], metadata[18], metadata[19], metadata[20]])
+                        as usize;
 
                 if payload.len() < 4 {
                     return Err(CpacError::Transform(
@@ -201,12 +198,8 @@ impl TransformNode for StrideElimTransform {
                     ));
                 }
 
-                let residual_count = u32::from_le_bytes([
-                    payload[0],
-                    payload[1],
-                    payload[2],
-                    payload[3],
-                ]) as usize;
+                let residual_count =
+                    u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
 
                 // Reconstruct the arithmetic sequence
                 let mut values: Vec<i64> = (0..count)

@@ -54,13 +54,10 @@ fn main() {
     }
 
     // CLI overrides
-    let corpus_dir = args
-        .corpus
-        .or(experiment.corpus.take())
-        .unwrap_or_else(|| {
-            eprintln!("No corpus directory specified (use --corpus or set in YAML)");
-            std::process::exit(1);
-        });
+    let corpus_dir = args.corpus.or(experiment.corpus.take()).unwrap_or_else(|| {
+        eprintln!("No corpus directory specified (use --corpus or set in YAML)");
+        std::process::exit(1);
+    });
 
     if !corpus_dir.is_dir() {
         eprintln!("Corpus directory not found: {}", corpus_dir.display());

@@ -119,8 +119,7 @@ pub fn arith_decomp_decode(data: &[u8]) -> CpacResult<Vec<i64>> {
     }
 
     let modulus = u16::from_le_bytes([data[0], data[1]]) as i64;
-    let count =
-        u32::from_le_bytes([data[2], data[3], data[4], data[5]]) as usize;
+    let count = u32::from_le_bytes([data[2], data[3], data[4], data[5]]) as usize;
 
     // Read quotients
     let mut offset = 6;
@@ -297,7 +296,9 @@ mod tests {
         let (encoded, meta) = t.encode(input, &ctx).unwrap();
         let decoded = t.decode(encoded, &meta).unwrap();
         match decoded {
-            CpacType::IntColumn { values: restored, .. } => {
+            CpacType::IntColumn {
+                values: restored, ..
+            } => {
                 assert_eq!(restored, values);
             }
             CpacType::Serial(_) => {

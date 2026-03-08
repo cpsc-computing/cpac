@@ -11,8 +11,18 @@ use std::collections::HashMap;
 fn is_bsd_month(s: &str) -> bool {
     matches!(
         s,
-        "Jan" | "Feb" | "Mar" | "Apr" | "May" | "Jun"
-            | "Jul" | "Aug" | "Sep" | "Oct" | "Nov" | "Dec"
+        "Jan"
+            | "Feb"
+            | "Mar"
+            | "Apr"
+            | "May"
+            | "Jun"
+            | "Jul"
+            | "Aug"
+            | "Sep"
+            | "Oct"
+            | "Nov"
+            | "Dec"
     )
 }
 
@@ -39,8 +49,7 @@ fn strip_pid_suffix(app: &str) -> &str {
 }
 
 const BSD_MONTHS_SYSLOG: &[&str] = &[
-    "Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ",
-    "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec ",
+    "Jan ", "Feb ", "Mar ", "Apr ", "May ", "Jun ", "Jul ", "Aug ", "Sep ", "Oct ", "Nov ", "Dec ",
 ];
 const LOG_LEVELS_SYSLOG: &[&str] = &[" INFO ", " ERROR ", " WARNING ", " DEBUG ", " CRITICAL "];
 
@@ -110,7 +119,11 @@ impl Domain for SyslogDomain {
             .count();
         if bsd_count > 5 {
             // Size gate: very small BSD syslog blocks have too little repetition for MSN benefit.
-            return if data.len() >= MIN_USEFUL_SIZE { 0.85 } else { 0.4 };
+            return if data.len() >= MIN_USEFUL_SIZE {
+                0.85
+            } else {
+                0.4
+            };
         }
 
         // RFC 5424 ISO timestamp: requires digit-T-digit pattern (ISO 8601 separator).
@@ -144,7 +157,11 @@ impl Domain for SyslogDomain {
             })
             .count();
         if openstack_count > 5 {
-            return if data.len() >= MIN_USEFUL_SIZE { 0.75 } else { 0.4 };
+            return if data.len() >= MIN_USEFUL_SIZE {
+                0.75
+            } else {
+                0.4
+            };
         }
 
         // Generic structured log (Hadoop, BGL, HPC, etc.): ISO date + log level, but without a
@@ -180,7 +197,11 @@ impl Domain for SyslogDomain {
         let line_count = text.lines().count().max(1);
         // Dynamic minimum frequency: scales with file size so large diverse files
         // don't over-extract low-frequency tokens.
-        #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_sign_loss,
+            clippy::cast_possible_truncation
+        )]
         let dyn_min_freq =
             ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
 
@@ -229,8 +250,7 @@ impl Domain for SyslogDomain {
         //      (filters out short level tokens like INFO/WARN/ERROR)
         #[allow(clippy::cast_precision_loss)]
         let freq_ok = |count: usize| -> bool {
-            count >= dyn_min_freq
-                && count as f64 / line_count as f64 <= MAX_FREQ_FRACTION
+            count >= dyn_min_freq && count as f64 / line_count as f64 <= MAX_FREQ_FRACTION
         };
 
         // Prefixes (OpenStack-style): no MAX_FREQ_FRACTION cap — the whole point
@@ -386,7 +406,11 @@ impl Domain for SyslogDomain {
             .fields
             .get("prefixes")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let mut reconstructed = std::str::from_utf8(&result.residual)
@@ -416,8 +440,7 @@ mod tests {
     #[test]
     fn syslog_rfc5424_roundtrip() {
         let domain = SyslogDomain;
-        let data =
-            b"<134>1 2021-03-01T12:00:00Z server1 app1 - - msg1\n\
+        let data = b"<134>1 2021-03-01T12:00:00Z server1 app1 - - msg1\n\
 <134>1 2021-03-01T12:00:01Z server1 app1 - - msg2";
         let result = domain.extract(data).unwrap();
         let reconstructed = domain.reconstruct(&result).unwrap();
@@ -431,7 +454,10 @@ mod tests {
         let line = b"Jun 14 15:16:01 host sshd[1234]: authentication failure\n";
         let data: Vec<u8> = line.iter().copied().cycle().take(70_000).collect();
         let confidence = domain.detect(&data, None);
-        assert!(confidence >= 0.8, "BSD syslog large-block confidence={confidence}");
+        assert!(
+            confidence >= 0.8,
+            "BSD syslog large-block confidence={confidence}"
+        );
     }
 
     #[test]
@@ -447,7 +473,10 @@ Jun 14 15:16:05 host sshd[5]: msg\n\
 Jun 14 15:16:06 host sshd[6]: msg\n\
 Jun 14 15:16:07 host sshd[7]: msg\n";
         let confidence = domain.detect(data, None);
-        assert_eq!(confidence, 0.4, "small BSD syslog should be size-gated to 0.4");
+        assert_eq!(
+            confidence, 0.4,
+            "small BSD syslog should be size-gated to 0.4"
+        );
     }
 
     #[test]
@@ -498,11 +527,18 @@ nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.014 25746 INFO nova.osapi
         let line = b"nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.008 25746 INFO nova.osapi_compute.wsgi.server [-] req-abc\n";
         let data: Vec<u8> = line.iter().copied().cycle().take(70_000).collect();
         // Trim to a clean line boundary.
-        let end = data.iter().rposition(|&b| b == b'\n').map(|p| p + 1).unwrap_or(data.len());
+        let end = data
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map(|p| p + 1)
+            .unwrap_or(data.len());
         let data = &data[..end];
 
         let confidence = domain.detect(data, None);
-        assert!(confidence >= 0.75, "OpenStack large block confidence={confidence}");
+        assert!(
+            confidence >= 0.75,
+            "OpenStack large block confidence={confidence}"
+        );
 
         let result = domain.extract(data).unwrap();
         // Prefix should have been extracted — residual must be shorter.
@@ -513,7 +549,11 @@ nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.014 25746 INFO nova.osapi
             data.len()
         );
         let reconstructed = domain.reconstruct(&result).unwrap();
-        assert_eq!(data, reconstructed.as_slice(), "OpenStack roundtrip mismatch");
+        assert_eq!(
+            data,
+            reconstructed.as_slice(),
+            "OpenStack roundtrip mismatch"
+        );
     }
 
     #[test]
@@ -521,7 +561,8 @@ nova-api.log.1.2017-05-16_13:53:08 2017-05-16 00:00:00.014 25746 INFO nova.osapi
         // Hadoop-style logs (ISO date + log level, no .log prefix) must NOT trigger MSN
         // (confidence < 0.5) to avoid the -0.57x regression observed on Hadoop_2k.log.
         let domain = SyslogDomain;
-        let data = b"2015-10-17 15:37:28,955 INFO org.apache.hadoop.mapred.MapTask: Processing split\n\
+        let data =
+            b"2015-10-17 15:37:28,955 INFO org.apache.hadoop.mapred.MapTask: Processing split\n\
 2015-10-17 15:37:29,001 INFO org.apache.hadoop.mapred.MapTask: Map output\n\
 2015-10-17 15:37:29,100 WARNING org.apache.hadoop.ipc.Server: Error processing\n\
 2015-10-17 15:37:29,200 INFO org.apache.hadoop.mapred.MapTask: Done\n\

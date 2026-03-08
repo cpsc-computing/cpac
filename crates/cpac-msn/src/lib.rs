@@ -119,11 +119,7 @@ impl MsnMetadata {
 /// extension-based domain detection (e.g. passing `"events.jsonl"` enables
 /// JSONL-specific detection before content probing). Pass `None` for
 /// content-only detection.
-pub fn extract(
-    data: &[u8],
-    filename: Option<&str>,
-    min_confidence: f64,
-) -> CpacResult<MsnResult> {
+pub fn extract(data: &[u8], filename: Option<&str>, min_confidence: f64) -> CpacResult<MsnResult> {
     let registry = global_registry();
 
     let detected = registry.auto_detect(data, filename, min_confidence);
@@ -251,10 +247,10 @@ pub fn extract_with_metadata(data: &[u8], metadata: &MsnMetadata) -> CpacResult<
 /// Returns [`cpac_types::CpacError::CompressFailed`] if `MessagePack` serialization fails.
 pub fn encode_metadata_compact(meta: &MsnMetadata) -> CpacResult<Vec<u8>> {
     let mut out = vec![0x01u8]; // discriminator: 0x01 = MessagePack
-    // Use named (map) format so absent `skip_serializing` fields are handled
-    // gracefully by `#[serde(default)]` on the decode side.  The positional
-    // (array) format produced by `to_vec` would mis-align when fields in the
-    // middle of the struct are skipped.
+                                // Use named (map) format so absent `skip_serializing` fields are handled
+                                // gracefully by `#[serde(default)]` on the decode side.  The positional
+                                // (array) format produced by `to_vec` would mis-align when fields in the
+                                // middle of the struct are skipped.
     let msgpack = rmp_serde::to_vec_named(meta)
         .map_err(|e| cpac_types::CpacError::CompressFailed(format!("MSN metadata encode: {e}")))?;
     out.extend_from_slice(&msgpack);

@@ -117,17 +117,17 @@ impl TransformNode for PredictTransform {
                     return Ok(CpacType::Serial(residuals));
                 }
 
-                let predictor_id = cpac_predict::PredictorId::from_u8(metadata[0]).ok_or_else(
-                    || CpacError::Transform(format!("predict: unknown predictor id {}", metadata[0])),
-                )?;
+                let predictor_id =
+                    cpac_predict::PredictorId::from_u8(metadata[0]).ok_or_else(|| {
+                        CpacError::Transform(format!(
+                            "predict: unknown predictor id {}",
+                            metadata[0]
+                        ))
+                    })?;
 
                 let decoded = match predictor_id {
-                    cpac_predict::PredictorId::Delta1 => {
-                        cpac_predict::decode_delta1(&residuals)
-                    }
-                    cpac_predict::PredictorId::Delta2 => {
-                        cpac_predict::decode_delta2(&residuals)
-                    }
+                    cpac_predict::PredictorId::Delta1 => cpac_predict::decode_delta1(&residuals),
+                    cpac_predict::PredictorId::Delta2 => cpac_predict::decode_delta2(&residuals),
                     cpac_predict::PredictorId::Context2 => {
                         if metadata.len() < 1 + 65536 {
                             return Err(CpacError::Transform(

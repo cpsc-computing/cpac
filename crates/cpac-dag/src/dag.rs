@@ -275,7 +275,11 @@ mod tests {
         // Monotonic stride-1 int column should get delta + zigzag + range_pack
         assert!(names.contains(&"delta"), "expected delta in {:?}", names);
         assert!(names.contains(&"zigzag"), "expected zigzag in {:?}", names);
-        assert!(names.contains(&"range_pack"), "expected range_pack in {:?}", names);
+        assert!(
+            names.contains(&"range_pack"),
+            "expected range_pack in {:?}",
+            names
+        );
     }
 
     #[test]

@@ -145,9 +145,7 @@ impl TransformNode for ConstElimTransform {
 
                 let bitmap_bytes = original_len.div_ceil(8);
                 if payload.len() < bitmap_bytes + exception_count {
-                    return Err(CpacError::Transform(
-                        "const_elim: payload too short".into(),
-                    ));
+                    return Err(CpacError::Transform("const_elim: payload too short".into()));
                 }
 
                 let bitmap = &payload[..bitmap_bytes];

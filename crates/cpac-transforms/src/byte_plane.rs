@@ -167,9 +167,7 @@ impl TransformNode for BytePlaneTransform {
         }
         match input {
             CpacType::Serial(data) => detect_byte_plane_width(data).map(|w| w as f64 * 0.8),
-            CpacType::IntColumn {
-                original_width, ..
-            } => {
+            CpacType::IntColumn { original_width, .. } => {
                 if *original_width >= 2 {
                     Some(f64::from(*original_width) * 0.8)
                 } else {

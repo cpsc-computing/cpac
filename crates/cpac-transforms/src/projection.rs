@@ -213,38 +213,28 @@ impl TransformNode for ProjectionTransform {
                 }
 
                 let _version = metadata[0];
-                let original_count =
-                    u16::from_le_bytes([metadata[1], metadata[2]]) as usize;
+                let original_count = u16::from_le_bytes([metadata[1], metadata[2]]) as usize;
                 let row_count =
                     u32::from_le_bytes([metadata[3], metadata[4], metadata[5], metadata[6]])
                         as usize;
 
                 let mut pos = 7;
-                let mut col_specs: Vec<(String, ColSpec)> =
-                    Vec::with_capacity(original_count);
+                let mut col_specs: Vec<(String, ColSpec)> = Vec::with_capacity(original_count);
 
                 for _ in 0..original_count {
                     if pos + 2 > metadata.len() {
-                        return Err(CpacError::Transform(
-                            "projection: truncated meta".into(),
-                        ));
+                        return Err(CpacError::Transform("projection: truncated meta".into()));
                     }
-                    let name_len =
-                        u16::from_le_bytes([metadata[pos], metadata[pos + 1]]) as usize;
+                    let name_len = u16::from_le_bytes([metadata[pos], metadata[pos + 1]]) as usize;
                     pos += 2;
                     if pos + name_len > metadata.len() {
-                        return Err(CpacError::Transform(
-                            "projection: truncated name".into(),
-                        ));
+                        return Err(CpacError::Transform("projection: truncated name".into()));
                     }
-                    let name =
-                        String::from_utf8_lossy(&metadata[pos..pos + name_len]).to_string();
+                    let name = String::from_utf8_lossy(&metadata[pos..pos + name_len]).to_string();
                     pos += name_len;
 
                     if pos >= metadata.len() {
-                        return Err(CpacError::Transform(
-                            "projection: truncated tag".into(),
-                        ));
+                        return Err(CpacError::Transform("projection: truncated tag".into()));
                     }
                     let tag = metadata[pos];
                     pos += 1;
@@ -257,9 +247,8 @@ impl TransformNode for ProjectionTransform {
                                     "projection: truncated Fixed".into(),
                                 ));
                             }
-                            let value = i64::from_le_bytes(
-                                metadata[pos..pos + 8].try_into().unwrap(),
-                            );
+                            let value =
+                                i64::from_le_bytes(metadata[pos..pos + 8].try_into().unwrap());
                             pos += 8;
                             let ow = metadata[pos];
                             pos += 1;
@@ -277,17 +266,14 @@ impl TransformNode for ProjectionTransform {
                                     "projection: truncated DerivedLinear".into(),
                                 ));
                             }
-                            let source_col = u16::from_le_bytes(
-                                [metadata[pos], metadata[pos + 1]],
-                            ) as usize;
+                            let source_col =
+                                u16::from_le_bytes([metadata[pos], metadata[pos + 1]]) as usize;
                             pos += 2;
-                            let multiplier = i64::from_le_bytes(
-                                metadata[pos..pos + 8].try_into().unwrap(),
-                            );
+                            let multiplier =
+                                i64::from_le_bytes(metadata[pos..pos + 8].try_into().unwrap());
                             pos += 8;
-                            let off = i64::from_le_bytes(
-                                metadata[pos..pos + 8].try_into().unwrap(),
-                            );
+                            let off =
+                                i64::from_le_bytes(metadata[pos..pos + 8].try_into().unwrap());
                             pos += 8;
                             let ow = metadata[pos];
                             pos += 1;
@@ -317,9 +303,7 @@ impl TransformNode for ProjectionTransform {
                 for (i, (_, spec)) in col_specs.iter().enumerate() {
                     if matches!(spec, ColSpec::Free) {
                         let col = free_iter.next().ok_or_else(|| {
-                            CpacError::Transform(
-                                "projection: not enough free columns".into(),
-                            )
+                            CpacError::Transform("projection: not enough free columns".into())
                         })?;
                         result[i] = Some(col);
                     }
@@ -373,8 +357,7 @@ impl TransformNode for ProjectionTransform {
                     }
                 }
 
-                let columns: Vec<(String, CpacType)> =
-                    result.into_iter().flatten().collect();
+                let columns: Vec<(String, CpacType)> = result.into_iter().flatten().collect();
 
                 Ok(CpacType::ColumnSet { columns })
             }

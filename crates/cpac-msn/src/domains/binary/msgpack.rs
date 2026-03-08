@@ -136,7 +136,11 @@ impl Domain for MsgPackDomain {
         let keys: Vec<String> = fields
             .get("keys")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         if keys.is_empty() {

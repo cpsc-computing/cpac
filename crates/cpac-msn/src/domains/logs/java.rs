@@ -95,9 +95,7 @@ impl Domain for JavaLogDomain {
         let classes = get_str_vec(fields, "classes").unwrap_or_default();
         let threads = get_str_vec(fields, "threads").unwrap_or_default();
         let blk_ids = get_str_vec(fields, "blk_ids").unwrap_or_default();
-        let ts_prefix: Option<&str> = fields
-            .get("ts_prefix")
-            .and_then(|v| v.as_str());
+        let ts_prefix: Option<&str> = fields.get("ts_prefix").and_then(|v| v.as_str());
 
         if classes.is_empty() && threads.is_empty() && ts_prefix.is_none() && blk_ids.is_empty() {
             return extract_java(text);
@@ -256,12 +254,14 @@ fn extract_class_token(line: &str) -> Option<&str> {
             continue;
         }
         // Find word start: scan backwards for space or ']'.
-        let word_start = line[..i]
-            .rfind([' ', ']'])
-            .map_or(0, |p| p + 1);
+        let word_start = line[..i].rfind([' ', ']']).map_or(0, |p| p + 1);
         let token = &line[word_start..i];
         // Valid class token: contains '.', long enough, no embedded ':' or '/'.
-        if token.len() >= MIN_TOKEN_LEN && token.contains('.') && !token.contains(':') && !token.contains('/') {
+        if token.len() >= MIN_TOKEN_LEN
+            && token.contains('.')
+            && !token.contains(':')
+            && !token.contains('/')
+        {
             return Some(token);
         }
         // Not valid — keep scanning (message body may have other ": " pairs).
@@ -294,11 +294,18 @@ fn extract_java(text: &str) -> CpacResult<ExtractionResult> {
     let line_count = text.lines().count().max(1);
     // Minimum number of timestamped lines required before we extract a ts_prefix.
     // Use the same dyn_min_freq floor so tiny blocks don’t get a spurious prefix.
-    #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
     let ts_min_lines = ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
-    #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    let dyn_min_freq =
-        ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
+    let dyn_min_freq = ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
 
     // -- Class token selection --
     // Keep tokens that pass both length and frequency thresholds.
@@ -506,8 +513,11 @@ fn timestamp_prefix_len(line: &str) -> usize {
         return 0;
     }
     // Must start with 4 digits (year or compact date prefix).
-    if !b[0].is_ascii_digit() || !b[1].is_ascii_digit()
-        || !b[2].is_ascii_digit() || !b[3].is_ascii_digit() {
+    if !b[0].is_ascii_digit()
+        || !b[1].is_ascii_digit()
+        || !b[2].is_ascii_digit()
+        || !b[3].is_ascii_digit()
+    {
         return 0;
     }
     // Next char must be a known date separator.
@@ -519,9 +529,7 @@ fn timestamp_prefix_len(line: &str) -> usize {
     let mut end = 0usize;
     let mut date_time_sep_seen = false;
     for (i, &c) in b.iter().enumerate().take(24) {
-        if c.is_ascii_digit() || c == b'-' || c == b'/' || c == b':'
-            || c == b'.' || c == b','
-        {
+        if c.is_ascii_digit() || c == b'-' || c == b'/' || c == b':' || c == b'.' || c == b',' {
             end = i + 1;
         } else if (c == b' ' || c == b'T') && !date_time_sep_seen && i >= 6 {
             // One space/T separating date from time is allowed once.
@@ -531,7 +539,11 @@ fn timestamp_prefix_len(line: &str) -> usize {
             break;
         }
     }
-    if end >= 10 { end } else { 0 }
+    if end >= 10 {
+        end
+    } else {
+        0
+    }
 }
 
 /// Find the longest common prefix shared by all leading timestamps in `text`.
@@ -626,10 +638,7 @@ fn extract_blk_ids(line: &str) -> Vec<&str> {
     result
 }
 
-fn get_str_vec(
-    fields: &HashMap<String, serde_json::Value>,
-    key: &str,
-) -> CpacResult<Vec<String>> {
+fn get_str_vec(fields: &HashMap<String, serde_json::Value>, key: &str) -> CpacResult<Vec<String>> {
     match fields.get(key) {
         Some(serde_json::Value::Array(arr)) => Ok(arr
             .iter()
@@ -657,7 +666,8 @@ mod tests {
     #[test]
     fn java_detect_spark() {
         let domain = JavaLogDomain;
-        let line = b"17/06/09 20:10:40 INFO spark.SecurityManager: Changing view acls to: yarn,curi\n";
+        let line =
+            b"17/06/09 20:10:40 INFO spark.SecurityManager: Changing view acls to: yarn,curi\n";
         let data: Vec<u8> = line.iter().copied().cycle().take(40_000).collect();
         let conf = domain.detect(&data, None);
         assert!(conf >= 0.8, "Spark detection confidence={conf}");
@@ -691,7 +701,8 @@ mod tests {
         // 16 lines with 4 different FQCNs, each appearing 4 times (25% ≤ MAX_FREQ_FRACTION).
         // All 4 classes pass the frequency filter and the savings gate → residual shrinks.
         let domain = JavaLogDomain;
-        let data = b"2015-10-18 18:01:47 INFO [t] org.apache.hadoop.mapreduce.v2.app.MRAppMaster: msg a\n\
+        let data =
+            b"2015-10-18 18:01:47 INFO [t] org.apache.hadoop.mapreduce.v2.app.MRAppMaster: msg a\n\
 2015-10-18 18:01:48 INFO [t] org.apache.hadoop.yarn.event.AsyncDispatcher: msg b\n\
 2015-10-18 18:01:49 INFO [t] org.apache.hadoop.mapreduce.lib.output.FileOutputCommitter: msg c\n\
 2015-10-18 18:01:50 INFO [t] org.apache.hadoop.mapreduce.v2.app.JobHistoryEventHandler: msg d\n\
@@ -719,7 +730,8 @@ mod tests {
     #[test]
     fn java_roundtrip_spark() {
         let domain = JavaLogDomain;
-        let data = b"17/06/09 20:10:40 INFO spark.SecurityManager: Changing view acls to: yarn,curi\n\
+        let data =
+            b"17/06/09 20:10:40 INFO spark.SecurityManager: Changing view acls to: yarn,curi\n\
 17/06/09 20:10:40 INFO spark.SecurityManager: Changing modify acls to: yarn,curi\n\
 17/06/09 20:10:41 INFO spark.SecurityManager: SecurityManager: authentication disabled\n\
 17/06/09 20:10:41 INFO spark.SecurityManager: Changing view acls to: yarn,curi\n";
@@ -767,7 +779,10 @@ mod tests {
             Some(serde_json::Value::Array(arr)) => arr.len(),
             _ => 0,
         };
-        assert!(thread_count > 0, "Expected thread names to be extracted, got 0");
+        assert!(
+            thread_count > 0,
+            "Expected thread names to be extracted, got 0"
+        );
         assert!(
             result.residual.len() < data.len(),
             "Thread extraction should shrink residual: {} >= {}",
@@ -775,7 +790,11 @@ mod tests {
             data.len()
         );
         let reconstructed = domain.reconstruct(&result).unwrap();
-        assert_eq!(data.as_bytes(), reconstructed.as_slice(), "Thread roundtrip mismatch");
+        assert_eq!(
+            data.as_bytes(),
+            reconstructed.as_slice(),
+            "Thread roundtrip mismatch"
+        );
     }
 
     #[test]
@@ -787,16 +806,25 @@ mod tests {
         let data: Vec<u8> = line.iter().copied().cycle().take(40_000).collect();
         let result = domain.extract(&data).unwrap();
         // Block ID must be extracted.
-        let blk_count = result.fields.get("blk_ids")
+        let blk_count = result
+            .fields
+            .get("blk_ids")
             .and_then(|v| v.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
         assert!(blk_count > 0, "Expected blk_ids to be extracted");
         // Residual must be smaller than input.
-        assert!(result.residual.len() < data.len(), "blk_id extraction should shrink residual");
+        assert!(
+            result.residual.len() < data.len(),
+            "blk_id extraction should shrink residual"
+        );
         // Roundtrip must be lossless.
         let reconstructed = domain.reconstruct(&result).unwrap();
-        assert_eq!(data.as_slice(), reconstructed.as_slice(), "HDFS blk_id roundtrip mismatch");
+        assert_eq!(
+            data.as_slice(),
+            reconstructed.as_slice(),
+            "HDFS blk_id roundtrip mismatch"
+        );
     }
 
     #[test]
@@ -830,8 +858,14 @@ mod tests {
             "2015-10-18 18:02:00 INFO [AsyncDispatcher event handler] org.apache.hadoop.yarn.event.AsyncDispatcher: new msg\n",
             "2015-10-18 18:02:01 INFO [RMCommunicator Allocator] org.apache.hadoop.yarn.server.resourcemanager.RMCommunicator: update\n",
         );
-        let result2 = domain.extract_with_fields(block2.as_bytes(), &result1.fields).unwrap();
+        let result2 = domain
+            .extract_with_fields(block2.as_bytes(), &result1.fields)
+            .unwrap();
         let reconstructed = domain.reconstruct(&result2).unwrap();
-        assert_eq!(block2.as_bytes(), reconstructed.as_slice(), "Thread streaming roundtrip mismatch");
+        assert_eq!(
+            block2.as_bytes(),
+            reconstructed.as_slice(),
+            "Thread streaming roundtrip mismatch"
+        );
     }
 }

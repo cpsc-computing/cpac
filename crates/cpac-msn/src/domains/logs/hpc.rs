@@ -85,8 +85,11 @@ impl Domain for HpcLogDomain {
             .and_then(|v| v.as_array())
             .is_some_and(|a| !a.is_empty());
 
-        if subsystems.is_empty() && events.is_empty() && nodes.is_empty()
-            && tids.is_empty() && !has_epochs
+        if subsystems.is_empty()
+            && events.is_empty()
+            && nodes.is_empty()
+            && tids.is_empty()
+            && !has_epochs
         {
             return extract_hpc(text);
         }
@@ -136,7 +139,8 @@ impl Domain for HpcLogDomain {
             .unwrap_or_default();
 
         let mut reconstructed = std::str::from_utf8(&result.residual)
-            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?            .to_string();
+            .map_err(|e| CpacError::DecompressFailed(format!("UTF-8 decode: {e}")))?
+            .to_string();
 
         // Restore epochs first (positional replacement).
         if !epoch_deltas.is_empty() {
@@ -229,9 +233,12 @@ fn extract_hpc(text: &str) -> CpacResult<ExtractionResult> {
     }
 
     let line_count = text.lines().count().max(1);
-    #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    let dyn_min_freq =
-        ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
+    let dyn_min_freq = ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
 
     let mut repeated_nodes: Vec<(String, usize)> = node_freq
         .into_iter()
@@ -313,7 +320,13 @@ fn extract_hpc(text: &str) -> CpacResult<ExtractionResult> {
     } else {
         text.to_string()
     };
-    let compacted = compact_hpc(&epoch_replaced, &sub_names, &ev_names, &node_names, &tid_names);
+    let compacted = compact_hpc(
+        &epoch_replaced,
+        &sub_names,
+        &ev_names,
+        &node_names,
+        &tid_names,
+    );
 
     let mut fields = HashMap::new();
     fields.insert(
@@ -398,8 +411,7 @@ fn compact_hpc(
                 .map(|(i, e)| (e.clone(), format!("@V{i}"))),
         )
         .chain(
-            tids
-                .iter()
+            tids.iter()
                 .enumerate()
                 .map(|(i, t)| (t.clone(), format!("@F{i}"))),
         )
@@ -501,9 +513,7 @@ fn restore_hpc_epochs_in_text(text: &str, deltas: &[i64]) -> CpacResult<String> 
         let parts: Vec<&str> = line.splitn(6, ' ').collect();
         if parts.len() >= 6 && parts[4] == "@E" {
             let epoch = epoch_iter.next().ok_or_else(|| {
-                CpacError::DecompressFailed(
-                    "HPC: not enough epoch_deltas to reconstruct".into(),
-                )
+                CpacError::DecompressFailed("HPC: not enough epoch_deltas to reconstruct".into())
             })?;
             out.push_str(parts[0]);
             out.push(' ');
@@ -527,10 +537,7 @@ fn restore_hpc_epochs_in_text(text: &str, deltas: &[i64]) -> CpacResult<String> 
     Ok(out)
 }
 
-fn get_str_vec(
-    fields: &HashMap<String, serde_json::Value>,
-    key: &str,
-) -> Option<Vec<String>> {
+fn get_str_vec(fields: &HashMap<String, serde_json::Value>, key: &str) -> Option<Vec<String>> {
     fields.get(key).and_then(|v| v.as_array()).map(|arr| {
         arr.iter()
             .filter_map(|v| v.as_str().map(String::from))
@@ -568,7 +575,10 @@ mod tests {
         let domain = HpcLogDomain;
         let data: Vec<u8> = SAMPLE.iter().copied().cycle().take(20_000).collect();
         let result = domain.extract(&data).unwrap();
-        assert!(result.residual.len() < data.len(), "Residual should be smaller");
+        assert!(
+            result.residual.len() < data.len(),
+            "Residual should be smaller"
+        );
     }
 
     #[test]
@@ -576,13 +586,19 @@ mod tests {
         let domain = HpcLogDomain;
         let data: Vec<u8> = SAMPLE.iter().copied().cycle().take(20_000).collect();
         let result = domain.extract(&data).unwrap();
-        let deltas = result.fields.get("epoch_deltas")
+        let deltas = result
+            .fields
+            .get("epoch_deltas")
             .and_then(|v| v.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
         assert!(deltas > 0, "Expected epoch_deltas to be stored, got 0");
         let reconstructed = domain.reconstruct(&result).unwrap();
-        assert_eq!(data.as_slice(), reconstructed.as_slice(), "HPC epoch roundtrip mismatch");
+        assert_eq!(
+            data.as_slice(),
+            reconstructed.as_slice(),
+            "HPC epoch roundtrip mismatch"
+        );
     }
 
     #[test]
@@ -591,14 +607,20 @@ mod tests {
         // 20k of the sample gives enough repetition for tid extraction.
         let data: Vec<u8> = SAMPLE.iter().copied().cycle().take(20_000).collect();
         let result = domain.extract(&data).unwrap();
-        let tid_count = result.fields.get("tids")
+        let tid_count = result
+            .fields
+            .get("tids")
             .and_then(|v| v.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
         // At least some TIDs should be extracted from the repeated sample.
         assert!(tid_count > 0, "Expected TIDs to be extracted, got 0");
         let reconstructed = domain.reconstruct(&result).unwrap();
-        assert_eq!(data.as_slice(), reconstructed.as_slice(), "HPC TID roundtrip mismatch");
+        assert_eq!(
+            data.as_slice(),
+            reconstructed.as_slice(),
+            "HPC TID roundtrip mismatch"
+        );
     }
 
     #[test]
@@ -607,10 +629,15 @@ mod tests {
         let block1: Vec<u8> = SAMPLE.iter().copied().cycle().take(20_000).collect();
         let result1 = domain.extract(&block1).unwrap();
         // block2: same structure, different epoch values
-        let block2 = b"134681 node-246 unix.hw state_change.unavailable 1090000000 1 another event\n\
+        let block2 =
+            b"134681 node-246 unix.hw state_change.unavailable 1090000000 1 another event\n\
 350766 node-109 unix.hw state_change.unavailable 1090000010 1 another event\n";
         let result2 = domain.extract_with_fields(block2, &result1.fields).unwrap();
         let reconstructed = domain.reconstruct(&result2).unwrap();
-        assert_eq!(block2.as_slice(), reconstructed.as_slice(), "HPC streaming roundtrip mismatch");
+        assert_eq!(
+            block2.as_slice(),
+            reconstructed.as_slice(),
+            "HPC streaming roundtrip mismatch"
+        );
     }
 }

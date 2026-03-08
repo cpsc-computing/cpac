@@ -143,8 +143,7 @@ fn decode_diffs(normalized: &[u8], metadata: &[u8]) -> CpacResult<Vec<u8>> {
             metadata[offset + 3],
         ]) as usize;
         offset += 4;
-        let removed_len =
-            u16::from_le_bytes([metadata[offset], metadata[offset + 1]]) as usize;
+        let removed_len = u16::from_le_bytes([metadata[offset], metadata[offset + 1]]) as usize;
         offset += 2;
         if offset + removed_len > metadata.len() {
             return Err(CpacError::Transform(

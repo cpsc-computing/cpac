@@ -100,9 +100,7 @@ fn classify_byte(b: u8, ctx: &ClassifyContext) -> ByteClass {
         return ByteClass::Numeric;
     }
     // Decimal point, sign, or exponent marker adjacent to digits
-    if matches!(b, b'.' | b'+' | b'-' | b'e' | b'E')
-        && ctx.prev_byte.is_ascii_digit()
-    {
+    if matches!(b, b'.' | b'+' | b'-' | b'e' | b'E') && ctx.prev_byte.is_ascii_digit() {
         return ByteClass::Numeric;
     }
     // Hex markers
@@ -266,8 +264,7 @@ pub fn deserialize_partition(data: &[u8]) -> cpac_types::CpacResult<PartitionRes
         ));
     }
 
-    let num_runs =
-        u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let num_runs = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
     let mut offset = 4;
 
     let mut position_map = Vec::with_capacity(num_runs);

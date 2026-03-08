@@ -175,7 +175,11 @@ impl Domain for BglLogDomain {
             .fields
             .get("datetime_micros")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as u32))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let mut reconstructed = std::str::from_utf8(&result.residual)
@@ -256,9 +260,7 @@ fn extract_bgl(text: &str) -> CpacResult<ExtractionResult> {
         }
         // For BGL, field[5] is the same node ID again.
         if let Some(node2) = parts.get(5) {
-            if node2.len() >= MIN_TOKEN_LEN
-                && parts.get(3).is_some_and(|n| *n != *node2)
-            {
+            if node2.len() >= MIN_TOKEN_LEN && parts.get(3).is_some_and(|n| *n != *node2) {
                 // Different from field[3] — treat as separate node entry.
                 *node_freq.entry(node2.to_string()).or_insert(0) += 1;
             }
@@ -275,9 +277,12 @@ fn extract_bgl(text: &str) -> CpacResult<ExtractionResult> {
     }
 
     let line_count = text.lines().count().max(1);
-    #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    let dyn_min_freq =
-        ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
+    let dyn_min_freq = ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
 
     let mut repeated_nodes: Vec<(String, usize)> = node_freq
         .into_iter()
@@ -327,8 +332,14 @@ fn extract_bgl(text: &str) -> CpacResult<ExtractionResult> {
         f.insert("nodes".to_string(), serde_json::Value::Array(vec![]));
         f.insert("categories".to_string(), serde_json::Value::Array(vec![]));
         f.insert("epoch_deltas".to_string(), serde_json::Value::Array(vec![]));
-        f.insert("datetime_tz".to_string(), serde_json::Value::Number(serde_json::Number::from(0i64)));
-        f.insert("datetime_micros".to_string(), serde_json::Value::Array(vec![]));
+        f.insert(
+            "datetime_tz".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(0i64)),
+        );
+        f.insert(
+            "datetime_micros".to_string(),
+            serde_json::Value::Array(vec![]),
+        );
         return Ok(ExtractionResult {
             fields: f,
             residual: text.as_bytes().to_vec(),
@@ -501,10 +512,7 @@ fn restore_epochs_in_text(text: &str, deltas: &[i64]) -> CpacResult<String> {
     Ok(out)
 }
 
-fn get_str_vec(
-    fields: &HashMap<String, serde_json::Value>,
-    key: &str,
-) -> Option<Vec<String>> {
+fn get_str_vec(fields: &HashMap<String, serde_json::Value>, key: &str) -> Option<Vec<String>> {
     fields.get(key).and_then(|v| v.as_array()).map(|arr| {
         arr.iter()
             .filter_map(|v| v.as_str().map(String::from))
@@ -580,10 +588,7 @@ fn parse_bgl_datetime(s: &str) -> Option<(i64, u32)> {
     } else {
         0
     };
-    let unix_secs = days_since_unix_epoch(year, month, day) * 86400
-        + hour * 3600
-        + min * 60
-        + sec;
+    let unix_secs = days_since_unix_epoch(year, month, day) * 86400 + hour * 3600 + min * 60 + sec;
     Some((unix_secs, micro))
 }
 
@@ -697,11 +702,7 @@ fn replace_datetimes_in_bgl_text(text: &str) -> String {
 /// Restore `@D` datetime placeholders using the epoch already present in field[1]
 /// (epochs must be restored before calling this), the stored TZ offset, and
 /// per-line microseconds.
-fn restore_datetimes_in_bgl_text(
-    text: &str,
-    tz_offset: i64,
-    micros: &[u32],
-) -> CpacResult<String> {
+fn restore_datetimes_in_bgl_text(text: &str, tz_offset: i64, micros: &[u32]) -> CpacResult<String> {
     let mut micro_iter = micros.iter();
     let mut out = String::with_capacity(text.len() + micros.len() * 8);
     let trailing_newline = text.ends_with('\n');
@@ -709,16 +710,13 @@ fn restore_datetimes_in_bgl_text(
         let parts: Vec<&str> = line.splitn(6, ' ').collect();
         // Check: line looks like a BGL line with @D at field[4].
         if parts.len() >= 6 && parts[0] == "-" && parts[4] == "@D" {
-            let epoch: i64 =
-                parts[1].parse().map_err(|_| {
-                    CpacError::DecompressFailed(
-                        "BGL: cannot parse epoch for datetime reconstruction".into(),
-                    )
-                })?;
-            let micro = micro_iter.next().ok_or_else(|| {
+            let epoch: i64 = parts[1].parse().map_err(|_| {
                 CpacError::DecompressFailed(
-                    "BGL: not enough datetime_micros to reconstruct".into(),
+                    "BGL: cannot parse epoch for datetime reconstruction".into(),
                 )
+            })?;
+            let micro = micro_iter.next().ok_or_else(|| {
+                CpacError::DecompressFailed("BGL: not enough datetime_micros to reconstruct".into())
             })?;
             let datetime = format_bgl_datetime(epoch + tz_offset, *micro);
             out.push_str(parts[0]);
@@ -785,14 +783,23 @@ mod tests {
         let data: Vec<u8> = BGL_LINE.iter().copied().cycle().take(40_000).collect();
         let result = domain.extract(&data).unwrap();
         // Microseconds should be extracted.
-        let micro_count = result.fields.get("datetime_micros")
+        let micro_count = result
+            .fields
+            .get("datetime_micros")
             .and_then(|v| v.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
-        assert!(micro_count > 0, "Expected datetime_micros to be stored, got 0");
+        assert!(
+            micro_count > 0,
+            "Expected datetime_micros to be stored, got 0"
+        );
         // Roundtrip must be lossless.
         let reconstructed = domain.reconstruct(&result).unwrap();
-        assert_eq!(data.as_slice(), reconstructed.as_slice(), "BGL datetime roundtrip mismatch");
+        assert_eq!(
+            data.as_slice(),
+            reconstructed.as_slice(),
+            "BGL datetime roundtrip mismatch"
+        );
     }
 
     #[test]
@@ -806,13 +813,19 @@ mod tests {
         let big: Vec<u8> = data.iter().copied().cycle().take(40_000).collect();
         let result = domain.extract(&big).unwrap();
         // Epoch deltas should be stored.
-        let deltas = result.fields.get("epoch_deltas")
+        let deltas = result
+            .fields
+            .get("epoch_deltas")
             .and_then(|v| v.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
         assert!(deltas > 0, "Expected epoch_deltas to be stored");
         // Roundtrip must be lossless.
         let reconstructed = domain.reconstruct(&result).unwrap();
-        assert_eq!(big.as_slice(), reconstructed.as_slice(), "BGL epoch roundtrip mismatch");
+        assert_eq!(
+            big.as_slice(),
+            reconstructed.as_slice(),
+            "BGL epoch roundtrip mismatch"
+        );
     }
 }

@@ -30,10 +30,10 @@ const NUM_CONTEXTS: usize = 4;
 #[inline]
 fn context_class(b: u8) -> u8 {
     match b {
-        0..=31 => 0,        // control characters
-        32..=95 => 1,       // printable ASCII lower (space, digits, uppercase)
-        96..=127 => 2,      // printable ASCII upper (lowercase, punctuation)
-        128..=255 => 3,     // high bytes
+        0..=31 => 0,    // control characters
+        32..=95 => 1,   // printable ASCII lower (space, digits, uppercase)
+        96..=127 => 2,  // printable ASCII upper (lowercase, punctuation)
+        128..=255 => 3, // high bytes
     }
 }
 
@@ -60,10 +60,7 @@ pub fn context_split_encode(data: &[u8]) -> (Vec<Vec<u8>>, Vec<u8>) {
 }
 
 /// Reconstruct data from context channels and context map.
-pub fn context_split_decode(
-    channels: &[Vec<u8>],
-    context_map: &[u8],
-) -> CpacResult<Vec<u8>> {
+pub fn context_split_decode(channels: &[Vec<u8>], context_map: &[u8]) -> CpacResult<Vec<u8>> {
     let mut channel_pos = [0usize; NUM_CONTEXTS];
     let mut out = Vec::with_capacity(context_map.len());
 
@@ -253,12 +250,12 @@ mod tests {
 
     #[test]
     fn context_classes() {
-        assert_eq!(context_class(0), 0);     // control
-        assert_eq!(context_class(31), 0);    // control
-        assert_eq!(context_class(32), 1);    // space
-        assert_eq!(context_class(b'A'), 1);  // uppercase
-        assert_eq!(context_class(b'a'), 2);  // lowercase
-        assert_eq!(context_class(128), 3);   // high
-        assert_eq!(context_class(255), 3);   // high
+        assert_eq!(context_class(0), 0); // control
+        assert_eq!(context_class(31), 0); // control
+        assert_eq!(context_class(32), 1); // space
+        assert_eq!(context_class(b'A'), 1); // uppercase
+        assert_eq!(context_class(b'a'), 2); // lowercase
+        assert_eq!(context_class(128), 3); // high
+        assert_eq!(context_class(255), 3); // high
     }
 }

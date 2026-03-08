@@ -26,7 +26,9 @@ pub const TRANSFORM_ID: u8 = 16;
 ///
 /// Returns `(sorted_column_set, metadata_bytes)`.
 #[allow(clippy::type_complexity)]
-pub fn row_sort_encode(columns: &[(String, CpacType)]) -> CpacResult<(Vec<(String, CpacType)>, Vec<u8>)> {
+pub fn row_sort_encode(
+    columns: &[(String, CpacType)],
+) -> CpacResult<(Vec<(String, CpacType)>, Vec<u8>)> {
     if columns.is_empty() {
         return Ok((columns.to_vec(), Vec::new()));
     }
@@ -41,9 +43,7 @@ pub fn row_sort_encode(columns: &[(String, CpacType)]) -> CpacResult<(Vec<(Strin
     let (sort_col_idx, _) = columns
         .iter()
         .enumerate()
-        .filter_map(|(i, (_, col))| {
-            column_cardinality(col, row_count).map(|card| (i, card))
-        })
+        .filter_map(|(i, (_, col))| column_cardinality(col, row_count).map(|card| (i, card)))
         .min_by_key(|(_, card)| *card)
         .unwrap_or((0, row_count));
 
@@ -81,11 +81,14 @@ pub fn row_sort_decode(
         return Ok(columns.to_vec());
     }
 
-    let row_count = u32::from_le_bytes([metadata[0], metadata[1], metadata[2], metadata[3]]) as usize;
+    let row_count =
+        u32::from_le_bytes([metadata[0], metadata[1], metadata[2], metadata[3]]) as usize;
     let _sort_col = u16::from_le_bytes([metadata[4], metadata[5]]) as usize;
 
     if metadata.len() < 6 + row_count * 4 {
-        return Err(CpacError::Transform("row_sort: truncated permutation".into()));
+        return Err(CpacError::Transform(
+            "row_sort: truncated permutation".into(),
+        ));
     }
 
     // Read permutation
@@ -131,7 +134,9 @@ fn column_len(col: &CpacType) -> CpacResult<usize> {
         CpacType::IntColumn { values, .. } => Ok(values.len()),
         CpacType::FloatColumn { values, .. } => Ok(values.len()),
         CpacType::StringColumn { values, .. } => Ok(values.len()),
-        _ => Err(CpacError::Transform("row_sort: unsupported column type".into())),
+        _ => Err(CpacError::Transform(
+            "row_sort: unsupported column type".into(),
+        )),
     }
 }
 
@@ -187,11 +192,11 @@ fn apply_permutation(col: &CpacType, perm: &[u32]) -> CpacType {
             values: perm.iter().map(|&i| values[i as usize]).collect(),
             precision: *precision,
         },
-        CpacType::StringColumn { values, total_bytes } => {
-            let new_vals: Vec<String> = perm
-                .iter()
-                .map(|&i| values[i as usize].clone())
-                .collect();
+        CpacType::StringColumn {
+            values,
+            total_bytes,
+        } => {
+            let new_vals: Vec<String> = perm.iter().map(|&i| values[i as usize].clone()).collect();
             CpacType::StringColumn {
                 values: new_vals,
                 total_bytes: *total_bytes,
@@ -309,8 +314,10 @@ mod tests {
         }
 
         let restored = row_sort_decode(&sorted, &meta).unwrap();
-        if let (CpacType::IntColumn { values: orig, .. }, CpacType::IntColumn { values: rest, .. }) =
-            (&columns[1].1, &restored[1].1)
+        if let (
+            CpacType::IntColumn { values: orig, .. },
+            CpacType::IntColumn { values: rest, .. },
+        ) = (&columns[1].1, &restored[1].1)
         {
             assert_eq!(orig, rest, "value column should roundtrip exactly");
         }

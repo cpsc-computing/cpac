@@ -76,11 +76,7 @@ impl Domain for HttpDomain {
             if let Some(colon_pos) = line.find(':') {
                 let name = &line[..colon_pos];
                 // Valid HTTP header names: letters, digits, hyphens only (no spaces).
-                if !name.is_empty()
-                    && name
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '-')
-                {
+                if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
                     *header_freq.entry(name.to_string()).or_insert(0) += 1;
                 }
             }

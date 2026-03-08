@@ -83,9 +83,7 @@ pub fn encode_delta2(data: &[u8]) -> Vec<u8> {
     out.push(data[0]); // literal
     out.push(data[1]); // literal
     for i in 2..data.len() {
-        let predicted = data[i - 1]
-            .wrapping_mul(2)
-            .wrapping_sub(data[i - 2]);
+        let predicted = data[i - 1].wrapping_mul(2).wrapping_sub(data[i - 2]);
         out.push(data[i].wrapping_sub(predicted));
     }
     out
@@ -101,9 +99,7 @@ pub fn decode_delta2(residuals: &[u8]) -> Vec<u8> {
     out.push(residuals[0]);
     out.push(residuals[1]);
     for i in 2..residuals.len() {
-        let predicted = out[i - 1]
-            .wrapping_mul(2)
-            .wrapping_sub(out[i - 2]);
+        let predicted = out[i - 1].wrapping_mul(2).wrapping_sub(out[i - 2]);
         out.push(residuals[i].wrapping_add(predicted));
     }
     out
@@ -249,7 +245,9 @@ mod tests {
 
     #[test]
     fn roundtrip_context2() {
-        let data = b"the quick brown fox jumps over the lazy dog again and again the quick brown fox".to_vec();
+        let data =
+            b"the quick brown fox jumps over the lazy dog again and again the quick brown fox"
+                .to_vec();
         let (encoded, table) = encode_context2(&data);
         let decoded = decode_context2(&encoded, &table);
         assert_eq!(decoded, data);

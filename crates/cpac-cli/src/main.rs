@@ -976,7 +976,11 @@ fn cmd_benchmark(
                     );
                     all_results.push(result);
                 }
-                Err(e) => eprintln!("  Track1({})  ERROR: {}", if enable_msn { "MSN" } else { "SSR" }, e),
+                Err(e) => eprintln!(
+                    "  Track1({})  ERROR: {}",
+                    if enable_msn { "MSN" } else { "SSR" },
+                    e
+                ),
             }
         }
     }
@@ -1478,9 +1482,8 @@ fn cmd_lab(action: LabAction) {
             output,
             stdout,
         } => {
-            let bench_dir = dir.unwrap_or_else(|| {
-                PathBuf::from(".work/benchmarks/transform-study")
-            });
+            let bench_dir =
+                dir.unwrap_or_else(|| PathBuf::from(".work/benchmarks/transform-study"));
             if !bench_dir.is_dir() {
                 eprintln!(
                     "Error: benchmark directory not found: {}",
@@ -1495,7 +1498,11 @@ fn cmd_lab(action: LabAction) {
                 eprintln!("No CSV files found in {}", bench_dir.display());
                 process::exit(1);
             }
-            eprintln!("Reading {} CSV files from {}", csvs.len(), bench_dir.display());
+            eprintln!(
+                "Reading {} CSV files from {}",
+                csvs.len(),
+                bench_dir.display()
+            );
 
             let cal = cpac_lab::calibrate::calibrate(&bench_dir);
             let json = serde_json::to_string_pretty(&cal).unwrap();
@@ -1503,9 +1510,8 @@ fn cmd_lab(action: LabAction) {
             if stdout {
                 println!("{json}");
             } else {
-                let out_path = output.unwrap_or_else(|| {
-                    PathBuf::from(".work/benchmarks/calibration.json")
-                });
+                let out_path =
+                    output.unwrap_or_else(|| PathBuf::from(".work/benchmarks/calibration.json"));
                 if let Some(parent) = out_path.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
@@ -1532,7 +1538,11 @@ fn cmd_lab(action: LabAction) {
                     let o = &tc.overall;
                     println!(
                         "{:<24}  {:>5}  {:>6.1}%  {:>8}  {:>+12}",
-                        name, o.files, o.win_rate * 100.0, o.win_count, o.total_gain_bytes,
+                        name,
+                        o.files,
+                        o.win_rate * 100.0,
+                        o.win_count,
+                        o.total_gain_bytes,
                     );
                 }
             }
@@ -1614,7 +1624,16 @@ fn main() {
             json,
             track1,
             discovery,
-        } => cmd_benchmark(input, iterations, quick, full, skip_baselines, json, track1, discovery),
+        } => cmd_benchmark(
+            input,
+            iterations,
+            quick,
+            full,
+            skip_baselines,
+            json,
+            track1,
+            discovery,
+        ),
         Commands::Analyze { input } => cmd_analyze(input),
         Commands::AutoCas { input, compress } => cmd_auto_cas(input, compress),
         Commands::Encrypt {

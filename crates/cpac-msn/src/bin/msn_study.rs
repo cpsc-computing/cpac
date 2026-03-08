@@ -28,21 +28,18 @@ use std::path::{Path, PathBuf};
 
 /// Extensions we treat as text-like and will pass through MSN analysis.
 const TEXT_EXTENSIONS: &[&str] = &[
-    "log", "txt", "text", "json", "jsonl", "yaml", "yml", "csv", "xml",
-    "html", "htm", "sql", "rtf", "conf", "cnf", "tf", "java", "c", "h",
-    "sh", "bash", "py", "rs", "go", "tex", "sgml", "ps", "eps", "kml",
-    "pl", "f", "unk", "dump", "script", "lsp", "dist", "disabled", "3",
-    "1", "0",
+    "log", "txt", "text", "json", "jsonl", "yaml", "yml", "csv", "xml", "html", "htm", "sql",
+    "rtf", "conf", "cnf", "tf", "java", "c", "h", "sh", "bash", "py", "rs", "go", "tex", "sgml",
+    "ps", "eps", "kml", "pl", "f", "unk", "dump", "script", "lsp", "dist", "disabled", "3", "1",
+    "0",
 ];
 
 /// Extensions that are definitively binary — skip entirely.
 const BINARY_EXTENSIONS: &[&str] = &[
-    "flac", "wav", "mp3", "ogg", "aac", "mp4", "avi", "mkv", "mov",
-    "jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp",
-    "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "pub", "pps",
-    "gz", "zip", "tar", "bz2", "xz", "7z", "rar", "cpac",
-    "bin", "so", "dll", "exe", "obj", "o",
-    "fits", "swf", "kmz", "wp", "hlp", "dbase3",
+    "flac", "wav", "mp3", "ogg", "aac", "mp4", "avi", "mkv", "mov", "jpg", "jpeg", "png", "gif",
+    "bmp", "tiff", "webp", "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "pub", "pps", "gz",
+    "zip", "tar", "bz2", "xz", "7z", "rar", "cpac", "bin", "so", "dll", "exe", "obj", "o", "fits",
+    "swf", "kmz", "wp", "hlp", "dbase3",
 ];
 
 fn is_text_extension(ext: &str) -> bool {
@@ -58,7 +55,10 @@ fn is_binary_extension(ext: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 #[derive(Parser, Debug)]
-#[command(name = "msn_study", about = "MSN exploit study: measure field-level compression ROI")]
+#[command(
+    name = "msn_study",
+    about = "MSN exploit study: measure field-level compression ROI"
+)]
 struct Args {
     /// Corpus directory (defaults to the loghub-2.0 2k benchmark set)
     #[arg(
@@ -104,8 +104,7 @@ struct Args {
 // ---------------------------------------------------------------------------
 
 fn zstd_compress(data: &[u8], level: i32) -> Vec<u8> {
-    zstd::encode_all(std::io::Cursor::new(data), level)
-        .expect("zstd encode failed")
+    zstd::encode_all(std::io::Cursor::new(data), level).expect("zstd encode failed")
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +195,7 @@ fn estimate_residual_removal(key: &str, val: &serde_json::Value) -> Option<usize
 #[derive(Debug)]
 struct FileStudy {
     name: String,
-    rel_dir: String,    // relative directory from corpus root (for grouping)
+    rel_dir: String, // relative directory from corpus root (for grouping)
     extension: String,
     orig_raw: usize,
     z_orig: usize,
@@ -376,7 +375,11 @@ fn print_report(study: &FileStudy) {
     } else {
         0.0
     };
-    let result_str = if net_gain > 0 { "✓ WINS" } else { "✗ HURTS" };
+    let result_str = if net_gain > 0 {
+        "✓ WINS"
+    } else {
+        "✗ HURTS"
+    };
 
     println!("{sep}");
     println!("FILE: {}  ({} B raw)", study.name, study.orig_raw);
@@ -531,7 +534,9 @@ fn print_summary(studies: &[FileStudy]) {
         };
 
         let display_name = if s.name.chars().count() > 33 {
-            let start = s.name.char_indices()
+            let start = s
+                .name
+                .char_indices()
                 .rev()
                 .nth(31)
                 .map(|(i, _)| i)
@@ -543,12 +548,7 @@ fn print_summary(studies: &[FileStudy]) {
 
         println!(
             "{:<34}  {:>8}  {}  {:>7.2}x  {}  {}",
-            display_name,
-            s.z_orig,
-            msn_z_str,
-            comb_ratio,
-            net_str,
-            domain_str
+            display_name, s.z_orig, msn_z_str, comb_ratio, net_str, domain_str
         );
     }
 
@@ -597,11 +597,20 @@ fn print_summary(studies: &[FileStudy]) {
     for ext in &ext_keys {
         let (cnt, applied, z_orig, z_msn) = by_ext[ext];
         let net = z_orig - z_msn;
-        let ratio = if z_msn > 0 { z_orig as f64 / z_msn as f64 } else { 0.0 };
+        let ratio = if z_msn > 0 {
+            z_orig as f64 / z_msn as f64
+        } else {
+            0.0
+        };
         println!(
             "{:<10}  {:>6}  {:>6}  {:>12}  {:>12}  {:>8.3}x  {:>+10}",
             if ext.is_empty() { "(none)" } else { ext },
-            cnt, applied, z_orig, z_msn, ratio, net
+            cnt,
+            applied,
+            z_orig,
+            z_msn,
+            ratio,
+            net
         );
     }
 
@@ -621,7 +630,11 @@ fn print_summary(studies: &[FileStudy]) {
         let e = by_domain.entry(key).or_insert((0, 0, 0));
         e.0 += 1;
         e.1 += s.z_orig as i64;
-        e.2 += if s.applied { s.z_combined as i64 } else { s.z_orig as i64 };
+        e.2 += if s.applied {
+            s.z_combined as i64
+        } else {
+            s.z_orig as i64
+        };
     }
 
     let mut domain_keys: Vec<String> = by_domain.keys().cloned().collect();
@@ -630,7 +643,11 @@ fn print_summary(studies: &[FileStudy]) {
     for dom in &domain_keys {
         let (cnt, z_orig, z_msn) = by_domain[dom];
         let net = z_orig - z_msn;
-        let ratio = if z_msn > 0 { z_orig as f64 / z_msn as f64 } else { 0.0 };
+        let ratio = if z_msn > 0 {
+            z_orig as f64 / z_msn as f64
+        } else {
+            0.0
+        };
         println!(
             "{:<22}  {:>6}  {:>12}  {:>12}  {:>8.3}x  {:>+10}",
             dom, cnt, z_orig, z_msn, ratio, net
@@ -661,7 +678,11 @@ fn print_summary(studies: &[FileStudy]) {
         let e = by_dir.entry(dir).or_insert((0, 0, 0));
         e.0 += 1;
         e.1 += s.z_orig as i64;
-        e.2 += if s.applied { s.z_combined as i64 } else { s.z_orig as i64 };
+        e.2 += if s.applied {
+            s.z_combined as i64
+        } else {
+            s.z_orig as i64
+        };
     }
 
     let mut dir_keys: Vec<String> = by_dir.keys().cloned().collect();
@@ -670,7 +691,11 @@ fn print_summary(studies: &[FileStudy]) {
     for dir in &dir_keys {
         let (cnt, z_orig, z_msn) = by_dir[dir];
         let net = z_orig - z_msn;
-        let ratio = if z_msn > 0 { z_orig as f64 / z_msn as f64 } else { 0.0 };
+        let ratio = if z_msn > 0 {
+            z_orig as f64 / z_msn as f64
+        } else {
+            0.0
+        };
         println!(
             "{:<30}  {:>6}  {:>12}  {:>12}  {:>8.3}x  {:>+10}",
             dir, cnt, z_orig, z_msn, ratio, net
@@ -695,7 +720,9 @@ fn collect_files(
     result: &mut Vec<PathBuf>,
     skipped: &mut Vec<Skipped>,
 ) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
 
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
@@ -775,7 +802,10 @@ fn main() {
     if !args.csv {
         println!("MSN EXPLOIT STUDY");
         println!("Corpus:        {}", args.corpus.display());
-        println!("zstd level:    {}  min_confidence: {:.2}", args.level, args.confidence);
+        println!(
+            "zstd level:    {}  min_confidence: {:.2}",
+            args.level, args.confidence
+        );
         println!("Max file size: {} MB (0=unlimited)", args.max_size_mb);
         println!("Recursive:     {}", !args.no_recursive);
         println!("All types:     {}", args.all_types);
@@ -783,7 +813,8 @@ fn main() {
         if !skipped.is_empty() {
             println!(
                 "{} files skipped (> {} MB):",
-                skipped.len(), args.max_size_mb
+                skipped.len(),
+                args.max_size_mb
             );
             for s in &skipped {
                 println!("  SKIP [{:7.1} MB]  {}", s.size_mb, s.path.display());
@@ -800,7 +831,11 @@ fn main() {
     for (i, path) in paths.iter().enumerate() {
         // Progress to stderr (doesn't pollute stdout/CSV output)
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-        let disp_end = name.char_indices().nth(55).map(|(i, _)| i).unwrap_or(name.len());
+        let disp_end = name
+            .char_indices()
+            .nth(55)
+            .map(|(i, _)| i)
+            .unwrap_or(name.len());
         let display = &name[..disp_end];
         eprint!("\r[{:>5}/{:<5}] {:<55}", i + 1, total, display);
         let _ = std::io::stderr().flush();

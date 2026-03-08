@@ -15,8 +15,8 @@
     clippy::missing_panics_doc
 )]
 
-use std::collections::HashSet;
 use cpac_types::CpacType;
+use std::collections::HashSet;
 
 /// A discovered constraint on a column.
 #[derive(Clone, Debug, PartialEq)]
@@ -652,8 +652,7 @@ pub fn recommend_transforms(constraints: &[Constraint]) -> Vec<TransformRecommen
             Constraint::FloatClustered { .. } => {
                 push_unique(&mut recs, "float_xor", 10, 0.80);
             }
-            Constraint::Sorted { .. }
-            | Constraint::Nullable { .. } => {}
+            Constraint::Sorted { .. } | Constraint::Nullable { .. } => {}
             Constraint::FunctionalDependency { .. } => {
                 push_unique(&mut recs, "projection", 0, 0.85);
             }
@@ -793,7 +792,9 @@ mod tests {
         };
         let cs = analyze_column("id", &data);
         assert!(cs.iter().any(|c| matches!(c, Constraint::Monotonic { .. })));
-        assert!(cs.iter().any(|c| matches!(c, Constraint::Stride { step: 1 })));
+        assert!(cs
+            .iter()
+            .any(|c| matches!(c, Constraint::Stride { step: 1 })));
     }
 
     #[test]
@@ -822,8 +823,12 @@ mod tests {
             total_bytes: 8,
         };
         let cs = analyze_column("status", &data);
-        assert!(cs.iter().any(|c| matches!(c, Constraint::Enumeration { .. })));
-        assert!(cs.iter().any(|c| matches!(c, Constraint::LengthBounded { .. })));
+        assert!(cs
+            .iter()
+            .any(|c| matches!(c, Constraint::Enumeration { .. })));
+        assert!(cs
+            .iter()
+            .any(|c| matches!(c, Constraint::LengthBounded { .. })));
     }
 
     #[test]
@@ -849,7 +854,10 @@ mod tests {
         ];
         let data = CpacType::ColumnSet { columns: cols };
         let cs = analyze_column("root", &data);
-        assert!(cs.len() >= 2, "should have constraints from both sub-columns");
+        assert!(
+            cs.len() >= 2,
+            "should have constraints from both sub-columns"
+        );
     }
 
     // Phase 3.2 tests -------------------------------------------------------
@@ -857,7 +865,9 @@ mod tests {
     #[test]
     fn recommend_monotonic_int() {
         let constraints = vec![
-            Constraint::Monotonic { direction: MonotonicDir::Increasing },
+            Constraint::Monotonic {
+                direction: MonotonicDir::Increasing,
+            },
             Constraint::Range { min: 0, max: 1000 },
         ];
         let recs = recommend_transforms(&constraints);
@@ -869,27 +879,25 @@ mod tests {
 
     #[test]
     fn recommend_enum_vocab() {
-        let constraints = vec![
-            Constraint::Enumeration { values: vec!["A".into(), "B".into(), "C".into()] },
-        ];
+        let constraints = vec![Constraint::Enumeration {
+            values: vec!["A".into(), "B".into(), "C".into()],
+        }];
         let recs = recommend_transforms(&constraints);
         assert!(recs.iter().any(|r| r.name == "vocab"));
     }
 
     #[test]
     fn recommend_rle() {
-        let constraints = vec![
-            Constraint::RunLength { avg_run: 10 },
-        ];
+        let constraints = vec![Constraint::RunLength { avg_run: 10 }];
         let recs = recommend_transforms(&constraints);
         assert!(recs.iter().any(|r| r.name == "rle"));
     }
 
     #[test]
     fn recommend_float_xor() {
-        let constraints = vec![
-            Constraint::XorDeltaBenefit { avg_leading_zeros: 32 },
-        ];
+        let constraints = vec![Constraint::XorDeltaBenefit {
+            avg_leading_zeros: 32,
+        }];
         let recs = recommend_transforms(&constraints);
         let names: Vec<&str> = recs.iter().map(|r| r.name.as_str()).collect();
         assert!(names.contains(&"float_xor"));
@@ -898,9 +906,7 @@ mod tests {
 
     #[test]
     fn recommend_constant() {
-        let constraints = vec![
-            Constraint::Constant { value: "42".into() },
-        ];
+        let constraints = vec![Constraint::Constant { value: "42".into() }];
         let recs = recommend_transforms(&constraints);
         assert!(recs.iter().any(|r| r.name == "const_elim"));
     }
@@ -909,15 +915,24 @@ mod tests {
     fn recommend_chain_order() {
         // vocab (5) < rle (8) < delta (10) < zigzag (20) < range_pack (30)
         let constraints = vec![
-            Constraint::Monotonic { direction: MonotonicDir::Increasing },
+            Constraint::Monotonic {
+                direction: MonotonicDir::Increasing,
+            },
             Constraint::RunLength { avg_run: 5 },
-            Constraint::Enumeration { values: vec!["X".into()] },
+            Constraint::Enumeration {
+                values: vec!["X".into()],
+            },
             Constraint::Range { min: 0, max: 100 },
         ];
         let recs = recommend_transforms(&constraints);
         // Check ordering by priority
         for w in recs.windows(2) {
-            assert!(w[0].priority <= w[1].priority, "{} should come before {}", w[0].name, w[1].name);
+            assert!(
+                w[0].priority <= w[1].priority,
+                "{} should come before {}",
+                w[0].name,
+                w[1].name
+            );
         }
     }
 
@@ -925,7 +940,12 @@ mod tests {
     fn infer_float_monotonic() {
         let vals: Vec<f64> = (0..50).map(|i| i as f64 * 1.5).collect();
         let cs = infer_float_constraints(&vals);
-        assert!(cs.iter().any(|c| matches!(c, Constraint::Monotonic { direction: MonotonicDir::Increasing })));
+        assert!(cs.iter().any(|c| matches!(
+            c,
+            Constraint::Monotonic {
+                direction: MonotonicDir::Increasing
+            }
+        )));
     }
 
     #[test]
@@ -935,7 +955,13 @@ mod tests {
             .map(String::from)
             .collect();
         let cs = infer_string_constraints("col", &vals);
-        assert!(cs.iter().any(|c| matches!(c, Constraint::LengthBounded { min_len: 2, max_len: 5 })));
+        assert!(cs.iter().any(|c| matches!(
+            c,
+            Constraint::LengthBounded {
+                min_len: 2,
+                max_len: 5
+            }
+        )));
     }
 
     // Phase 4 tests ----------------------------------------------------------

@@ -106,17 +106,12 @@ impl TransformNode for BwtChainTransform {
                     return Ok(CpacType::Serial(data));
                 }
                 if metadata.len() < 4 {
-                    return Err(CpacError::Transform(
-                        "bwt_chain: metadata too short".into(),
-                    ));
+                    return Err(CpacError::Transform("bwt_chain: metadata too short".into()));
                 }
 
-                let original_idx = u32::from_le_bytes([
-                    metadata[0],
-                    metadata[1],
-                    metadata[2],
-                    metadata[3],
-                ]) as usize;
+                let original_idx =
+                    u32::from_le_bytes([metadata[0], metadata[1], metadata[2], metadata[3]])
+                        as usize;
 
                 // Step 1: Un-RLE
                 let mtf_data = rle::rle_decode(&data)?;

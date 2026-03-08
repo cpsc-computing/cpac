@@ -546,14 +546,13 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
     // 4. MSN reconstruction.
     //    Inline format: metadata extracted from split above.
     //    Legacy CP2 format: metadata is in header.msn_metadata.
-    let msn_bytes = inline_meta_bytes
-        .or_else(|| {
-            if !header.msn_metadata.is_empty() {
-                Some(header.msn_metadata.clone())
-            } else {
-                None
-            }
-        });
+    let msn_bytes = inline_meta_bytes.or_else(|| {
+        if !header.msn_metadata.is_empty() {
+            Some(header.msn_metadata.clone())
+        } else {
+            None
+        }
+    });
     if let Some(mb) = msn_bytes {
         // Auto-detect encoding: 0x01 prefix = MessagePack (new), '{' prefix = JSON (legacy).
         let msn_metadata = cpac_msn::decode_metadata_compact(&mb)?;
@@ -681,7 +680,10 @@ mod tests {
         };
         let compressed = compress(&data, &config).unwrap();
         let decompressed = decompress(&compressed.data).unwrap();
-        assert_eq!(decompressed.data, data, "smart transforms binary roundtrip failed");
+        assert_eq!(
+            decompressed.data, data,
+            "smart transforms binary roundtrip failed"
+        );
     }
 
     #[test]

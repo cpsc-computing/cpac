@@ -43,7 +43,11 @@ impl Domain for W3cLogDomain {
 
         if has_fields {
             if data.len() >= MIN_USEFUL_SIZE {
-                if has_version { 0.90 } else { 0.80 }
+                if has_version {
+                    0.90
+                } else {
+                    0.80
+                }
             } else {
                 0.35
             }
@@ -94,19 +98,13 @@ impl Domain for W3cLogDomain {
             let key = format!("col_{col_idx}");
             let vals = get_str_vec(&result.fields, &key).unwrap_or_default();
             for (val_idx, val) in vals.iter().enumerate().rev() {
-                reconstructed = reconstructed.replace(
-                    &format!("@W{col_idx}_{val_idx}"),
-                    val,
-                );
+                reconstructed = reconstructed.replace(&format!("@W{col_idx}_{val_idx}"), val);
             }
         }
 
         // Prepend directives that were stripped.
         if !directives.is_empty() {
-            let dir_block: String = directives
-                .iter()
-                .map(|d| format!("{d}\n"))
-                .collect();
+            let dir_block: String = directives.iter().map(|d| format!("{d}\n")).collect();
             reconstructed = dir_block + &reconstructed;
         }
 
@@ -128,10 +126,7 @@ fn extract_w3c(text: &str) -> CpacResult<ExtractionResult> {
         if line.starts_with('#') {
             directives.push(line.to_string());
             if let Some(field_list) = line.strip_prefix("#Fields:") {
-                col_names = field_list
-                    .split_whitespace()
-                    .map(String::from)
-                    .collect();
+                col_names = field_list.split_whitespace().map(String::from).collect();
             }
         } else if !line.trim().is_empty() {
             data_lines.push(line);
@@ -296,10 +291,7 @@ fn compact_w3c(
     result
 }
 
-fn get_str_vec(
-    fields: &HashMap<String, serde_json::Value>,
-    key: &str,
-) -> Option<Vec<String>> {
+fn get_str_vec(fields: &HashMap<String, serde_json::Value>, key: &str) -> Option<Vec<String>> {
     fields.get(key).and_then(|v| v.as_array()).map(|arr| {
         arr.iter()
             .filter_map(|v| v.as_str().map(String::from))

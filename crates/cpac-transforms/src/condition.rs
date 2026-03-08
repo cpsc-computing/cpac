@@ -51,7 +51,10 @@ impl TransformNode for ConditionTransform {
         match input {
             CpacType::Serial(data) if data.len() >= MIN_SIZE => {
                 // Only beneficial for mixed-content data (moderate entropy + text-like)
-                if ctx.entropy_estimate > 2.0 && ctx.entropy_estimate < 7.0 && ctx.ascii_ratio > 0.50 {
+                if ctx.entropy_estimate > 2.0
+                    && ctx.entropy_estimate < 7.0
+                    && ctx.ascii_ratio > 0.50
+                {
                     // Rough heuristic: more entropy variance = more benefit
                     Some((ctx.entropy_estimate / 8.0) * ctx.ascii_ratio * 3.0)
                 } else {
@@ -122,8 +125,8 @@ mod tests {
     #[test]
     fn roundtrip_json() {
         let t = ConditionTransform;
-        let data = br#"{"name": "Alice", "age": 30, "scores": [95, 87, 92], "active": true}"#
-            .repeat(10);
+        let data =
+            br#"{"name": "Alice", "age": 30, "scores": [95, 87, 92], "active": true}"#.repeat(10);
         let ctx = TransformContext {
             entropy_estimate: 4.5,
             ascii_ratio: 1.0,

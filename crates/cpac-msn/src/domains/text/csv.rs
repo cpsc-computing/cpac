@@ -465,13 +465,22 @@ mod tests {
         assert!(domain.detect(b"", Some("data.tsv")) > 0.8);
         // Content detection: requires >=3 columns AND >=10 data rows.
         let few_rows = b"a,b,c\n1,2,3";
-        assert_eq!(domain.detect(few_rows, None), 0.0, "too few rows should not fire");
+        assert_eq!(
+            domain.detect(few_rows, None),
+            0.0,
+            "too few rows should not fire"
+        );
         let many_rows = {
             let mut v: Vec<u8> = b"id,value,status\n".to_vec();
-            for i in 0..10u32 { v.extend_from_slice(format!("{i},{},{i}\n", i * 2).as_bytes()); }
+            for i in 0..10u32 {
+                v.extend_from_slice(format!("{i},{},{i}\n", i * 2).as_bytes());
+            }
             v
         };
-        assert!(domain.detect(&many_rows, None) > 0.6, ">=10 rows with 3 cols should fire");
+        assert!(
+            domain.detect(&many_rows, None) > 0.6,
+            ">=10 rows with 3 cols should fire"
+        );
     }
 
     #[test]

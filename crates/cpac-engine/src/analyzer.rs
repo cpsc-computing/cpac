@@ -98,9 +98,7 @@ pub fn analyze_structure(data: &[u8], filename: Option<&str>) -> StructureProfil
 }
 
 /// Extract typed columns from MSN extraction result.
-fn extract_typed_columns(
-    extraction: &cpac_msn::MsnResult,
-) -> Vec<(String, CpacType)> {
+fn extract_typed_columns(extraction: &cpac_msn::MsnResult) -> Vec<(String, CpacType)> {
     let mut columns = Vec::new();
 
     // Check for int_columns from CSV columnar extraction
@@ -172,9 +170,19 @@ fn load_calibration() -> &'static Option<CalibrationMap> {
         for (name, val) in transforms {
             if let Some(overall) = val.get("overall") {
                 let win_rate = overall.get("win_rate")?.as_f64()?;
-                let avg_gain = overall.get("avg_gain_bytes").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let avg_gain = overall
+                    .get("avg_gain_bytes")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 let files = overall.get("files").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                map.insert(name.clone(), CalibrationEntry { win_rate, avg_gain, files });
+                map.insert(
+                    name.clone(),
+                    CalibrationEntry {
+                        win_rate,
+                        avg_gain,
+                        files,
+                    },
+                );
             }
         }
         Some(map)
@@ -334,8 +342,7 @@ fn estimate_overall_gain(
     let chain_bonus = if chain.is_empty() {
         0.0
     } else {
-        let avg_confidence =
-            chain.iter().map(|r| r.confidence).sum::<f64>() / chain.len() as f64;
+        let avg_confidence = chain.iter().map(|r| r.confidence).sum::<f64>() / chain.len() as f64;
         (avg_confidence * 0.15 + chain.len() as f64 * 0.01).min(0.25)
     };
 
@@ -380,7 +387,9 @@ pub fn format_profile(profile: &StructureProfile) -> String {
         for r in &profile.recommended_chain {
             out.push_str(&format!(
                 "  {} (priority={}, confidence={:.0}%)\n",
-                r.name, r.priority, r.confidence * 100.0,
+                r.name,
+                r.priority,
+                r.confidence * 100.0,
             ));
         }
     }

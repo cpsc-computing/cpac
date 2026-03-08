@@ -178,13 +178,19 @@ fn integration_metadata_compact_smaller_than_json() {
     // Roundtrip: decode compact and verify fields survive.
     let decoded = decode_metadata_compact(&compact).unwrap();
     // `applied` is not serialised — derive it from domain_id presence on decode.
-    assert!(decoded.domain_id.is_some(), "domain_id must survive roundtrip");
+    assert!(
+        decoded.domain_id.is_some(),
+        "domain_id must survive roundtrip"
+    );
     assert_eq!(decoded.domain_id, meta.domain_id);
 
     // Legacy JSON path also works.
     let decoded_json = decode_metadata_compact(&json).unwrap();
     // JSON also skips `applied`, so check domain_id instead.
-    assert!(decoded_json.domain_id.is_some(), "domain_id must survive JSON decode");
+    assert!(
+        decoded_json.domain_id.is_some(),
+        "domain_id must survive JSON decode"
+    );
 }
 
 // ---------------------------------------------------------------------------

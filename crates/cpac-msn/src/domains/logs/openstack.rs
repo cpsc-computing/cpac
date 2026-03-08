@@ -220,9 +220,12 @@ fn extract_openstack(text: &str) -> CpacResult<ExtractionResult> {
     }
 
     let line_count = text.lines().count().max(1);
-    #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-    let dyn_min_freq =
-        ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
+    let dyn_min_freq = ((line_count as f64 * DYN_FREQ_RATIO).round() as usize).max(MIN_FREQUENCY);
 
     // Timestamp prefix: trim to a clean separator boundary, require >= 7 chars.
     let ts_prefix: Option<String> = if ts_count >= dyn_min_freq {
@@ -379,10 +382,7 @@ fn compact_openstack(
     compacted
 }
 
-fn get_str_vec(
-    fields: &HashMap<String, serde_json::Value>,
-    key: &str,
-) -> Option<Vec<String>> {
+fn get_str_vec(fields: &HashMap<String, serde_json::Value>, key: &str) -> Option<Vec<String>> {
     fields.get(key).and_then(|v| v.as_array()).map(|arr| {
         arr.iter()
             .filter_map(|v| v.as_str().map(String::from))
@@ -394,7 +394,8 @@ fn get_str_vec(
 mod tests {
     use super::*;
 
-    const SAMPLE: &[u8] = b"2015-10-25 12:34:56.789 12345 INFO nova.compute.manager [-] Starting instance build\n\
+    const SAMPLE: &[u8] =
+        b"2015-10-25 12:34:56.789 12345 INFO nova.compute.manager [-] Starting instance build\n\
 2015-10-25 12:34:57.001 12345 DEBUG nova.compute.manager [-] Checking instance state\n\
 2015-10-25 12:34:57.234 12346 WARNING nova.scheduler.manager [-] No host found\n\
 2015-10-25 12:34:57.456 12345 INFO nova.compute.manager [-] Instance spawned successfully\n\
@@ -416,7 +417,11 @@ mod tests {
         let data: Vec<u8> = SAMPLE.iter().copied().cycle().take(20_000).collect();
         let result = domain.extract(&data).unwrap();
         let reconstructed = domain.reconstruct(&result).unwrap();
-        assert_eq!(data.as_slice(), reconstructed.as_slice(), "OpenStack roundtrip mismatch");
+        assert_eq!(
+            data.as_slice(),
+            reconstructed.as_slice(),
+            "OpenStack roundtrip mismatch"
+        );
     }
 
     #[test]
@@ -424,12 +429,16 @@ mod tests {
         let domain = OpenStackLogDomain;
         let data: Vec<u8> = SAMPLE.iter().copied().cycle().take(20_000).collect();
         let result = domain.extract(&data).unwrap();
-        let module_count = result.fields.get("modules")
+        let module_count = result
+            .fields
+            .get("modules")
             .and_then(|v| v.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
         assert!(module_count > 0, "Expected modules to be extracted, got 0");
-        let pid_count = result.fields.get("pids")
+        let pid_count = result
+            .fields
+            .get("pids")
             .and_then(|v| v.as_array())
             .map(|a| a.len())
             .unwrap_or(0);
@@ -456,9 +465,7 @@ mod tests {
         let result1 = domain.extract(&block1).unwrap();
         let block2 = b"2015-10-25 12:35:00.000 12345 INFO nova.compute.manager [-] New block\n\
 2015-10-25 12:35:00.001 12346 WARNING nova.scheduler.manager [-] Retry\n";
-        let result2 = domain
-            .extract_with_fields(block2, &result1.fields)
-            .unwrap();
+        let result2 = domain.extract_with_fields(block2, &result1.fields).unwrap();
         let reconstructed = domain.reconstruct(&result2).unwrap();
         assert_eq!(
             block2.as_slice(),

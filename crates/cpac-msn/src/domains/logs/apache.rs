@@ -28,7 +28,6 @@ impl Domain for ApacheDomain {
     }
 
     fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
-
         let text = std::str::from_utf8(data).unwrap_or("");
 
         // Apache error log pattern: "[Day Mon DD HH:MM:SS YYYY] [level] message"
@@ -60,7 +59,8 @@ impl Domain for ApacheDomain {
         // extraction cases.
         if let Some(fname) = filename {
             let fname_lower = fname.to_ascii_lowercase();
-            if (fname_lower.contains("access") || fname_lower.contains("apache")) && data.len() < 100
+            if (fname_lower.contains("access") || fname_lower.contains("apache"))
+                && data.len() < 100
             {
                 return 0.7;
             }
@@ -360,7 +360,10 @@ mod tests {
 [Sun Dec 04 04:47:49 2005] [notice] msg6\n\
 [Mon Dec 05 04:47:50 2005] [notice] msg7\n";
         let confidence = domain.detect(data, None);
-        assert!(confidence >= 0.8, "Apache error log confidence={confidence}");
+        assert!(
+            confidence >= 0.8,
+            "Apache error log confidence={confidence}"
+        );
     }
 
     #[test]
@@ -388,13 +391,20 @@ unicom016.unicom.net - - [01/Jul/1995:00:00:05 -0400] \"GET /shuttle/countdown/ 
         // format overrides where no content is available to analyse.
         let domain = ApacheDomain;
         let confidence = domain.detect(b"", Some("access_log"));
-        assert!(confidence >= 0.7, "access_log filename confidence={confidence}");
+        assert!(
+            confidence >= 0.7,
+            "access_log filename confidence={confidence}"
+        );
         // Case-insensitive: 'Apache' should also match for tiny data.
         let confidence2 = domain.detect(b"", Some("Apache_2k.log"));
-        assert!(confidence2 >= 0.7, "Apache_ filename confidence={confidence2}");
+        assert!(
+            confidence2 >= 0.7,
+            "Apache_ filename confidence={confidence2}"
+        );
         // For large data blocks (>= 100 bytes) the filename hint is ignored;
         // real access log content returns 0.4 (below default min_confidence 0.5).
-        let access_line = b"199.72.81.55 - - [01/Jul/1995:00:00:01 -0400] \"GET /path HTTP/1.0\" 200 1234\n";
+        let access_line =
+            b"199.72.81.55 - - [01/Jul/1995:00:00:01 -0400] \"GET /path HTTP/1.0\" 200 1234\n";
         let large_data: Vec<u8> = access_line.iter().copied().cycle().take(1000).collect();
         let confidence3 = domain.detect(&large_data, Some("access_log"));
         assert!(

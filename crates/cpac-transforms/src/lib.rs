@@ -54,9 +54,9 @@ pub use traits::{TransformContext, TransformNode};
 // Re-export transform structs for DAG use
 pub use arith_decomp::ArithDecompTransform;
 pub use bwt_chain::BwtChainTransform;
+pub use byte_plane::BytePlaneTransform;
 pub use condition::ConditionTransform;
 pub use const_elim::ConstElimTransform;
-pub use byte_plane::BytePlaneTransform;
 pub use context_split::ContextSplitTransform;
 pub use dedup::DedupTransform;
 pub use delta::DeltaTransform;
