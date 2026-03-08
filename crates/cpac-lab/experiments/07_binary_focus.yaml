@@ -1,0 +1,51 @@
+# 07 — Binary data focus: transforms targeting non-text data
+# Isolate binary files from silesia (x-ray, mr, sao, ooffice, mozilla)
+# to get meaningful calibration for binary-targeting transforms.
+# Run with: cargo run --release -p cpac-lab --bin transform_study -- \
+#   -e crates/cpac-lab/experiments/07_binary_focus.yaml \
+#   -c .work/benchdata/silesia --csv
+
+name: binary_focus
+description: >
+  Binary data focus experiment. Targets transforms designed for non-text
+  data: predict (delta/context prediction), byte_plane (plane splitting),
+  const_elim (constant elimination), stride_elim (arithmetic sequence).
+  Also tests chains: predict+byte_plane, predict+delta.
+zstd_level: 3
+max_file_size: 104857600
+group_by: [directory]
+
+trials:
+  - name: baseline
+
+  - name: predict
+    transforms:
+      - name: predict
+
+  - name: byte_plane
+    transforms:
+      - name: byte_plane
+
+  - name: const_elim
+    transforms:
+      - name: const_elim
+
+  - name: stride_elim
+    transforms:
+      - name: stride_elim
+
+  # Chains
+  - name: predict+const_elim
+    transforms:
+      - name: const_elim
+      - name: predict
+
+  - name: predict+byte_plane
+    transforms:
+      - name: predict
+      - name: byte_plane
+
+  - name: const_elim+stride_elim
+    transforms:
+      - name: const_elim
+      - name: stride_elim
