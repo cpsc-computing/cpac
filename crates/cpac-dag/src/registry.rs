@@ -48,6 +48,11 @@ impl TransformRegistry {
         reg.register(Arc::new(cpac_transforms::BwtChainTransform));
         reg.register(Arc::new(cpac_transforms::ContextSplitTransform));
         reg.register(Arc::new(cpac_transforms::ArithDecompTransform));
+        reg.register(Arc::new(cpac_transforms::ConstElimTransform));
+        reg.register(Arc::new(cpac_transforms::StrideElimTransform));
+        reg.register(Arc::new(cpac_transforms::ConditionTransform));
+        reg.register(Arc::new(cpac_transforms::PredictTransform));
+        reg.register(Arc::new(cpac_transforms::ProjectionTransform));
         reg
     }
 
@@ -105,7 +110,7 @@ mod tests {
     #[test]
     fn builtins_loaded() {
         let reg = TransformRegistry::with_builtins();
-        assert_eq!(reg.len(), 20);
+        assert_eq!(reg.len(), 25);
         assert!(reg.get_by_name("delta").is_some());
         assert!(reg.get_by_name("zigzag").is_some());
         assert!(reg.get_by_name("transpose").is_some());

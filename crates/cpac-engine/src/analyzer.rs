@@ -255,6 +255,48 @@ fn recommend_from_ssr(ssr: &SSRResult) -> Vec<TransformRecommendation> {
         });
     }
 
+    // --- Tier 0: DoF elimination (const_elim, stride_elim) ---
+    // These operate on raw Serial and can eliminate entire data regions.
+    // const_elim: effective when >90% of bytes are the same value.
+    if ssr.entropy_estimate < 1.0 && size >= 64 {
+        let confidence = calibrated_confidence("const_elim").unwrap_or(0.95);
+        recs.push(TransformRecommendation {
+            name: "const_elim".to_string(),
+            priority: 1,
+            confidence,
+        });
+    }
+    // stride_elim: effective on structured binary with fixed-width integer sequences.
+    if is_binary && ssr.entropy_estimate < 5.0 && size >= 64 {
+        let confidence = calibrated_confidence("stride_elim").unwrap_or(0.70);
+        recs.push(TransformRecommendation {
+            name: "stride_elim".to_string(),
+            priority: 2,
+            confidence,
+        });
+    }
+
+    // --- Tier 1.5: prediction (sequential correlation) ---
+    // Effective on binary data with temporal patterns (telemetry, counters).
+    if is_binary && ssr.entropy_estimate > 1.0 && ssr.entropy_estimate < 6.0 && size >= 64 {
+        let confidence = calibrated_confidence("predict").unwrap_or(0.55);
+        recs.push(TransformRecommendation {
+            name: "predict".to_string(),
+            priority: 4,
+            confidence,
+        });
+    }
+
+    // --- Tier 1.5: entropy conditioning (mixed-content data) ---
+    if is_text && ssr.entropy_estimate > 2.0 && ssr.entropy_estimate < 7.0 && size >= 256 {
+        let confidence = calibrated_confidence("condition").unwrap_or(0.55);
+        recs.push(TransformRecommendation {
+            name: "condition".to_string(),
+            priority: 3,
+            confidence,
+        });
+    }
+
     // NOTE: The following are deliberately NEVER recommended on raw Serial
     // data based on benchmark evidence:
     // - delta:         always negative on raw bytes (-12.1M silesia, -6.3M enwik8)

@@ -7,3 +7,6 @@ license.workspace = true
 
 [dependencies]
 cpac-types = { workspace = true }
+cpac-cas = { workspace = true }
+cpac-conditioning = { workspace = true }
+cpac-predict = { workspace = true }

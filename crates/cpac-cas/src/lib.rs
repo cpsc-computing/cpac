@@ -47,6 +47,13 @@ pub enum Constraint {
     XorDeltaBenefit { avg_leading_zeros: u32 },
     /// Float column has clustered values (small variance).
     FloatClustered { mean: f64, std_dev: f64 },
+    /// Column is a linear function of another: target = multiplier * source + offset.
+    Algebraic {
+        target: String,
+        source: String,
+        multiplier: i64,
+        offset: i64,
+    },
 }
 
 /// Direction of monotonicity.
@@ -54,6 +61,21 @@ pub enum Constraint {
 pub enum MonotonicDir {
     Increasing,
     Decreasing,
+}
+
+/// Classification of a variable (column) for constraint projection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VarClass {
+    /// Column has a single constant value across all rows.
+    Fixed { value: i64 },
+    /// Column is a linear function of another: Y = multiplier * source + offset.
+    DerivedLinear {
+        source_col: usize,
+        multiplier: i64,
+        offset: i64,
+    },
+    /// Column is independent and must be stored.
+    Free,
 }
 
 /// Result of constraint inference on a dataset.
@@ -254,6 +276,120 @@ pub fn infer_structural_constraints(values: &[i64]) -> Vec<Constraint> {
 }
 
 // ---------------------------------------------------------------------------
+// Cross-column algebraic analysis
+// ---------------------------------------------------------------------------
+
+/// Classify columns as Fixed, Derived, or Free.
+///
+/// Analyzes cross-column relationships to discover which columns can be
+/// eliminated by constraint projection.  Only integer columns are analyzed.
+#[must_use]
+pub fn classify_variables(columns: &[(String, Vec<i64>)]) -> Vec<(String, VarClass)> {
+    let n = columns.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let mut classes: Vec<Option<VarClass>> = vec![None; n];
+
+    // Pass 1: detect constants
+    for (i, (_name, values)) in columns.iter().enumerate() {
+        if values.is_empty() {
+            classes[i] = Some(VarClass::Free);
+            continue;
+        }
+        let first = values[0];
+        if values.iter().all(|&v| v == first) {
+            classes[i] = Some(VarClass::Fixed { value: first });
+        }
+    }
+
+    // Pass 2: detect linear relationships (Y = a*X + b).
+    // Only derive from columns not yet classified (future Free columns).
+    for j in 0..n {
+        if classes[j].is_some() {
+            continue;
+        }
+        let y_vals = &columns[j].1;
+        if y_vals.len() < 2 {
+            continue;
+        }
+        for i in 0..n {
+            if i == j || classes[i].is_some() {
+                continue;
+            }
+            let x_vals = &columns[i].1;
+            if x_vals.len() != y_vals.len() {
+                continue;
+            }
+            if let Some((a, b)) = detect_linear_relation(x_vals, y_vals) {
+                classes[j] = Some(VarClass::DerivedLinear {
+                    source_col: i,
+                    multiplier: a,
+                    offset: b,
+                });
+                break;
+            }
+        }
+    }
+
+    // Pass 3: remaining columns are Free
+    columns
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| {
+            let class = classes[i].take().unwrap_or(VarClass::Free);
+            (name.clone(), class)
+        })
+        .collect()
+}
+
+/// Detect if Y = a*X + b for all corresponding values.
+fn detect_linear_relation(x: &[i64], y: &[i64]) -> Option<(i64, i64)> {
+    if x.len() < 2 || x.len() != y.len() {
+        return None;
+    }
+    let idx0 = 0;
+    let idx1 = (1..x.len()).find(|&i| x[i] != x[idx0])?;
+    let dx = x[idx1] - x[idx0];
+    let dy = y[idx1] - y[idx0];
+    if dx == 0 || dy % dx != 0 {
+        return None;
+    }
+    let a = dy / dx;
+    let b = y[idx0] - a * x[idx0];
+    for (&xi, &yi) in x.iter().zip(y.iter()) {
+        if a.checked_mul(xi).and_then(|ax| ax.checked_add(b)) != Some(yi) {
+            return None;
+        }
+    }
+    Some((a, b))
+}
+
+/// Infer algebraic constraints between integer columns.
+#[must_use]
+pub fn infer_algebraic_constraints(columns: &[(String, Vec<i64>)]) -> Vec<Constraint> {
+    let classes = classify_variables(columns);
+    let mut constraints = Vec::new();
+    for (target_name, class) in &classes {
+        if let VarClass::DerivedLinear {
+            source_col,
+            multiplier,
+            offset,
+        } = class
+        {
+            constraints.push(Constraint::Algebraic {
+                target: target_name.clone(),
+                source: columns[*source_col].0.clone(),
+                multiplier: *multiplier,
+                offset: *offset,
+            });
+        }
+    }
+    constraints
+}
+
+// ---------------------------------------------------------------------------
 // Unified column analyzer (Phase 3.1)
 // ---------------------------------------------------------------------------
 
@@ -299,6 +435,15 @@ pub fn analyze_columns(columns: &[(String, Vec<i64>)]) -> CasAnalysis {
         total_dof += dof;
         total_constrained += cdof;
         all_constraints.push((name.clone(), col_constraints));
+    }
+    // Cross-column algebraic inference
+    let algebraic = infer_algebraic_constraints(columns);
+    for ac in &algebraic {
+        if let Constraint::Algebraic { target, .. } = ac {
+            if let Some(entry) = all_constraints.iter_mut().find(|(name, _)| name == target) {
+                entry.1.push(ac.clone());
+            }
+        }
     }
     let benefit = if total_dof > 0.0 {
         1.0 - total_constrained / total_dof
@@ -432,6 +577,9 @@ pub fn constrained_dof(total_dof: f64, constraints: &[Constraint], values_count:
             Constraint::FloatClustered { .. } => {
                 reduction += total_dof * 0.2;
             }
+            Constraint::Algebraic { .. } => {
+                reduction += total_dof * 0.9;
+            }
         }
     }
     (total_dof - reduction).max(0.0)
@@ -462,7 +610,7 @@ pub fn recommend_transforms(constraints: &[Constraint]) -> Vec<TransformRecommen
 
     for c in constraints {
         match c {
-            Constraint::Stride { .. } | Constraint::Monotonic { .. } => {
+            Constraint::Monotonic { .. } => {
                 // Delta + zigzag are effective on column data (NOT raw Serial).
                 // Confidence based on benchmark: high on IntColumn, 0% on Serial.
                 push_unique(&mut recs, "delta", 10, 0.85);
@@ -486,6 +634,9 @@ pub fn recommend_transforms(constraints: &[Constraint]) -> Vec<TransformRecommen
             Constraint::Constant { .. } => {
                 push_unique(&mut recs, "const_elim", 1, 0.99);
             }
+            Constraint::Stride { .. } => {
+                push_unique(&mut recs, "stride_elim", 2, 0.95);
+            }
             Constraint::Periodic { .. } => {
                 push_unique(&mut recs, "delta", 10, 0.85);
             }
@@ -502,8 +653,13 @@ pub fn recommend_transforms(constraints: &[Constraint]) -> Vec<TransformRecommen
                 push_unique(&mut recs, "float_xor", 10, 0.80);
             }
             Constraint::Sorted { .. }
-            | Constraint::FunctionalDependency { .. }
             | Constraint::Nullable { .. } => {}
+            Constraint::FunctionalDependency { .. } => {
+                push_unique(&mut recs, "projection", 0, 0.85);
+            }
+            Constraint::Algebraic { .. } => {
+                push_unique(&mut recs, "projection", 0, 0.90);
+            }
         }
     }
 
@@ -780,5 +936,69 @@ mod tests {
             .collect();
         let cs = infer_string_constraints("col", &vals);
         assert!(cs.iter().any(|c| matches!(c, Constraint::LengthBounded { min_len: 2, max_len: 5 })));
+    }
+
+    // Phase 4 tests ----------------------------------------------------------
+
+    #[test]
+    fn classify_variables_basic() {
+        let cols = vec![
+            ("id".into(), (0..10i64).collect()),
+            ("constant".into(), vec![42i64; 10]),
+            ("derived".into(), (0..10).map(|i| 3 * i + 7).collect()),
+        ];
+        let classes = classify_variables(&cols);
+        assert_eq!(classes.len(), 3);
+        assert_eq!(classes[0].1, VarClass::Free);
+        assert!(matches!(classes[1].1, VarClass::Fixed { value: 42 }));
+        assert!(matches!(
+            classes[2].1,
+            VarClass::DerivedLinear {
+                source_col: 0,
+                multiplier: 3,
+                offset: 7,
+            }
+        ));
+    }
+
+    #[test]
+    fn infer_algebraic_basic() {
+        let cols = vec![
+            ("x".into(), (0..10i64).collect()),
+            ("y".into(), (0..10).map(|i| 2 * i + 1).collect()),
+        ];
+        let constraints = infer_algebraic_constraints(&cols);
+        assert_eq!(constraints.len(), 1);
+        assert!(matches!(
+            &constraints[0],
+            Constraint::Algebraic {
+                target,
+                source,
+                multiplier: 2,
+                offset: 1,
+            } if target == "y" && source == "x"
+        ));
+    }
+
+    #[test]
+    fn recommend_projection_for_algebraic() {
+        let constraints = vec![Constraint::Algebraic {
+            target: "y".into(),
+            source: "x".into(),
+            multiplier: 2,
+            offset: 1,
+        }];
+        let recs = recommend_transforms(&constraints);
+        assert!(recs.iter().any(|r| r.name == "projection"));
+    }
+
+    #[test]
+    fn classify_all_free() {
+        let cols = vec![
+            ("a".into(), vec![1i64, 5, 3, 9, 2]),
+            ("b".into(), vec![10i64, 20, 30, 40, 50]),
+        ];
+        let classes = classify_variables(&cols);
+        assert!(classes.iter().all(|(_, c)| *c == VarClass::Free));
     }
 }
