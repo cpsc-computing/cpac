@@ -1,0 +1,49 @@
+# 06 — Phase 1-4 constraint-driven transforms
+# Compare new transforms against zstd-only baseline + existing best transforms.
+# Run with: cargo run --release -p cpac-lab --bin transform_study -- \
+#   -e crates/cpac-lab/experiments/06_phase1_4_transforms.yaml \
+#   -c .work/benchdata/silesia --all-types --csv
+
+name: phase1_4_transforms
+description: >
+  Phase 1-4 constraint-driven structural compression transforms.
+  const_elim (constant byte elimination), stride_elim (arithmetic sequence),
+  condition (entropy conditioning), predict (delta/context prediction).
+zstd_level: 3
+max_file_size: 104857600
+group_by: [directory]
+
+trials:
+  - name: baseline
+
+  - name: const_elim
+    transforms:
+      - name: const_elim
+
+  - name: stride_elim
+    transforms:
+      - name: stride_elim
+
+  - name: condition
+    transforms:
+      - name: condition
+
+  - name: predict
+    transforms:
+      - name: predict
+
+  # Chains: combine new transforms with existing winners
+  - name: normalize+predict
+    transforms:
+      - name: normalize
+      - name: predict
+
+  - name: normalize+condition
+    transforms:
+      - name: normalize
+      - name: condition
+
+  - name: const_elim+bwt_chain
+    transforms:
+      - name: const_elim
+      - name: bwt_chain
