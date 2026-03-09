@@ -18,11 +18,11 @@ const GZIP_LEVEL: u32 = 9;
 /// - Fast    → 6  (high throughput, still good ratio)
 /// - Default → 11 (matches the industry brotli-11 baseline so benchmarks are
 ///   a fair measure of CPAC preprocessing value, not encoder gap)
-/// - Best    → 11 (same ceiling; brotli 11 is already max quality)
+/// - High/Best → 11 (same ceiling; brotli 11 is already max quality)
 fn brotli_quality(level: CompressionLevel) -> u32 {
     match level {
         CompressionLevel::Fast => 6,
-        CompressionLevel::Default | CompressionLevel::Best => 11,
+        CompressionLevel::Default | CompressionLevel::High | CompressionLevel::Best => 11,
     }
 }
 
@@ -30,12 +30,14 @@ fn brotli_quality(level: CompressionLevel) -> u32 {
 ///
 /// - Fast    → 1  (fastest, still good ratio)
 /// - Default → 3  (zstd default; best speed/ratio balance)
-/// - Best    → 9  (high ratio at moderate speed cost)
+/// - High    → 12 (batch jobs; ~5-8% better ratio, ~3x slower)
+/// - Best    → 19 (cold storage; maximum compression, ~10x slower)
 fn zstd_level(level: CompressionLevel) -> i32 {
     match level {
         CompressionLevel::Fast => 1,
         CompressionLevel::Default => 3,
-        CompressionLevel::Best => 9,
+        CompressionLevel::High => 12,
+        CompressionLevel::Best => 19,
     }
 }
 

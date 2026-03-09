@@ -13,7 +13,7 @@ mod config;
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
-use cpac_types::{Backend, CompressConfig, CompressionLevel, ResourceConfig};
+use cpac_types::{AccelBackend, Backend, CompressConfig, CompressionLevel, Preset, ResourceConfig};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -94,6 +94,18 @@ enum Commands {
         /// via adaptive trials.
         #[arg(long)]
         smart: bool,
+        /// Named preset: turbo, balanced, maximum, archive.
+        /// Auto-configures level, transforms, MSN, block size, and threading.
+        /// Individual flags (--level, --smart, etc.) override the preset.
+        #[arg(long)]
+        preset: Option<String>,
+        /// Hardware accelerator: auto, software, qat, iaa, gpu, fpga, sve2.
+        #[arg(long, default_value = "auto")]
+        accel: String,
+        /// Pre-trained dictionary (.cpac-dict) for improved compression on
+        /// homogeneous corpora.  Train with `cpac.py train-dict`.
+        #[arg(long)]
+        dict: Option<PathBuf>,
         /// Use incremental streaming compression (bounded memory, large files).
         /// Output uses the CPAC streaming wire format (.cpac-stream).
         #[arg(long)]
@@ -474,6 +486,9 @@ fn cmd_compress(
     msn_domain: Option<String>,
     level: CompressionLevel,
     smart: bool,
+    preset: Option<Preset>,
+    accel: Option<AccelBackend>,
+    dict: Option<PathBuf>,
     streaming: bool,
     stream_block: usize,
 ) {
@@ -483,6 +498,29 @@ fn cmd_compress(
             eprintln!("Error: {e}");
             process::exit(1);
         }
+    });
+
+    // Load dictionary if provided
+    let dictionary: Option<Vec<u8>> = dict.map(|p| {
+        let bytes = std::fs::read(&p).unwrap_or_else(|e| {
+            eprintln!("Error reading dictionary '{}': {e}", p.display());
+            process::exit(1);
+        });
+        // If CPDI format, strip the 37-byte header to get raw zstd dict
+        if bytes.len() > 37 && &bytes[0..4] == b"CPDI" {
+            let size = u32::from_le_bytes([bytes[13], bytes[14], bytes[15], bytes[16]]) as usize;
+            if bytes.len() >= 37 + size {
+                if verbose >= 1 {
+                    eprintln!("Loaded CPAC dictionary: {} bytes", size);
+                }
+                return bytes[37..37 + size].to_vec();
+            }
+        }
+        // Raw zstd dict (no header)
+        if verbose >= 1 {
+            eprintln!("Loaded raw dictionary: {} bytes", bytes.len());
+        }
+        bytes
     });
 
     let resources = build_resources(threads, max_memory);
@@ -503,18 +541,30 @@ fn cmd_compress(
     };
 
     for file_path in &files {
-        let config = CompressConfig {
-            backend,
-            resources: Some(resources.clone()),
-            enable_msn,
-            msn_confidence,
-            msn_domain: msn_domain.clone(),
-            level,
-            enable_smart_transforms: smart,
-            // -vvv enables per-block MSN decision trace to stderr.
-            msn_verbose: verbose >= 3,
-            ..Default::default()
+        // Start from preset (if given) or default config
+        let mut config = if let Some(p) = preset {
+            CompressConfig::from_preset(p)
+        } else {
+            CompressConfig::default()
         };
+        // CLI flags override preset values
+        config.backend = backend;
+        config.resources = Some(resources.clone());
+        config.msn_domain = msn_domain.clone();
+        config.msn_verbose = verbose >= 3;
+        config.accelerator = accel;
+        config.dictionary = dictionary.clone();
+        // Only override preset defaults when user explicitly provided the flag
+        if preset.is_none() || smart {
+            config.enable_smart_transforms = smart || preset.is_none_or(|p| p.smart_transforms());
+        }
+        if preset.is_none() || enable_msn {
+            config.enable_msn = enable_msn || preset.is_some_and(|p| p.msn_enabled());
+        }
+        if preset.is_none() {
+            config.level = level;
+            config.msn_confidence = msn_confidence;
+        }
 
         // Decide whether to use mmap (flag or auto for files > 64 MB)
         let use_mmap = mmap
@@ -1578,6 +1628,9 @@ fn main() {
             msn_domain,
             level,
             smart,
+            preset,
+            accel,
+            dict,
             streaming,
             stream_block,
         } => cmd_compress(
@@ -1596,6 +1649,9 @@ fn main() {
             msn_domain,
             parse_level(&level),
             smart,
+            preset.and_then(|s| Preset::from_str_loose(&s)),
+            AccelBackend::from_str_loose(&accel),
+            dict,
             streaming,
             stream_block,
         ),

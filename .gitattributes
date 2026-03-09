@@ -29,7 +29,7 @@ Makefile text eol=lf
 # Windows-specific files (if needed) - keep CRLF
 *.bat text eol=crlf
 *.cmd text eol=crlf
-*.ps1 text eol=crlf
+*.ps1 text eol=lf
 
 # Binary files - never modify
 *.png binary

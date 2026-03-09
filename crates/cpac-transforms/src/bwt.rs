@@ -4,32 +4,242 @@
 
 use cpac_types::{CpacError, CpacResult};
 
-/// Burrows-Wheeler Transform forward.
+/// Maximum input size for BWT encode (64 MiB).  SA-IS is O(n) time and
+/// O(n) space so this is a memory guard, not an algorithmic limit.
+pub const BWT_MAX_SIZE: usize = 64 << 20;
+
+/// Burrows-Wheeler Transform forward using SA-IS (O(n) time, O(n) space).
 ///
 /// Returns (`transformed_data`, `original_index`).
 pub fn bwt_encode(data: &[u8]) -> CpacResult<(Vec<u8>, usize)> {
     if data.is_empty() {
         return Ok((Vec::new(), 0));
     }
-
     let n = data.len();
+    if n > BWT_MAX_SIZE {
+        return Err(CpacError::Transform(format!(
+            "bwt: input size {n} exceeds limit {BWT_MAX_SIZE}"
+        )));
+    }
 
-    // Build suffix array using simple O(n^2 log n) algorithm
-    // For production, use SA-IS or divsufsort
-    let mut suffixes: Vec<usize> = (0..n).collect();
-    suffixes.sort_by(|&a, &b| data[a..].cmp(&data[b..]));
+    // Build suffix array via SA-IS (Nong/Zhang/Chan 2009)
+    let sa = sa_is(data);
 
-    // Find original position
-    let original_idx = suffixes.iter().position(|&i| i == 0).unwrap();
+    // Find original position (suffix starting at index 0)
+    let original_idx = sa.iter().position(|&i| i == 0).unwrap_or(0);
 
     // Build BWT output (last column of rotation matrix)
     let mut output = Vec::with_capacity(n);
-    for &idx in &suffixes {
+    for &idx in &sa {
         let prev = if idx == 0 { n - 1 } else { idx - 1 };
         output.push(data[prev]);
     }
 
     Ok((output, original_idx))
+}
+
+// ---------------------------------------------------------------------------
+// SA-IS: Suffix Array by Induced Sorting (Nong, Zhang, Chan 2009)
+// ---------------------------------------------------------------------------
+
+/// Classify suffixes as S-type (smaller) or L-type (larger).
+/// Returns a bitvec where `true` = S-type.
+fn classify_sl(text: &[usize], n: usize) -> Vec<bool> {
+    let mut types = vec![false; n];
+    if n == 0 {
+        return types;
+    }
+    types[n - 1] = true; // sentinel is S-type
+    for i in (0..n.saturating_sub(1)).rev() {
+        types[i] = if text[i] < text[i + 1] {
+            true
+        } else if text[i] > text[i + 1] {
+            false
+        } else {
+            types[i + 1]
+        };
+    }
+    types
+}
+
+/// Check if position `i` is a Left-Most S-type (LMS) character.
+#[inline]
+fn is_lms(types: &[bool], i: usize) -> bool {
+    i > 0 && types[i] && !types[i - 1]
+}
+
+/// Get bucket heads or tails for each character.
+fn get_buckets(text: &[usize], n: usize, alpha_size: usize, end: bool) -> Vec<usize> {
+    let mut counts = vec![0usize; alpha_size];
+    for &c in &text[..n] {
+        counts[c] += 1;
+    }
+    let mut buckets = vec![0usize; alpha_size];
+    let mut sum = 0;
+    for i in 0..alpha_size {
+        sum += counts[i];
+        // Empty buckets (counts[i] == 0) use wrapping_sub to avoid underflow;
+        // their indices are never accessed during sorting.
+        buckets[i] = if end {
+            sum.wrapping_sub(1)
+        } else {
+            sum - counts[i]
+        };
+    }
+    buckets
+}
+
+/// Core SA-IS on integer alphabet `[0, alpha_size)`.
+fn sa_is_int(text: &[usize], n: usize, alpha_size: usize) -> Vec<usize> {
+    const EMPTY: usize = usize::MAX;
+    let types = classify_sl(text, n);
+    let mut sa = vec![EMPTY; n];
+
+    // Step 1: place LMS suffixes into their bucket tails
+    let mut tails = get_buckets(text, n, alpha_size, true);
+    for i in (0..n).rev() {
+        if is_lms(&types, i) {
+            sa[tails[text[i]]] = i;
+            tails[text[i]] = tails[text[i]].wrapping_sub(1);
+        }
+    }
+
+    // Step 2: induce L-type suffixes from bucket heads
+    let mut heads = get_buckets(text, n, alpha_size, false);
+    for i in 0..n {
+        let j = sa[i];
+        if j != EMPTY && j > 0 && !types[j - 1] {
+            let c = text[j - 1];
+            sa[heads[c]] = j - 1;
+            heads[c] += 1;
+        }
+    }
+
+    // Step 3: induce S-type suffixes from bucket tails
+    tails = get_buckets(text, n, alpha_size, true);
+    for i in (0..n).rev() {
+        let j = sa[i];
+        if j != EMPTY && j > 0 && types[j - 1] {
+            let c = text[j - 1];
+            sa[tails[c]] = j - 1;
+            tails[c] = tails[c].wrapping_sub(1);
+        }
+    }
+
+    // Step 4: compact LMS suffixes, check if all unique
+    let mut lms_positions: Vec<usize> = Vec::new();
+    for i in 0..n {
+        if is_lms(&types, i) {
+            lms_positions.push(i);
+        }
+    }
+    let lms_count = lms_positions.len();
+    if lms_count <= 1 {
+        return sa;
+    }
+
+    // Name LMS substrings
+    let mut names = vec![EMPTY; n];
+    let mut current_name = 0usize;
+    let mut prev_lms = EMPTY;
+    for i in 0..n {
+        if sa[i] == EMPTY || !is_lms(&types, sa[i]) {
+            continue;
+        }
+        if prev_lms != EMPTY {
+            // Compare LMS substrings
+            let mut diff = false;
+            for d in 0..n {
+                let a = sa[i] + d;
+                let b = prev_lms + d;
+                if a >= n || b >= n || text[a] != text[b] || types[a] != types[b] {
+                    diff = true;
+                    break;
+                }
+                // End of LMS substring (found next LMS or sentinel)
+                if d > 0 && (is_lms(&types, a) || is_lms(&types, b)) {
+                    break;
+                }
+            }
+            if diff {
+                current_name += 1;
+            }
+        } else {
+            current_name += 1; // first LMS always gets name 1
+        }
+        names[sa[i]] = current_name - 1;
+        prev_lms = sa[i];
+    }
+
+    // Build reduced string from LMS names (in original order)
+    let reduced: Vec<usize> = lms_positions.iter().map(|&p| names[p]).collect();
+    let unique_names = current_name;
+
+    // Recurse if names are not all unique
+    let sorted_lms_indices = if unique_names < lms_count {
+        sa_is_int(&reduced, lms_count, unique_names)
+    } else {
+        // All unique — inverse is trivial
+        let mut inv = vec![0usize; lms_count];
+        for (i, &name) in reduced.iter().enumerate() {
+            inv[name] = i;
+        }
+        inv
+    };
+
+    // Step 5: place sorted LMS suffixes and re-induce
+    sa.fill(EMPTY);
+    tails = get_buckets(text, n, alpha_size, true);
+    for i in (0..lms_count).rev() {
+        let pos = lms_positions[sorted_lms_indices[i]];
+        sa[tails[text[pos]]] = pos;
+        tails[text[pos]] = tails[text[pos]].wrapping_sub(1);
+    }
+
+    // Re-induce L-type
+    heads = get_buckets(text, n, alpha_size, false);
+    for i in 0..n {
+        let j = sa[i];
+        if j != EMPTY && j > 0 && !types[j - 1] {
+            let c = text[j - 1];
+            sa[heads[c]] = j - 1;
+            heads[c] += 1;
+        }
+    }
+
+    // Re-induce S-type
+    tails = get_buckets(text, n, alpha_size, true);
+    for i in (0..n).rev() {
+        let j = sa[i];
+        if j != EMPTY && j > 0 && types[j - 1] {
+            let c = text[j - 1];
+            sa[tails[c]] = j - 1;
+            tails[c] = tails[c].wrapping_sub(1);
+        }
+    }
+
+    sa
+}
+
+/// Build suffix array for a byte string using SA-IS.
+///
+/// Returns a `Vec<usize>` of length `data.len()` where `sa[i]` is the
+/// starting position of the i-th lexicographically smallest suffix.
+fn sa_is(data: &[u8]) -> Vec<usize> {
+    let n = data.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    if n == 1 {
+        return vec![0];
+    }
+    // Map bytes to alphabet [1, 257) and append sentinel 0.
+    // Sentinel is smaller than all data characters, which SA-IS requires.
+    let mut text: Vec<usize> = data.iter().map(|&b| b as usize + 1).collect();
+    text.push(0); // sentinel
+    let full_sa = sa_is_int(&text, n + 1, 258);
+    // Remove the sentinel entry (always at sa[0]) and return original indices.
+    full_sa.into_iter().filter(|&i| i < n).collect()
 }
 
 /// Burrows-Wheeler Transform inverse.

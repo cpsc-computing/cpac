@@ -30,6 +30,8 @@ pub struct HostInfo {
     pub cpu_features: Vec<String>,
     /// Best SIMD tier available.
     pub simd_tier: SimdTier,
+    /// Hardware accelerators detected on this host.
+    pub available_accelerators: Vec<cpac_types::AccelBackend>,
 }
 
 /// SIMD capability tier for dispatch decisions.
@@ -47,6 +49,8 @@ pub enum SimdTier {
     Avx2,
     /// x86 AVX-512 (512-bit).
     Avx512,
+    /// ARM SVE2 (scalable, 128-2048 bit).
+    Sve2,
 }
 
 impl fmt::Display for SimdTier {
@@ -58,6 +62,7 @@ impl fmt::Display for SimdTier {
             SimdTier::Sse41 => write!(f, "SSE4.1"),
             SimdTier::Avx2 => write!(f, "AVX2"),
             SimdTier::Avx512 => write!(f, "AVX-512"),
+            SimdTier::Sve2 => write!(f, "SVE2"),
         }
     }
 }
@@ -74,6 +79,8 @@ pub fn detect_host() -> HostInfo {
     let cpu_features = detect_cpu_features();
     let simd_tier = determine_simd_tier(&cpu_features);
 
+    let available_accelerators = crate::accel::detect_accelerators();
+
     HostInfo {
         cpu_vendor,
         cpu_brand,
@@ -85,6 +92,7 @@ pub fn detect_host() -> HostInfo {
         arch: std::env::consts::ARCH.to_string(),
         cpu_features,
         simd_tier,
+        available_accelerators,
     }
 }
 
@@ -141,6 +149,7 @@ pub fn auto_resource_config() -> cpac_types::ResourceConfig {
         max_threads: threads,
         max_memory_mb: memory_mb,
         gpu_enabled: false,
+        ..Default::default()
     }
 }
 

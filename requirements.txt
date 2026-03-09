@@ -1,0 +1,6 @@
+# CPAC Build System Dependencies
+# Install via: shell.ps1 (Windows) or shell.sh (Linux/macOS)
+# These are automatically installed during first-time setup.
+#
+# Currently no external dependencies — cpac.py uses only stdlib.
+# Add packages here as needed (e.g. pyyaml, requests).

@@ -39,29 +39,51 @@ onboarding to the codebase. See also `WARP.md` for Warp-specific project rules.
 - **Hybrid encryption**: `cpac-crypto/src/hybrid.rs`
 - **Mmap I/O**: `cpac-streaming/src/mmap.rs`
 
-## Build & Test
+## Shell Execution Rule — HARD RULE
 
-```bash
-cargo build --workspace
-cargo test --workspace
-cargo clippy --workspace -- -D warnings
-cargo fmt --all -- --check
-```
+**CRITICAL**: Agents must NEVER execute cargo, rustup, python, or any project
+command directly from the terminal. ALL commands must be dispatched through
+the unified shell entry points:
 
-### Windows PATH fix (PowerShell)
+- **Windows (PowerShell)**: `.\shell.ps1 <command> [args...]`
+- **Linux / macOS (bash)**: `./shell.sh <command> [args...]`
 
-If cargo is not found, run first:
+If no command is given, the shell drops into an interactive Python venv shell.
+
+Available commands (via `scripts/cpac.py`):
+
+| Command | Description |
+|---|---|
+| `build` | `cargo build --workspace` |
+| `test` | `cargo test --workspace` |
+| `clippy` | `cargo clippy --workspace -- -D warnings` |
+| `fmt` | `cargo fmt --all -- --check` |
+| `check` | clippy + fmt + test |
+| `bench` | run a single benchmark file |
+| `benchmark-all` | full corpus benchmark suite |
+| `criterion` | Criterion benchmarks |
+| `pgo-build` | PGO-optimised release build |
+| `download-corpus` | fetch benchmark corpus files |
+| `setup` | install Rust toolchain components |
+| `info` | show environment info |
+| `analyze` | analyze a file's compression characteristics |
+| `compress` | compress a file |
+| `decompress` | decompress a file |
+
+Examples:
 ```powershell
-$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+.\shell.ps1 build              # build workspace
+.\shell.ps1 test               # run tests
+.\shell.ps1 clippy             # lint
+.\shell.ps1 bench dickens      # benchmark one file
+.\shell.ps1 benchmark-all      # full benchmark suite
+.\shell.ps1                    # interactive venv shell
 ```
 
-### Benchmarks
-
 ```bash
-cargo bench -p cpac-engine                    # all bench suites
-cargo bench -p cpac-engine --bench compress   # pipeline + backends
-cargo bench -p cpac-engine --bench simd       # SIMD vs scalar
-cargo bench -p cpac-engine --bench dag        # DAG compile/execute
+./shell.sh build
+./shell.sh test
+./shell.sh check
 ```
 
 ## Coding Conventions
@@ -72,6 +94,7 @@ cargo bench -p cpac-engine --bench dag        # DAG compile/execute
 - **Unit tests** in each crate (`#[cfg(test)] mod tests`).
 - **Integration tests** in `tests/` directory of `cpac-engine`.
 - **NO SYNTHETIC DATA — HARD RULE**: This applies to **tests AND benchmarks**. Never generate, create, or use synthetic/fake data for any test or benchmark purpose. Benchmark results derived from synthetic data are invalid and must be deleted. All benchmarks must run exclusively against the official corpus files downloaded via the corpus profiles in `benches/configs/`. Never create files under `.work/benchmarks/bench-corpus/` or any ad-hoc corpus directory — this is explicitly prohibited.
+- **CORPUS LOCALITY — HARD RULE**: Benchmark corpus files must live in `cpac/.work/benchdata/` inside **this** repository. Never reference, symlink, junction, or use corpus files from other repositories (e.g. `cpac-engine-python/.work/`). Download corpora with `shell.ps1 download-corpus`. The `.work/` directory must be a real directory, not a junction or symlink.
 - **Copyright header** on every `.rs` file:
   ```
   // Copyright (c) 2026 BitConcepts, LLC
@@ -150,10 +173,11 @@ IDs must match. See `docs/SPEC.md`.
 **CRITICAL**: The repository root must stay clean. Only the following are permitted:
 
 - **Build configuration**: `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `clippy.toml`
-- **Documentation**: `README.md`, `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `AGENTS.md`, `WARP.md`, `BENCHMARKING.md`
-- **Setup scripts**: `setup.sh`, `setup.ps1`, `env.sh`, `env.ps1`, `pgo-build.sh`, `pgo-build.ps1`
+- **Documentation**: `README.md`, `LICENSE`, `SECURITY.md`, `AGENTS.md`, `WARP.md`
+- **Shell entry points**: `shell.ps1` (Windows), `shell.sh` (Linux/macOS)
+- **Dependencies**: `requirements.txt`
 - **Directories**: `crates/`, `docs/`, `fuzz/`, `python/`, `scripts/`, `target/`, `.work/`
-- **Hidden files**: `.git/`, `.gitignore`, `.github/`
+- **Hidden files**: `.git/`, `.gitignore`, `.gitattributes`, `.github/`
 
 ### Temporary/Generated Files → `.work/`
 

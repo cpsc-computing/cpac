@@ -42,6 +42,10 @@ target/criterion/
 *.profdata
 pgo-data/
 
+# Python venv (managed by shell.ps1/shell.sh)
+__pycache__/
+*.pyc
+
 # IDE
 .idea/
 .vscode/

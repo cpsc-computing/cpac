@@ -13,8 +13,22 @@ use std::path::{Path, PathBuf};
 pub struct CpacConfig {
     pub backend: Option<String>,
     pub block_size: Option<usize>,
+    pub preset: Option<String>,
     pub encrypt: Option<EncryptConfig>,
     pub archive: Option<ArchiveConfig>,
+    pub resources: Option<ResourcesConfig>,
+}
+
+/// Datacenter resource knobs from `[resources]` TOML section.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ResourcesConfig {
+    pub cpu_percent: Option<u8>,
+    pub memory_percent: Option<u8>,
+    pub budget_ms: Option<u64>,
+    pub priority: Option<String>,
+    pub io_bandwidth_mbps: Option<u32>,
+    pub batch_concurrency: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

@@ -21,11 +21,20 @@ pub const CPBL_MAGIC: &[u8; 4] = b"CPBL";
 /// Current CPBL format version.
 pub const CPBL_VERSION: u8 = 1;
 
-/// Default block size: 1 MiB.
-pub const DEFAULT_BLOCK_SIZE: usize = 1 << 20;
+/// Default block size: 4 MiB.
+///
+/// Larger blocks give zstd more cross-block context, reducing the ratio
+/// penalty of block-parallel compression vs single-stream.  Benchmarks
+/// showed 1 MiB blocks lost 15-22% ratio on medium-compressible files
+/// (mr, mozilla, ooffice) vs standalone zstd-3 on the full file.
+pub const DEFAULT_BLOCK_SIZE: usize = 4 << 20;
 
-/// Minimum input size to trigger parallel compression (256 KiB).
-pub const PARALLEL_THRESHOLD: usize = 256 * 1024;
+/// Minimum input size to trigger parallel compression (4 MiB).
+///
+/// Files below this size are compressed single-threaded with full-file
+/// context.  The previous 256 KiB threshold was too aggressive — block
+/// overhead dominated for files under ~10 MB.
+pub const PARALLEL_THRESHOLD: usize = 4 * 1024 * 1024;
 
 /// CPBL header: magic(4) + version(1) + `block_count(4)` + `original_size(8)` = 17 bytes.
 const CPBL_HEADER_SIZE: usize = 4 + 1 + 4 + 8;

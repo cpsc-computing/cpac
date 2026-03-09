@@ -157,6 +157,7 @@ impl From<CpacCompressConfig> for CompressConfig {
                 max_threads: c.max_threads as usize,
                 max_memory_mb: (c.max_memory_bytes / (1024 * 1024)) as usize,
                 gpu_enabled: false,
+                ..Default::default()
             })
         };
 
@@ -166,17 +167,8 @@ impl From<CpacCompressConfig> for CompressConfig {
             } else {
                 Some(c.backend.into())
             },
-            force_track: None,
-            filename: None,
             resources,
-            dictionary: None,
-            disable_parallel: false,
-            enable_msn: false, // FFI defaults to MSN disabled
-            msn_confidence: 0.5,
-            msn_domain: None,
-            msn_verbose: false,
-            enable_smart_transforms: true,
-            level: cpac_types::CompressionLevel::Default,
+            ..Default::default()
         }
     }
 }

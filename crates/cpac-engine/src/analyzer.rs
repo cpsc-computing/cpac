@@ -241,10 +241,8 @@ fn recommend_from_ssr(ssr: &SSRResult) -> Vec<TransformRecommendation> {
     }
 
     // --- Tier 1: bwt_chain (dominant on large text) ---
-    // Cap at 1 MB to match bwt_chain transform limits. Our current BWT encode
-    // uses a naive suffix-sort and becomes prohibitively expensive on larger
-    // blocks.
-    if is_text && ssr.entropy_estimate < 5.5 && size > 32_768 && size <= 1_000_000 {
+    // SA-IS BWT is O(n) — cap raised to 64 MiB (BWT_MAX_SIZE).
+    if is_text && ssr.entropy_estimate < 5.5 && size > 32_768 && size <= 64_000_000 {
         let confidence = calibrated_confidence("bwt_chain").unwrap_or(0.60);
         recs.push(TransformRecommendation {
             name: "bwt_chain".to_string(),
@@ -254,59 +252,93 @@ fn recommend_from_ssr(ssr: &SSRResult) -> Vec<TransformRecommendation> {
     }
 
     // --- Tier 2: byte_plane (situational on binary) ---
+    // Empirical: 22.5% gain on x-ray, strong on medical/scientific binary.
+    // Confidence raised to 0.55 to pass SMART_MIN_CONFIDENCE (0.50).
     if is_binary && ssr.entropy_estimate < 6.0 {
-        let confidence = calibrated_confidence("byte_plane").unwrap_or(0.30);
         recs.push(TransformRecommendation {
             name: "byte_plane".to_string(),
             priority: 10,
-            confidence,
+            confidence: 0.55,
         });
     }
 
     // --- Tier 0: DoF elimination (const_elim, stride_elim) ---
-    // These operate on raw Serial and can eliminate entire data regions.
     // const_elim: effective when >90% of bytes are the same value.
+    // Calibration: 0.07% overall win rate — only fire on very low entropy.
     if ssr.entropy_estimate < 1.0 && size >= 64 {
-        let confidence = calibrated_confidence("const_elim").unwrap_or(0.95);
         recs.push(TransformRecommendation {
             name: "const_elim".to_string(),
             priority: 1,
-            confidence,
+            confidence: 0.95,
         });
     }
     // stride_elim: effective on structured binary with fixed-width integer sequences.
+    // SSR-gated; calibration dilutes — keep hardcoded.
+    // Lowered from 0.70 to 0.30: calibration shows no standalone wins across
+    // all corpora.  At 0.30 it participates in adaptive trials but won't be
+    // a primary recommendation (SMART_MIN_CONFIDENCE = 0.50).
     if is_binary && ssr.entropy_estimate < 5.0 && size >= 64 {
-        let confidence = calibrated_confidence("stride_elim").unwrap_or(0.70);
         recs.push(TransformRecommendation {
             name: "stride_elim".to_string(),
             priority: 2,
-            confidence,
+            confidence: 0.30,
         });
     }
 
     // --- Tier 1.5: prediction (sequential correlation) ---
-    // Effective on binary data with temporal patterns (telemetry, counters).
+    // Effective on binary data with temporal/spatial correlation (medical
+    // images, star catalogs, telemetry).  Transform study evidence:
+    //   x-ray: -19.7%, mr: -8.7%, sao: -2.2% vs zstd-3 baseline.
+    // Calibration overall win_rate (0.5%) is misleading because it includes
+    // text/structured files where predict always loses.  SSR gates restrict
+    // this to binary-only, so we keep the hardcoded confidence.
     if is_binary && ssr.entropy_estimate > 1.0 && ssr.entropy_estimate < 6.0 && size >= 64 {
-        let confidence = calibrated_confidence("predict").unwrap_or(0.55);
         recs.push(TransformRecommendation {
             name: "predict".to_string(),
             priority: 4,
-            confidence,
+            confidence: 0.55,
         });
     }
 
-    // --- Tier 1.5: entropy conditioning (mixed-content data) ---
-    if is_text && ssr.entropy_estimate > 2.0 && ssr.entropy_estimate < 7.0 && size >= 256 {
-        let confidence = calibrated_confidence("condition").unwrap_or(0.55);
+    // --- condition: DISABLED ---
+    // Calibration: 0% win rate across 1,368 files, zero gain on every file
+    // type tested.  Removed to avoid evaluation overhead.
+
+    // --- Tier 2: transpose (binary with fixed-width records) ---
+    // Empirical: columnar layout dramatically improves entropy coding for
+    // structured binary (database pages, sensor arrays, protocol headers).
+    if is_binary && ssr.entropy_estimate < 7.0 && size >= 256 {
         recs.push(TransformRecommendation {
-            name: "condition".to_string(),
-            priority: 3,
-            confidence,
+            name: "transpose".to_string(),
+            priority: 8,
+            confidence: 0.45, // Below SMART_MIN but participates in adaptive trials
+        });
+    }
+
+    // --- Tier 2: float_split (binary with IEEE 754 patterns) ---
+    // Separates exponent/mantissa streams for columnar compression.
+    if is_binary && ssr.entropy_estimate < 6.5 && size >= 128 {
+        recs.push(TransformRecommendation {
+            name: "float_split".to_string(),
+            priority: 7,
+            confidence: 0.45,
+        });
+    }
+
+    // --- Tier 3: rolz (medium-entropy text/binary with local patterns) ---
+    // Legacy TP fallback handled ROLZ separately; now integrated into smart
+    // path so it participates in adaptive trials alongside DAG transforms.
+    if ssr.entropy_estimate > 3.5 && ssr.entropy_estimate < 6.5 && size >= 512 {
+        recs.push(TransformRecommendation {
+            name: "rolz".to_string(),
+            priority: 6,
+            confidence: 0.40,
         });
     }
 
     // NOTE: The following are deliberately NEVER recommended on raw Serial
     // data based on benchmark evidence:
+    // - condition:     0% win rate on 1,368 files (zero effect, pure overhead)
     // - delta:         always negative on raw bytes (-12.1M silesia, -6.3M enwik8)
     // - rle:           zero gain on all corpora (zstd already handles runs)
     // - context_split: zero gain everywhere (overhead always exceeds benefit)

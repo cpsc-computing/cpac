@@ -1,122 +1,288 @@
 # CPAC Architecture
 
-## Compression Pipeline
+**Version**: 0.1.0 (Rust Implementation)  
+**Date**: March 3, 2026  
+**Status**: SSR + MSN fully implemented, CP2 frame format available
+
+## Executive Summary
+
+CPAC (Content-Preserving Adaptive Compression) is a multi-stage compression pipeline that combines:
+- **SSR (Structural Summary Record)**: Lightweight heuristic analysis for track selection
+- **MSN (Multi-Scale Normalization)**: Domain-specific semantic extraction for structured data
+- **Generic Transforms**: Delta, zigzag, transpose, ROLZ
+- **Entropy Backends**: Zstd, Brotli, Gzip, Lzma, Raw
+
+## High-Level Pipeline
 
 ```
-Input data
-  │
-  ▼
-┌─────────────┐
-│   SSR        │  Structural Summary Record analysis
-│   Analysis   │  → entropy, ASCII ratio, track, domain hint
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│  Preprocess  │  Transform selection & application
-│  (Transforms)│  TP frame or DAG-driven chain
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│   Entropy    │  Zstd / Brotli / Raw
-│   Coding     │  Auto-selected by entropy estimate
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│    Frame     │  CP wire format (self-describing)
-│   Encoding   │  12-byte header + DAG descriptor + payload
-└──────┬──────┘
-       │
-       ▼
-  .cpac file
+┌────────────────────────────────────────────────────────────┐
+│                   CPAC Compression Pipeline                 │
+└────────────────────────────────────────────────────────────┘
+
+Input Data (bytes)
+     │
+     ▼
+┌─────────────────┐
+│  Stage 0: SSR   │  ◄─ Always runs first
+│  Analysis       │     • Shannon entropy
+│  (cpac-ssr)     │     • ASCII ratio  
+└────────┬────────┘     • Simple domain hints
+         │              • Viability score → Track selection
+         ▼
+    ┌────────┐
+    │ Track? │
+    └───┬────┘
+        │
+     ┌──┴───┐
+     │      │
+  Track 1   Track 2
+  (v≥0.3)   (v<0.3)
+  Structured Generic
+     │      │
+     │      └──────────────────────────┐
+     ▼                                 │
+┌─────────────────┐
+│ Stage 1: MSN    │  ◄─ Track 1 only (optional)
+│ Extraction      │     Domain-specific
+│ (cpac-msn)      │     semantic extraction
+│                 │     • JSON/JSONL field names
+│                 │     • CSV headers
+│                 │     • XML tags
+│                 │     • Log patterns
+│                 │     • Binary format keys
+└────────┬────────┘
+         │                             │
+         ▼                             ▼
+┌──────────────────────────────────────────┐
+│  Stage 2: Generic Transforms             │
+│  (cpac-transforms)                       │
+│  • Delta encoding                        │
+│  • Zigzag (varint)                       │
+│  • Transpose (byte interleaving)         │
+│  • ROLZ (reduced offset LZ)              │
+└──────────────────┬───────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────┐
+│  Stage 3: Entropy Coding                 │
+│  (cpac-entropy)                          │
+│  • Zstd (fast, 5-15x)                    │
+│  • Brotli (max compression, 7-25x)       │
+│  • Gzip (ubiquitous, 2-18x)              │
+│  • Lzma (high ratio, 1.7-2.7x)           │
+│  • Raw (passthrough, 1.0x)               │
+└──────────────────┬───────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────┐
+│  Stage 4: Frame Encoding                 │
+│  (cpac-frame)                            │
+│  • CP format (v1, legacy)                │
+│  • CP2 format (v2, with MSN metadata)    │
+│  • CPBL format (parallel blocks)         │
+└──────────────────┬───────────────────────┘
+                   │
+                   ▼
+            Compressed Output
 ```
 
-Decompression reverses the pipeline: decode frame → entropy decompress →
-reverse transforms → original data. Size verification at every stage.
+## SSR + MSN: Non-Conflicting Design
 
-## Crate Dependency Graph
+### SSR (Structural Summary Record)
+**Purpose**: Fast gatekeeper - decides if data has exploitable structure  
+**When**: Always runs first (Stage 0), <1ms overhead  
+**Cost**: O(n) single pass  
+**Output**: `Track1` (structured) or `Track2` (generic)
 
-```
-cpac-types (leaf — no internal deps)
-  ├── cpac-ssr
-  ├── cpac-transforms
-  │     └── cpac-dag
-  ├── cpac-entropy
-  ├── cpac-frame
-  └── cpac-engine (top-level API)
-        ├── depends on: types, ssr, transforms, dag, entropy, frame
-        ├── cpac-streaming (depends on: types, engine)
-        ├── cpac-crypto (depends on: types)
-        ├── cpac-domains (depends on: types, ssr, engine)
-        ├── cpac-cas (depends on: types)
-        └── cpac-archive (depends on: types, engine)
-
-cpac-cli (binary — depends on all of the above)
+```rust
+pub struct SSRResult {
+    pub entropy_estimate: f64,    // 0.0-8.0 bits/byte
+    pub ascii_ratio: f64,          // 0.0-1.0
+    pub data_size: usize,
+    pub viability_score: f64,      // Weighted score
+    pub track: Track,              // Track1 or Track2
+    pub domain_hint: Option<DomainHint>,  // Json, Xml, Csv, etc.
+}
 ```
 
-No circular dependencies. `cpac-types` is always the leaf.
+**Viability Formula**:
+```
+viability = (1 - entropy/8.0) * 0.4  // Low entropy bonus
+          + ascii_ratio * 0.4         // Text data bonus  
+          + domain_bonus * 0.2        // Structure detected bonus
 
-## Key Design Decisions
+Track1 if viability >= 0.3, else Track2
+```
 
-### SSR-Guided Adaptive Pipeline
-Every input is analyzed by the Structural Summary Record (SSR) module
-before compression. SSR computes entropy, ASCII ratio, data size, and
-domain hints. These metrics drive automatic backend selection (low
-entropy → Zstd, medium → Brotli, high → Raw) and transform selection.
+### MSN (Multi-Scale Normalization)
+**Purpose**: Deep semantic extraction - extracts repeated structures  
+**When**: Only if SSR selects Track1 (conditional stage)  
+**Cost**: O(n) with parsing overhead (format-specific)  
+**Output**: Semantic fields + residual bytes
 
-### Two Transform Systems
-1. **TP preprocess** — the default path. SSR metrics select a single
-   transform (transpose, float-split, field-LZ, or ROLZ) and encode it
-   in a self-describing TP frame. Simple, fast, always-on.
-2. **DAG profiles** — for advanced use. Named profiles (e.g., "generic",
-   "text", "binary") compile an ordered chain of transforms into a DAG.
-   The DAG can also auto-select transforms by estimated gain.
+```rust
+pub struct MsnResult {
+    pub fields: HashMap<String, serde_json::Value>,  // Extracted semantic data
+    pub residual: Vec<u8>,                            // Remaining bytes
+    pub applied: bool,                                // Was MSN actually used?
+    pub domain_id: Option<String>,                    // "text.json", "text.csv", etc.
+    pub confidence: f64,                              // Detection confidence
+}
+```
 
-### SIMD Tiered Dispatch
-Transform kernels in `simd.rs` use runtime CPU feature detection:
-AVX-512 (64B) → AVX2 (32B) → SSE4.1 (16B) → SSE2 (16B) → NEON → scalar.
-Each `*_fast()` function probes and dispatches to the best available tier.
-The scalar fallback is always correct.
+**Key Insight**: SSR and MSN are **sequential, non-conflicting stages**:
+1. SSR analyzes → determines Track
+2. If Track1 → MSN extracts structure
+3. If Track2 → MSN is skipped entirely
 
-### Block-Parallel Architecture
-For inputs > 256 KiB, the engine splits data into 1 MiB blocks and
-compresses each independently via rayon. The CPBL wire format stores
-a block size table for random-access decompression. Each block is a
-complete CP frame, enabling fully parallel decompression.
+No overlap, no conflict. SSR is the cheap filter, MSN is the expensive extractor.
 
-### Safe Resource Defaults
-`auto_resource_config()` detects the host system and sets:
-- Threads = physical core count (not hyperthreaded)
-- Memory cap = 25% of system RAM, clamped to 256 MB – 8 GB
-CLI flags `--threads` and `--max-memory` override these defaults.
+## Current Implementation Status
 
-### Defence-in-Depth Encryption
-The CPHE hybrid encryption format combines:
-- X25519 (classical Diffie-Hellman)
-- ML-KEM-768 (NIST post-quantum KEM)
-Both shared secrets are combined via HKDF-SHA256 before AEAD encryption.
-Even if one primitive is broken, the other still protects confidentiality.
+### ✅ Implemented in Rust
+- **cpac-ssr**: SSR analysis (entropy, ASCII ratio, domain hints)
+- **cpac-msn**: Multi-Scale Normalization with 10 domain handlers
+  - Text: JSON, CSV, XML
+  - Binary: MessagePack, CBOR, Protobuf
+  - Logs: Syslog, Apache, JSON Log
+  - Passthrough (Track 2)
+- **cpac-transforms**: Delta, zigzag, transpose, ROLZ
+- **cpac-entropy**: Zstd, Brotli, Gzip, Lzma, Raw backends
+- **cpac-frame**: CP (v1), CP2 (v2 with MSN), and CPBL frame formats
+- **cpac-engine**: Main compression pipeline with MSN integration
+- **cpac-cli**: Command-line interface with --enable-msn flag
 
-### Wire Format Stability
-All wire formats use magic-byte identification and version fields.
-The Rust engine must produce frames decompressible by the Python
-engine and vice-versa. Format changes require version bumps.
+## Crate Architecture
 
-## File Extensions
+```
+cpac/
+├─── crates/
+│   ├─── cpac-types/          # Shared types, traits, errors
+│   ├─── cpac-ssr/            # ✅ Structural Summary Record
+│   ├─── cpac-msn/            # ✅ Multi-Scale Normalization
+│   ├── cpac-transforms/     # ✅ Generic transforms (delta, zigzag, etc.)
+│   ├── cpac-entropy/        # ✅ Entropy backends (Zstd, Brotli, etc.)
+│   ├── cpac-frame/          # ✅ Frame encoding/decoding
+│   ├── cpac-engine/         # ✅ Main compression pipeline
+│   ├── cpac-streaming/      # ✅ Streaming compression
+│   ├── cpac-archive/        # ✅ Archive format (.cpac)
+│   ├── cpac-crypto/         # ✅ Encryption/signing
+│   ├── cpac-dag/            # ✅ Transform DAG composition
+│   ├── cpac-dict/           # ✅ Dictionary training
+│   ├── cpac-cas/            # ✅ CAS-YAML modeling
+│   ├── cpac-domains/        # ✅ Domain-specific logic
+│   ├── cpac-cli/            # ✅ Command-line interface
+│   └── cpac-ffi/            # ✅ C FFI bindings
+```
 
-- `.cpac` — compressed file (CP or CPBL frame)
-- `.cpar` — multi-file archive (CPAR frame)
-- `.cpac-enc` — password-encrypted (AEAD)
-- `.cpac-pqe` — hybrid PQC-encrypted (CPHE frame)
-- `.cpac-sig` — ML-DSA-65 digital signature
-- `.cpac-pub` / `.cpac-sec` — public/secret key files
+## Frame Formats
 
-## Future Work (TODO)
+### CP Format (Current)
+```
+┌────────┬─────────┬────────────────┬─────────────┐
+│ Magic  │ Version │ Header         │ Payload     │
+│ "CPAC" │ 0x01    │ (variable)     │ (variable)  │
+│ 4 bytes│ 1 byte  │                │             │
+└────────┴─────────┴────────────────┴─────────────┘
 
-- GPU acceleration (compute shader compression kernels)
-- Deduplication-aware archive mode
-- Network streaming protocol
-- FUSE/virtual filesystem mount for .cpar archives
-- WebAssembly target for browser-side compression
+Header contains:
+- Backend type (1 byte)
+- Original size (varint)
+- DAG descriptor length (varint)
+- DAG descriptor (optional)
+```
+
+### CPBL Format (Parallel Blocks)
+```
+┌────────┬─────────┬────────────────┬─────────────┬─────┬─────────────┐
+│ Magic  │ Version │ Header         │ Block 1     │ ... │ Block N     │
+│ "CPBL" │ 0x01    │ (variable)     │ (variable)  │     │ (variable)  │
+└────────┴─────────┴────────────────┴─────────────┴─────┴─────────────┘
+
+Used for parallel compression of large files (>1MB)
+```
+
+### CP2 Format (Version 2 with MSN)
+```
+"CP" (2B) | version=2 (1B) | flags (2B) | backend_id (1B)
+| original_size (4B LE) | dag_descriptor_len (2B LE) | msn_metadata_len (2B LE)
+| dag_descriptor | msn_metadata | payload
+```
+
+Backward compatible with CP v1:
+- decode_frame() auto-detects version
+- v1 frames have empty msn_metadata
+- v2 frames include serialized MsnResult when MSN was applied
+
+MSN Metadata (JSON):
+- Extracted semantic fields (HashMap<String, Value>)
+- Domain ID for reconstruction
+- Residual already in payload
+```
+
+## Performance Characteristics
+
+### Without MSN (Current Rust)
+| Data Type | CPAC Ratio | Why? |
+|-----------|------------|------|
+| Text (Canterbury) | 2.7-3.3x | Generic text compression |
+| Logs (Apache) | 15-25x | High repetition, still good |
+| Logs (Linux) | 12-21x | Structured but no extraction |
+| XML (Silesia) | 6-12x | Treated as generic text |
+| JSON | 2-5x | No structure extraction |
+
+### With MSN (Python Implementation)
+| Data Type | CPAC Ratio | Why? |
+|-----------|------------|------|
+| JSON (repetitive) | 50-219x | Field name extraction |
+| CSV (structured) | 20-50x | Column structure extraction |
+| XML (nested) | 15-30x | Tag name normalization |
+| Logs (parsed) | 30-100x | Pattern extraction |
+| Text (repetitive) | 100-346x | MSN finds structure |
+
+**Gap Explanation**: MSN extracts repeated semantic patterns that generic compressors miss.
+
+## Roadmap
+
+### v0.1.0 (March 3, 2026)
+- ✅ Complete Rust implementation with MSN
+- ✅ SSR track selection
+- ✅ MSN with 10 domain handlers (JSON, CSV, XML, logs, binary)
+- ✅ CP2 frame format with MSN metadata
+- ✅ Generic transforms
+- ✅ 5 entropy backends
+- ✅ Parallel compression (CPBL)
+- ✅ CLI `--enable-msn` flag
+- ✅ Benchmarking infrastructure
+
+### v0.2.0 (Planned)
+- [ ] MSN performance optimization
+- [ ] Additional domain handlers (Parquet, Avro, etc.)
+- [ ] Adaptive MSN confidence thresholds
+- [ ] MSN benchmarks vs Python implementation
+
+### v0.3.0 (Future)
+- [ ] MSN enabled by default for Track1
+- [ ] Production validation
+- [ ] Fuzzing (100M+ iterations)
+- [ ] Domain-specific compression tuning
+
+### v1.0.0 (Full Parity)
+- [ ] Feature-complete with Python
+- [ ] Performance equal or better
+- [ ] MSN standard feature
+- [ ] Full documentation
+
+## References
+
+- **SSR Implementation**: `crates/cpac-ssr/src/lib.rs`
+- **Python MSN**: `../cpac-engine-python/src/cpac/core/msn.py`
+- **MSN Plan**: See Warp plan "MSN Integration Architecture & Rust Port Plan"
+- **Benchmark Results**: `BENCHMARKING.md`
+
+## See Also
+
+- `CONTRIBUTING.md` - Development guidelines
+- `BENCHMARKING.md` - Performance benchmarks
+- `README.md` - Project overview
+- `.github/BRANCH_RULESETS.md` - GitFlow workflow

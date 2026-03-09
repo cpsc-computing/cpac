@@ -138,8 +138,161 @@ pub enum CompressionLevel {
     /// Default: brotli-11 / zstd-3 — matches industry baselines for fair comparison.
     #[default]
     Default,
-    /// Best: brotli-11 / zstd-9 — same brotli quality as Default, higher zstd level.
+    /// High: brotli-11 / zstd-12 — batch jobs with strong ratio/speed balance.
+    High,
+    /// Best: brotli-11 / zstd-19 — cold storage, maximum compression.
     Best,
+}
+
+// ---------------------------------------------------------------------------
+// Named presets
+// ---------------------------------------------------------------------------
+
+/// Named compression preset — auto-configures level, transforms, block size,
+/// threading, and MSN in one shot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Preset {
+    /// Real-time ingest: zstd-1, 1 thread, no transforms, no MSN, 1 MB blocks.
+    Turbo,
+    /// General purpose (DEFAULT): zstd-3, auto threads, smart transforms ON,
+    /// MSN OFF, 4 MB blocks.
+    Balanced,
+    /// Batch jobs: zstd-9, all threads, smart + MSN ON, 8 MB blocks.
+    Maximum,
+    /// Cold storage: zstd-19, all threads, aggressive transforms + MSN, 16 MB blocks.
+    Archive,
+}
+
+impl Preset {
+    /// Parse from string (case-insensitive).
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "turbo" | "t" => Some(Self::Turbo),
+            "balanced" | "b" | "default" => Some(Self::Balanced),
+            "maximum" | "max" | "m" => Some(Self::Maximum),
+            "archive" | "arc" | "a" => Some(Self::Archive),
+            _ => None,
+        }
+    }
+
+    /// Compression level for this preset.
+    #[must_use]
+    pub fn level(self) -> CompressionLevel {
+        match self {
+            Self::Turbo => CompressionLevel::Fast,
+            Self::Balanced => CompressionLevel::Default,
+            Self::Maximum => CompressionLevel::High,
+            Self::Archive => CompressionLevel::Best,
+        }
+    }
+
+    /// Whether smart transforms are enabled.
+    #[must_use]
+    pub fn smart_transforms(self) -> bool {
+        !matches!(self, Self::Turbo)
+    }
+
+    /// Whether MSN is enabled.
+    #[must_use]
+    pub fn msn_enabled(self) -> bool {
+        matches!(self, Self::Maximum | Self::Archive)
+    }
+
+    /// MSN confidence threshold.
+    #[must_use]
+    pub fn msn_confidence(self) -> f64 {
+        match self {
+            Self::Archive => 0.3,
+            _ => 0.5,
+        }
+    }
+
+    /// Block size in bytes for parallel compression.
+    #[must_use]
+    pub fn block_size(self) -> usize {
+        match self {
+            Self::Turbo => 1 << 20,    // 1 MB
+            Self::Balanced => 4 << 20, // 4 MB
+            Self::Maximum => 8 << 20,  // 8 MB
+            Self::Archive => 16 << 20, // 16 MB
+        }
+    }
+}
+
+impl std::fmt::Display for Preset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Turbo => write!(f, "turbo"),
+            Self::Balanced => write!(f, "balanced"),
+            Self::Maximum => write!(f, "maximum"),
+            Self::Archive => write!(f, "archive"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Process priority
+// ---------------------------------------------------------------------------
+
+/// Thread/process priority hint for datacenter workloads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Priority {
+    /// Lower priority — yield to other workloads.
+    Low,
+    /// Normal (default).
+    #[default]
+    Normal,
+    /// Higher priority — latency-sensitive.
+    High,
+}
+
+impl Priority {
+    /// Parse from string (case-insensitive).
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "low" | "l" => Some(Self::Low),
+            "normal" | "n" => Some(Self::Normal),
+            "high" | "h" => Some(Self::High),
+            _ => None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hardware accelerator backend
+// ---------------------------------------------------------------------------
+
+/// Hardware acceleration backend for entropy coding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AccelBackend {
+    /// Software-only (current default path).
+    Software,
+    /// Intel QuickAssist Technology — hardware zstd/deflate.
+    IntelQat,
+    /// Intel In-Memory Analytics Accelerator (Sapphire Rapids+).
+    IntelIaa,
+    /// AMD Xilinx Alveo FPGA acceleration.
+    AmdXilinx,
+    /// GPU compute (CUDA/Vulkan).
+    GpuCompute,
+    /// ARM SVE2 wide-vector acceleration.
+    ArmSve2,
+}
+
+impl AccelBackend {
+    /// Parse from string (case-insensitive).
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "software" | "sw" | "cpu" => Some(Self::Software),
+            "qat" | "intel-qat" => Some(Self::IntelQat),
+            "iaa" | "intel-iaa" => Some(Self::IntelIaa),
+            "xilinx" | "amd-xilinx" | "fpga" => Some(Self::AmdXilinx),
+            "gpu" | "cuda" | "vulkan" => Some(Self::GpuCompute),
+            "sve2" | "arm-sve2" => Some(Self::ArmSve2),
+            "auto" => None, // None = auto-detect best available
+            _ => None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +393,25 @@ pub struct ResourceConfig {
     pub max_memory_mb: usize,
     /// Whether GPU acceleration is enabled (always false for now — TODO).
     pub gpu_enabled: bool,
+
+    // --- Datacenter resource knobs ---
+    /// Cap CPU usage as a percentage of physical cores (1-100).
+    /// `effective_threads = (physical_cores * pct / 100).max(1)`.
+    /// `None` = no cap (use `max_threads` or auto).
+    pub max_cpu_percent: Option<u8>,
+    /// Memory budget as a percentage of system RAM (1-100).
+    /// Overrides `max_memory_mb` when set.
+    pub max_memory_percent: Option<u8>,
+    /// Per-file time budget in milliseconds.  If compression exceeds
+    /// this, remaining parallel blocks bail out to `CompressionLevel::Fast`.
+    /// `None` = no time limit.
+    pub budget_ms: Option<u64>,
+    /// Thread/process scheduling priority hint.
+    pub priority: Option<Priority>,
+    /// I/O bandwidth cap in MB/s (applied in CLI read path).
+    pub io_bandwidth_mbps: Option<u32>,
+    /// Maximum files compressed simultaneously in `--recursive` mode.
+    pub batch_concurrency: Option<usize>,
 }
 
 impl ResourceConfig {
@@ -316,6 +488,14 @@ pub struct CompressConfig {
     /// Internal: disable parallel compression (prevents recursive parallel calls).
     #[doc(hidden)]
     pub disable_parallel: bool,
+
+    // --- Phase 1+2+4 additions ---
+    /// Named preset that was used to build this config (for logging/introspection).
+    pub preset: Option<Preset>,
+    /// Block size override for parallel compression (0 = use preset default).
+    pub block_size: usize,
+    /// Hardware accelerator preference (None = auto-detect best available).
+    pub accelerator: Option<AccelBackend>,
 }
 
 impl Default for CompressConfig {
@@ -333,6 +513,27 @@ impl Default for CompressConfig {
             msn_verbose: false,
             enable_smart_transforms: true,
             disable_parallel: false,
+            preset: None,
+            block_size: 0,
+            accelerator: None,
+        }
+    }
+}
+
+impl CompressConfig {
+    /// Build a config from a named preset.
+    ///
+    /// Individual fields can be overridden after construction.
+    #[must_use]
+    pub fn from_preset(preset: Preset) -> Self {
+        Self {
+            level: preset.level(),
+            enable_smart_transforms: preset.smart_transforms(),
+            enable_msn: preset.msn_enabled(),
+            msn_confidence: preset.msn_confidence(),
+            block_size: preset.block_size(),
+            preset: Some(preset),
+            ..Self::default()
         }
     }
 }

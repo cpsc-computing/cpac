@@ -15,6 +15,7 @@
     clippy::missing_panics_doc
 )]
 
+pub mod accel;
 pub mod analyzer;
 pub mod bench;
 pub mod corpus;
@@ -30,8 +31,8 @@ pub use bench::{
 };
 pub use cpac_dag::{ProfileCache, TransformDAG, TransformRegistry};
 pub use cpac_types::{
-    Backend, CompressConfig, CompressResult, CpacError, CpacResult, DecompressResult,
-    ResourceConfig, Track,
+    AccelBackend, Backend, CompressConfig, CompressResult, CpacError, CpacResult, DecompressResult,
+    Preset, Priority, ResourceConfig, Track,
 };
 pub use host::{auto_resource_config, cached_host_info, detect_host, HostInfo, SimdTier};
 pub use parallel::{
@@ -106,13 +107,15 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // Done BEFORE MSN extraction so we don't waste time extracting MSN on the full
     // file only to discard the result — each parallel block applies MSN independently.
     // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel).
-    if !config.disable_parallel
-        && original_size >= parallel::PARALLEL_THRESHOLD
-        && backend != Backend::Raw
-    {
-        // Use default 1MB block size and auto-detect thread count
+    let effective_block_size = if config.block_size > 0 {
+        config.block_size
+    } else {
+        DEFAULT_BLOCK_SIZE
+    };
+    let adaptive_threshold = effective_block_size.max(parallel::PARALLEL_THRESHOLD);
+    if !config.disable_parallel && original_size >= adaptive_threshold && backend != Backend::Raw {
         let num_threads = rayon::current_num_threads();
-        return compress_parallel(data, config, DEFAULT_BLOCK_SIZE, num_threads);
+        return compress_parallel(data, config, effective_block_size, num_threads);
     }
 
     // 4. MSN (Multi-Scale Normalization) — Track 1 only, single-block path.
@@ -267,8 +270,17 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
             // Smart path produced a smaller output — use it.
             dag_descriptor = smart_dag_desc;
             smart_data
+        } else if config.enable_smart_transforms && residual_ssr.ascii_ratio > 0.50 {
+            // Smart transforms evaluated candidates and found nothing that
+            // beats the zstd-3 baseline on TEXT data.  Skip legacy TP fallback
+            // for text because ROLZ uses raw-size thresholds and hurts
+            // downstream entropy coding on logs/structured text.
+            // For BINARY data (ascii_ratio <= 0.50), fall through to legacy TP
+            // because transpose/float_split/field_lz can genuinely help
+            // (e.g. transpose on x-ray image blocks).
+            data_to_compress.clone()
         } else {
-            // Fall back to SSR-guided TP preprocess (generic profile / default)
+            // Smart mode disabled: use legacy SSR-guided TP preprocess.
             let (preprocessed, _transform_meta) =
                 cpac_transforms::preprocess(data_to_compress, &transform_ctx);
             preprocessed
@@ -343,12 +355,13 @@ const SMART_MIN_CONFIDENCE: f64 = 0.50;
 /// Maximum number of individual transforms to trial in adaptive mode.
 const MAX_ADAPTIVE_TRIALS: usize = 3;
 
-/// Quick zstd-1 compressed size for comparing transform effectiveness.
-/// Uses the fast level to keep overhead low while still reflecting real
-/// compressibility (raw size is a poor proxy — a transform can make data
-/// smaller in raw bytes but larger after entropy coding).
+/// Quick zstd-3 compressed size for comparing transform effectiveness.
+/// Uses level 3 (matching the default zstd backend) to accurately reflect
+/// whether a transform helps at the actual compression level used.
+/// Level 1 was too conservative and rejected transforms that genuinely
+/// reduce compressed size at level 3 (e.g. predict on medical images).
 fn quick_zstd_size(data: &[u8]) -> usize {
-    zstd::bulk::compress(data, 1)
+    zstd::bulk::compress(data, 3)
         .map(|z| z.len())
         .unwrap_or(data.len())
 }
@@ -640,9 +653,14 @@ mod tests {
 
     #[test]
     fn roundtrip_msn_xml_large_parallel() {
-        // > 256 KB triggers CPBL parallel path; XML content should activate MSN
+        // > PARALLEL_THRESHOLD (4 MiB) triggers CPBL parallel path; XML content should activate MSN
         let record = b"<?xml version=\"1.0\"?><record><id>1</id><name>Alice</name><age>30</age><city>New York</city></record>\n";
-        let data: Vec<u8> = record.iter().copied().cycle().take(300_000).collect();
+        let data: Vec<u8> = record
+            .iter()
+            .copied()
+            .cycle()
+            .take(parallel::PARALLEL_THRESHOLD + 1024)
+            .collect();
         assert!(data.len() >= parallel::PARALLEL_THRESHOLD);
 
         let config = CompressConfig {

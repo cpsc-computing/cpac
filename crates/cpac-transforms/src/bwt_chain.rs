@@ -49,8 +49,8 @@ impl TransformNode for BwtChainTransform {
     fn estimate_gain(&self, input: &CpacType, ctx: &TransformContext) -> Option<f64> {
         match input {
             CpacType::Serial(data) => {
-                // BWT is O(n^2) for our simple impl — only apply to medium-sized data
-                if data.len() < 256 || data.len() > 1_000_000 {
+                // SA-IS is O(n) — guard only against very small or huge inputs
+                if data.len() < 256 || data.len() > crate::bwt::BWT_MAX_SIZE {
                     return None;
                 }
                 // Most beneficial for text data with moderate entropy
@@ -67,8 +67,8 @@ impl TransformNode for BwtChainTransform {
     fn encode(&self, input: CpacType, _ctx: &TransformContext) -> CpacResult<(CpacType, Vec<u8>)> {
         match input {
             CpacType::Serial(data) => {
-                // Guard: BWT suffix-sort is O(n² log n) — skip for empty or large data.
-                if data.is_empty() || data.len() > 1_000_000 {
+                // Guard: skip empty or data exceeding BWT limit.
+                if data.is_empty() || data.len() > crate::bwt::BWT_MAX_SIZE {
                     return Ok((CpacType::Serial(data), Vec::new()));
                 }
 
