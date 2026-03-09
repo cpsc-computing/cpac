@@ -85,6 +85,77 @@ cpac benchmark .work/benchdata/logs/loghub-2.0/2k/Linux_2k.log
 - **Use Case**: Classic text compression benchmark
 - **License**: Public domain
 
+## Benchmark Results (2026-03-09 — Session 20, Full Pipeline Validation + Calibration + Dictionary + Preset Matrix)
+
+> **Context**: End-to-end validation of all CPAC subsystems: profile-driven benchmarks (quick/balanced), transform study calibration, dictionary training, preset matrix, and cloud readiness audit.
+
+### Session 20 — Profile-Driven Benchmark Suite
+
+**Quick profile** (canterbury + calgary + loghub2_2k): **43/43 files OK**, 1 iteration each.
+**Balanced profile** (8 corpora, 777 files): **774/777 OK**, 3 iterations each. 3 timeouts on files >95 MB (enwik8, NASA logs) at 300s timeout.
+
+New corpora validated: **nasa_logs** (355 MB), **cloud_configs** (691 files, 3 MB), **kodak** (24 PNG, 14.7 MB).
+
+### Session 20 — Preset Matrix (Turbo → Archive progression)
+
+| File | Type | Turbo | Balanced | Maximum | Archive |
+|------|------|-------|----------|---------|--------|
+| dickens | text | 2.39x | 2.82x | 3.06x | 3.25x |
+| nci | structured | 11.75x | 15.22x | 16.33x | 17.07x |
+| mozilla | mixed | 2.19x | 2.25x | 2.40x | 2.58x |
+| Linux_2k.log | log | 10.95x | 14.28x | 17.66x | 18.81x |
+| alice29.txt | small text | 2.55x | 2.67x | 2.95x | 3.09x |
+| kennedy.xls | spreadsheet | 5.21x | 5.84x | 6.63x | 7.37x |
+
+Presets show consistent progression: Archive achieves 1.2x–1.7x higher ratio than Turbo across all file types. Maximum is the sweet spot for most cloud workloads (close to Archive ratio at higher throughput).
+
+### Session 20 — Transform Study Calibration
+
+28 transforms calibrated across 322 data rows from 4 experiment CSVs (silesia + canterbury).
+
+Top transforms by win rate on Silesia:
+- **bwt_chain**: 58.3% win rate (7/12 files) — best single transform
+- **predict**: 25.0% win rate (3/12 files) — useful on structured data
+- **byte_plane**: 33.3% win rate (2/6 applicable) — helps on columnar data
+
+No-ops on Silesia: arith_decomp, condition, const_elim, context_split, normalize, rle, stride_elim — these transforms need text/log-specific corpora to show benefit.
+
+Calibration output: `.work/benchmarks/calibration.json` (consumed by analyzer at runtime).
+
+### Session 20 — Dictionary Impact
+
+| File | Without Dict | With Dict | Delta |
+|------|-------------|-----------|-------|
+| Linux_2k.log | 14.28x | 15.54x | **+8.8%** |
+| Hadoop_2k.log | 22.00x | 23.64x | **+7.5%** |
+| alice29.txt | 2.67x | 2.90x | **+8.6%** |
+| Spark_2k.log | 15.17x | 14.66x | -3.4% |
+| Apache_2k.log | 16.75x | 16.30x | -2.7% |
+
+Dictionaries help +7-9% on some files, hurt slightly on others where overhead exceeds gains. Best suited for homogeneous corpora where training data closely matches target files.
+
+### Session 20 — Cloud Readiness Audit
+
+All cloud features verified working:
+- ✅ **5 entropy backends**: raw, zstd, brotli, gzip, lzma
+- ✅ **4 presets**: turbo, balanced, maximum, archive (auto-configure all knobs)
+- ✅ **Streaming compression**: `--streaming` with block-based wire format, verified roundtrip
+- ✅ **Archive format**: `.cpar` create/list/extract with per-file compression
+- ✅ **Dictionary support**: `--dict` flag, CPDI format, Python training pipeline
+- ✅ **Hardware accel trait**: `HardwareAccelerator` with stubs for QAT/IAA/GPU/FPGA/SVE2
+- ✅ **Resource config**: threads, memory%, CPU%, budget_ms, io_bandwidth, batch_concurrency
+- ✅ **Auto mmap**: >64 MB files, parallel >256 KiB blocks
+- ✅ **Encryption**: AEAD (ChaCha20/AES-256-GCM) + PQC (ML-KEM-768 hybrid)
+- ✅ **Host detection**: CPU/cores/RAM/SIMD/GPU probe via `cpac info --host`
+
+**Areas for improvement:**
+1. **Transform calibration on text/log corpora** — current calibration is Silesia-heavy (binary-mixed); running studies on logs/cloud-configs would yield better per-domain gates
+2. **Dictionary auto-selection** — currently manual `--dict` flag; could auto-detect best dictionary from a dictionary catalog
+3. **Hardware accel integration** — stubs exist but no real QAT/IAA driver; first cloud deployment needs QAT zstd offload
+4. **Large file timeout** — files >95 MB timeout at 300s with 3 iterations; balanced profile may need higher timeout or fewer iterations for large files
+
+---
+
 ## Benchmark Results (2026-03-09 — Session 19, SA-IS BWT + Smart Pipeline + Zstd Tuning)
 
 > **Context**: Major ratio improvements from three changes:

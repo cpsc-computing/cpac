@@ -2,7 +2,7 @@
 # Covers classic corpora plus Silesia, enwik8, images, and log samples.
 
 id: balanced
-description: "Standard benchmark using classic corpora, Silesia, enwik8, and log samples"
+description: "Standard benchmark using classic corpora, Silesia, enwik8, images, log samples, and cloud configs"
 
 corpora:
   - canterbury
@@ -10,6 +10,8 @@ corpora:
   - silesia
   - enwik8
   - loghub2_2k
+  - nasa_logs
+  - cloud_configs
   - kodak
 
 iterations: 3
@@ -21,6 +23,8 @@ modes:
   entropy_backends:
     - zstd
     - brotli
+    - gzip
+    - lzma
   compression_levels: [3, 9]
 
 metrics:
