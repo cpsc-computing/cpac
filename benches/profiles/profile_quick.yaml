@@ -1,0 +1,28 @@
+# Quick benchmark profile — fast validation (~10 MB, runs in seconds)
+# Uses only small classic corpora for rapid smoke-testing.
+
+id: quick
+description: "Fast validation benchmark using small classic corpora"
+
+corpora:
+  - canterbury
+  - calgary
+  - loghub2_2k
+
+iterations: 1
+timeout_seconds: 60
+track1: true
+skip_baselines: false
+
+modes:
+  entropy_backends:
+    - zstd
+  compression_levels: [3]
+
+metrics:
+  compare_baselines: true
+  baselines:
+    - gzip-9
+    - zstd-3
+  verify_roundtrip: true
+  capture_ssr: true

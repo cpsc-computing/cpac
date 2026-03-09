@@ -33,19 +33,6 @@ citation: |
   2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP),
   South Brisbane, QLD, Australia, 2015, pp. 5206-5210.
 
-# Default sampling (used if no profile specified)
 max_files: 200
 file_selection: size_distributed
-
-# Profile-specific sampling - ~28,000 FLAC files total (~6GB)
-profile:
-  quick_benchmark:
-    max_files: 200
-    file_selection: size_distributed
-  balanced_benchmark:
-    max_files: 1000
-    file_selection: size_distributed
-  full_benchmark:
-    max_files: 3000
-    file_selection: size_distributed
 

@@ -25,15 +25,6 @@ citation: |
   AWS CloudFormation: https://github.com/awslabs/aws-cloudformation-templates (MIT-0)
   Azure Templates: https://github.com/Azure/azure-quickstart-templates (MIT)
 
-# Profile-based filtering
-profiles:
-  quick:
-    include: true
-  balanced:
-    include: true
-  full:
-    include: true
-
 note: |
   JSON corpus with OpenAPI specs, CloudFormation templates, and Azure templates.
   Contains large nested JSON structures typical of cloud APIs. Target: ~500MB-1GB uncompressed.

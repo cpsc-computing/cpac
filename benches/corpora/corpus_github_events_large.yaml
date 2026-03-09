@@ -26,15 +26,6 @@ citation: |
   "GH Archive is a project to record the public GitHub timeline, archive it,
   and make it easily accessible for further analysis."
   
-# Profile-based filtering for benchmark configs
-profiles:
-  quick:
-    exclude: true  # Exclude this entire corpus from quick benchmarks
-  balanced:
-    include: true  # Include in balanced benchmarks
-  full:
-    include: true  # Include in full benchmarks
-
 note: |
   Large JSON corpus with real GitHub API event data. Each hourly file contains
   thousands of JSON events (push, pull request, issue, etc.) with nested

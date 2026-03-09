@@ -29,19 +29,6 @@ citation: |
   [sound]. University of Edinburgh. The Centre for Speech Technology Research (CSTR).
   https://doi.org/10.7488/ds/2645.
 
-# Default sampling (used if no profile specified)
 max_files: 200
 file_selection: size_distributed
-
-# Profile-specific sampling - ~88,000 FLAC files total (~11GB)
-profile:
-  quick_benchmark:
-    max_files: 200
-    file_selection: size_distributed
-  balanced_benchmark:
-    max_files: 1000
-    file_selection: size_distributed
-  full_benchmark:
-    max_files: 3000
-    file_selection: size_distributed
 

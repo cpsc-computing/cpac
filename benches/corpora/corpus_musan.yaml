@@ -28,19 +28,6 @@ citation: |
     note = {arXiv:1510.08484v1}
   }
 
-# Default sampling (used if no profile specified)
 max_files: 200
 file_selection: size_distributed
-
-# Profile-specific sampling - ~2,000 WAV files total (~10GB)
-profile:
-  quick_benchmark:
-    max_files: 200
-    file_selection: size_distributed
-  balanced_benchmark:
-    max_files: 800
-    file_selection: size_distributed
-  full_benchmark:
-    max_files: 1500
-    file_selection: size_distributed
 

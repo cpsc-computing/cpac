@@ -34,15 +34,6 @@ citation: |
   AWS CloudFormation: https://github.com/awslabs/aws-cloudformation-templates (MIT-0)
   Terraform AWS modules: https://github.com/terraform-aws-modules (Apache 2.0)
 
-# Profile-based filtering
-profiles:
-  quick:
-    include: true
-  balanced:
-    include: true
-  full:
-    include: true
-
 note: |
   Cloud infrastructure configuration corpus covering Kubernetes manifests,
   CloudFormation templates, and Terraform HCL/JSON configs. Target: ~200-500MB uncompressed.

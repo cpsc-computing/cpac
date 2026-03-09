@@ -17,23 +17,10 @@ target_subdir: digitalcorpora
 extract_paths:
   - "*/*.*"
 
-# Default sampling (used if no profile specified)
 max_files: 500
 file_selection: size_distributed
 
-# Profile-specific sampling
-profile:
-  quick_benchmark:
-    max_files: 500
-    file_selection: size_distributed
-  balanced_benchmark:
-    max_files: 2000
-    file_selection: size_distributed
-  full_benchmark:
-    max_files: 5000
-    file_selection: size_distributed
-
-note: Downloads 10 archives (~10,000 files total) and extracts mixed document types (PDF, DOC, XLS, PPT, HTML, etc.)
+note:
 license: Freely redistributable for research purposes
 citation: |
   Garfinkel, Farrell, Roussev and Dinolt, "Bringing Science to Digital Forensics

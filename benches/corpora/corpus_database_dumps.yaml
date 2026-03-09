@@ -29,15 +29,6 @@ citation: |
   MySQL test_db: https://github.com/datacharmer/test_db (CC-BY-SA)
   MongoDB samples: https://github.com/neelabalan/mongodb-sample-dataset (MIT)
 
-# Profile-based filtering
-profiles:
-  quick:
-    include: true
-  balanced:
-    include: true
-  full:
-    include: true
-
 note: |
   Database dump corpus with SQL scripts, JSON exports, and CSV data files.
   Contains PostgreSQL dumps, MySQL schemas, and MongoDB JSON collections.

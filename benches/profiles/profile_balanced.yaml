@@ -1,0 +1,35 @@
+# Balanced benchmark profile — standard evaluation (~310 MB, a few minutes)
+# Covers classic corpora plus Silesia, enwik8, images, and log samples.
+
+id: balanced
+description: "Standard benchmark using classic corpora, Silesia, enwik8, and log samples"
+
+corpora:
+  - canterbury
+  - calgary
+  - silesia
+  - enwik8
+  - loghub2_2k
+  - kodak
+
+iterations: 3
+timeout_seconds: 300
+track1: true
+skip_baselines: false
+
+modes:
+  entropy_backends:
+    - zstd
+    - brotli
+  compression_levels: [3, 9]
+
+metrics:
+  compare_baselines: true
+  baselines:
+    - gzip-9
+    - zstd-3
+    - brotli-11
+    - lzma-6
+  verify_roundtrip: true
+  capture_ssr: true
+  measure_speed: true

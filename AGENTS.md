@@ -93,7 +93,7 @@ Examples:
 - **Doc comments** on all public items.
 - **Unit tests** in each crate (`#[cfg(test)] mod tests`).
 - **Integration tests** in `tests/` directory of `cpac-engine`.
-- **NO SYNTHETIC DATA — HARD RULE**: This applies to **tests AND benchmarks**. Never generate, create, or use synthetic/fake data for any test or benchmark purpose. Benchmark results derived from synthetic data are invalid and must be deleted. All benchmarks must run exclusively against the official corpus files downloaded via the corpus profiles in `benches/configs/`. Never create files under `.work/benchmarks/bench-corpus/` or any ad-hoc corpus directory — this is explicitly prohibited.
+- **NO SYNTHETIC DATA — HARD RULE**: This applies to **tests AND benchmarks**. Never generate, create, or use synthetic/fake data for any test or benchmark purpose. Benchmark results derived from synthetic data are invalid and must be deleted. All benchmarks must run exclusively against the official corpus files downloaded via the corpus configs in `benches/corpora/`. Never create files under `.work/benchmarks/bench-corpus/` or any ad-hoc corpus directory — this is explicitly prohibited.
 - **CORPUS LOCALITY — HARD RULE**: Benchmark corpus files must live in `cpac/.work/benchdata/` inside **this** repository. Never reference, symlink, junction, or use corpus files from other repositories (e.g. `cpac-engine-python/.work/`). Download corpora with `shell.ps1 download-corpus`. The `.work/` directory must be a real directory, not a junction or symlink.
 - **Copyright header** on every `.rs` file:
   ```

@@ -90,7 +90,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _WORK_DIR = REPO_ROOT / ".work"
 VENV_DIR = _WORK_DIR / "env"
 BENCHDATA_DIR = _WORK_DIR / "benchdata"
-CORPUS_CONFIG_DIR = REPO_ROOT / "benches" / "configs"
+CORPUS_DIR = REPO_ROOT / "benches" / "corpora"
+PROFILE_DIR = REPO_ROOT / "benches" / "profiles"
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +235,127 @@ def cmd_check(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Profile & Corpus Resolution
+# ---------------------------------------------------------------------------
+
+
+def _parse_yaml_simple(path: pathlib.Path) -> dict:
+    """Minimal YAML parser for corpus/profile config files.
+
+    Handles scalar fields and list items (- value).  No external dependency.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    cfg: dict = {}
+    current_list_key: Optional[str] = None
+
+    for line in lines:
+        stripped = line.rstrip()
+
+        # Skip comments and blank lines
+        if not stripped or stripped.lstrip().startswith("#"):
+            if current_list_key and not stripped.lstrip().startswith("#"):
+                current_list_key = None
+            continue
+
+        # List item under current key
+        if current_list_key and stripped.startswith("  - "):
+            val = stripped.lstrip(" -").strip().split("#")[0].strip().strip("'\"")
+            if val:
+                cfg.setdefault(current_list_key, []).append(val)
+            continue
+
+        # End of list block
+        if current_list_key and stripped and not stripped.startswith(" "):
+            current_list_key = None
+
+        # Indented non-list line (nested map) — skip for simplicity
+        if stripped.startswith(" ") and not stripped.startswith("  - "):
+            continue
+
+        # Top-level key: value
+        if ": " in stripped and not stripped.startswith(" "):
+            key, val = stripped.split(": ", 1)
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            if val:
+                # Inline list: [a, b]
+                if val.startswith("[") and val.endswith("]"):
+                    items = [v.strip().strip("'\"")
+                             for v in val[1:-1].split(",") if v.strip()]
+                    cfg[key] = items
+                else:
+                    cfg[key] = val
+            continue
+
+        # Key with no inline value — start of list or map block
+        if stripped.endswith(":") and not stripped.startswith(" "):
+            key = stripped[:-1].strip()
+            current_list_key = key
+            cfg.setdefault(key, [])
+            continue
+
+    return cfg
+
+
+def resolve_profile(profile_id: str) -> dict:
+    """Find and parse a benchmark profile YAML by id.
+
+    Scans all files in benches/profiles/ and returns the one whose
+    'id' field matches *profile_id*.
+    """
+    if not PROFILE_DIR.is_dir():
+        raise CommandError(f"Profile directory not found: {PROFILE_DIR}")
+
+    for p in sorted(PROFILE_DIR.glob("*.yaml")):
+        cfg = _parse_yaml_simple(p)
+        if cfg.get("id") == profile_id:
+            return cfg
+    for p in sorted(PROFILE_DIR.glob("*.yml")):
+        cfg = _parse_yaml_simple(p)
+        if cfg.get("id") == profile_id:
+            return cfg
+
+    available = []
+    for p in sorted(list(PROFILE_DIR.glob("*.yaml")) + list(PROFILE_DIR.glob("*.yml"))):
+        cfg = _parse_yaml_simple(p)
+        if "id" in cfg:
+            available.append(cfg["id"])
+    raise CommandError(
+        f"Unknown profile: '{profile_id}'\n"
+        f"  Available profiles: {', '.join(available) if available else '(none)'}\n"
+        f"  Profile directory:  {PROFILE_DIR}"
+    )
+
+
+def resolve_corpus_config(corpus_id: str) -> dict:
+    """Find and parse a corpus YAML by id.
+
+    Scans benches/corpora/corpus_*.yaml for matching 'id' field.
+    """
+    config_path = CORPUS_DIR / f"corpus_{corpus_id}.yaml"
+    if config_path.exists():
+        return _parse_yaml_simple(config_path)
+    # Fallback: scan all files
+    for p in sorted(CORPUS_DIR.glob("*.yaml")):
+        cfg = _parse_yaml_simple(p)
+        if cfg.get("id") == corpus_id:
+            return cfg
+    raise CommandError(f"Unknown corpus: '{corpus_id}' (not found in {CORPUS_DIR})")
+
+
+def corpus_data_dir(corpus_cfg: dict) -> pathlib.Path:
+    """Return the local data directory for a corpus config."""
+    subdir = corpus_cfg.get("target_subdir", corpus_cfg.get("id", "unknown"))
+    return BENCHDATA_DIR / subdir
+
+
+def corpora_for_profile(profile_id: str) -> list:
+    """Return list of corpus IDs for a given profile."""
+    prof = resolve_profile(profile_id)
+    return prof.get("corpora", [])
+
+
+# ---------------------------------------------------------------------------
 # Commands: Benchmark
 # ---------------------------------------------------------------------------
 
@@ -260,70 +382,121 @@ def cmd_bench(args: argparse.Namespace) -> None:
 
 
 def cmd_benchmark_all(args: argparse.Namespace) -> None:
-    """Run benchmarks across all Silesia corpus files (or specified corpus dir).
+    """Profile-driven benchmark suite.
 
-    Replaces benchmark-all.ps1 — produces timestamped results in .work/benchmarks/.
+    Resolves a benchmark profile by id, iterates over all corpora listed
+    in the profile, and runs the cpac benchmark on each file.
+    Results are saved to .work/benchmarks/.
     """
     binary = resolve_cpac_binary()
-    mode = args.mode
+    profile_id = args.profile
+    profile = resolve_profile(profile_id)
+    corpus_ids = profile.get("corpora", [])
 
-    # Resolve corpus directory
-    corpus_dir = pathlib.Path(args.corpus_dir) if args.corpus_dir else BENCHDATA_DIR / "silesia"
-    if not corpus_dir.exists():
-        raise CommandError(
-            f"Corpus directory not found: {corpus_dir}\n"
-            "  Download with: shell.ps1 download-corpus --corpus silesia"
-        )
+    if not corpus_ids:
+        raise CommandError(f"Profile '{profile_id}' has no corpora listed.")
 
-    # Collect files
-    files = sorted(f for f in corpus_dir.iterdir() if f.is_file() and not f.suffix == ".cpac")
-    if not files:
-        raise CommandError(f"No files found in {corpus_dir}")
+    # Profile knobs
+    iterations = int(profile.get("iterations", 3))
+    timeout_sec = int(profile.get("timeout_seconds", 600))
+    track1 = str(profile.get("track1", "true")).lower() in ("true", "1", "yes")
+    skip_baselines = str(profile.get("skip_baselines", "false")).lower() in ("true", "1", "yes")
+    # CLI overrides
+    if args.skip_baselines:
+        skip_baselines = True
 
     # Output directory
     timestamp = time.strftime("%Y-%m-%d_%H-%M")
-    out_dir = REPO_ROOT / ".work" / "benchmarks" / f"benchmark-all_{timestamp}"
+    out_dir = _WORK_DIR / "benchmarks" / f"benchmark-{profile_id}_{timestamp}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"CPAC Benchmark Suite ({mode} mode)")
-    print(f"  Corpus:  {corpus_dir} ({len(files)} files)")
-    print(f"  Output:  {out_dir}")
+    print(f"CPAC Benchmark Suite (profile: {profile_id})")
+    print(f"  Description: {profile.get('description', '')}")
+    print(f"  Corpora:     {', '.join(corpus_ids)}")
+    print(f"  Iterations:  {iterations}")
+    print(f"  Timeout:     {timeout_sec}s per file")
+    print(f"  Track 1:     {track1}")
+    print(f"  Output:      {out_dir}")
     print()
 
-    mode_flag = f"--{mode}" if mode != "balanced" else ""
     summary_path = out_dir / "summary.txt"
+    total_files = 0
+    total_ok = 0
+    missing_corpora = []
 
     with summary_path.open("w", encoding="utf-8") as summary:
-        summary.write(f"CPAC Benchmark Results — {timestamp} ({mode} mode)\n")
+        summary.write(f"CPAC Benchmark Results — {timestamp} (profile: {profile_id})\n")
+        summary.write(f"Iterations: {iterations}\n")
         summary.write("=" * 70 + "\n\n")
 
-        for f in files:
-            size_kb = f.stat().st_size / 1024
-            print(f"  Benchmarking: {f.name} ({size_kb:.1f} KB)...")
-
-            cmd = [binary, "benchmark", str(f), "--track1"]
-            if mode_flag:
-                cmd.append(mode_flag)
-            if args.skip_baselines:
-                cmd.append("--skip-baselines")
-
-            log_file = out_dir / f"{f.stem}.txt"
+        for corpus_id in corpus_ids:
             try:
-                result = subprocess.run(
-                    cmd, cwd=str(REPO_ROOT),
-                    capture_output=True, text=True, timeout=600,
-                )
-                log_file.write_text(result.stdout, encoding="utf-8")
-                summary.write(result.stdout + "\n")
-                print(f"    OK")
-            except subprocess.TimeoutExpired:
-                print(f"    TIMEOUT")
-                summary.write(f"TIMEOUT: {f.name}\n\n")
-            except Exception as e:
-                print(f"    FAILED: {e}")
-                summary.write(f"ERROR: {f.name}: {e}\n\n")
+                corpus_cfg = resolve_corpus_config(corpus_id)
+            except CommandError:
+                print(f"  WARNING: corpus '{corpus_id}' not found in {CORPUS_DIR}, skipping")
+                missing_corpora.append(corpus_id)
+                continue
 
-    print(f"\nResults saved to: {out_dir}")
+            data_dir = corpus_data_dir(corpus_cfg)
+            if not data_dir.exists() or not any(data_dir.rglob("*")):
+                print(f"  WARNING: corpus '{corpus_id}' not downloaded ({data_dir}), skipping")
+                print(f"           Download with: shell.ps1 download-corpus --corpus {corpus_id}")
+                missing_corpora.append(corpus_id)
+                continue
+
+            # Collect files from corpus directory
+            files = sorted(
+                f for f in data_dir.rglob("*")
+                if f.is_file() and f.suffix != ".cpac"
+            )
+            if not files:
+                print(f"  WARNING: no files in {data_dir}, skipping")
+                missing_corpora.append(corpus_id)
+                continue
+
+            total_size = sum(f.stat().st_size for f in files)
+            print(f"[{corpus_id}] {len(files)} files, {total_size / (1024 * 1024):.1f} MB")
+            summary.write(f"\n=== {corpus_id} ({len(files)} files, "
+                          f"{total_size / (1024 * 1024):.1f} MB) ===\n\n")
+
+            corpus_out = out_dir / corpus_id
+            corpus_out.mkdir(parents=True, exist_ok=True)
+
+            for f in files:
+                total_files += 1
+                size_kb = f.stat().st_size / 1024
+                rel = f.relative_to(data_dir)
+                print(f"  {rel} ({size_kb:.1f} KB)...", end=" ", flush=True)
+
+                cmd = [binary, "benchmark", str(f), "-n", str(iterations)]
+                if track1:
+                    cmd.append("--track1")
+                if skip_baselines:
+                    cmd.append("--skip-baselines")
+
+                log_name = str(rel).replace(os.sep, "_").replace("/", "_")
+                log_file = corpus_out / f"{log_name}.txt"
+                try:
+                    result = subprocess.run(
+                        cmd, cwd=str(REPO_ROOT),
+                        capture_output=True, text=True, timeout=timeout_sec,
+                    )
+                    log_file.write_text(result.stdout, encoding="utf-8")
+                    summary.write(result.stdout + "\n")
+                    print("OK")
+                    total_ok += 1
+                except subprocess.TimeoutExpired:
+                    print("TIMEOUT")
+                    summary.write(f"TIMEOUT: {corpus_id}/{rel}\n\n")
+                except Exception as e:
+                    print(f"FAILED: {e}")
+                    summary.write(f"ERROR: {corpus_id}/{rel}: {e}\n\n")
+
+    print(f"\n{'=' * 50}")
+    print(f"Results: {total_ok}/{total_files} files OK")
+    if missing_corpora:
+        print(f"Missing: {', '.join(missing_corpora)}")
+    print(f"Output:  {out_dir}")
     print(f"Summary: {summary_path}")
 
 
@@ -452,123 +625,97 @@ def cmd_pgo_build(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _parse_corpus_yaml(path: pathlib.Path) -> dict:
-    """Minimal YAML parser for corpus config files.
+def _download_single_corpus(corpus_id: str, target_dir: pathlib.Path) -> None:
+    """Download a single corpus by id into target_dir."""
+    try:
+        cfg = resolve_corpus_config(corpus_id)
+    except CommandError:
+        print(f"  WARNING: Config not found for '{corpus_id}' — skipping")
+        return
 
-    Handles scalar fields and multi-line download_url lists.
-    No external dependency required.
-    """
-    lines = path.read_text(encoding="utf-8").splitlines()
-    cfg = {"download_url": []}
-    in_url_block = False
+    print(f"[{corpus_id}]")
+    subdir = cfg.get("target_subdir", corpus_id)
+    dest = target_dir / subdir
 
-    for line in lines:
-        stripped = line.rstrip()
+    # Skip if already populated
+    if dest.exists():
+        existing = list(dest.rglob("*"))
+        file_count = sum(1 for f in existing if f.is_file())
+        if file_count > 0:
+            total_mb = sum(f.stat().st_size for f in existing if f.is_file()) / (1024 * 1024)
+            print(f"  Already present: {dest} ({file_count} files, {total_mb:.1f} MB)\n")
+            return
 
-        if stripped == "download_url:" or stripped.startswith("download_url: "):
-            if ": " in stripped and not stripped.endswith(":"):
-                # Single URL on same line
-                val = stripped.split(": ", 1)[1].strip().strip("'\"")
-                cfg["download_url"].append(val)
+    dest.mkdir(parents=True, exist_ok=True)
+    urls = cfg.get("download_url", [])
+    if isinstance(urls, str):
+        urls = [urls]
+    kind = cfg.get("download_kind", "")
+
+    try:
+        if len(urls) > 1 or kind == "http_file_multi":
+            for i, url in enumerate(urls, 1):
+                filename = url.split("?")[0].split("/")[-1]
+                out_path = dest / filename
+                print(f"  [{i}/{len(urls)}] {filename}")
+                _download_file(url, out_path)
+        elif urls:
+            url = urls[0]
+            print(f"  Downloading: {url}")
+
+            if kind == "http_targz" or url.endswith((".tar.gz", ".tgz")):
+                tmp = pathlib.Path(tempfile.mktemp(suffix=".tar.gz"))
+                _download_file(url, tmp)
+                print("  Extracting TAR.GZ...")
+                subprocess.run(["tar", "-xzf", str(tmp), "-C", str(dest)], check=True)
+                tmp.unlink(missing_ok=True)
+            elif kind == "http_zip" or url.endswith(".zip"):
+                tmp = pathlib.Path(tempfile.mktemp(suffix=".zip"))
+                _download_file(url, tmp)
+                print("  Extracting ZIP...")
+                import zipfile
+                with zipfile.ZipFile(tmp) as zf:
+                    zf.extractall(dest)
+                tmp.unlink(missing_ok=True)
             else:
-                in_url_block = True
-            continue
+                filename = url.split("?")[0].split("/")[-1]
+                _download_file(url, dest / filename)
 
-        if in_url_block:
-            if stripped.startswith("  - "):
-                url = stripped.lstrip(" -").strip().split("#")[0].strip().strip("'\"")
-                if url:
-                    cfg["download_url"].append(url)
-                continue
-            elif stripped and not stripped.startswith(" "):
-                in_url_block = False
-            else:
-                continue
+        file_count = sum(1 for f in dest.rglob("*") if f.is_file())
+        total_mb = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file()) / (1024 * 1024)
+        print(f"  Done: {file_count} files, {total_mb:.1f} MB\n")
 
-        if ": " in stripped and not stripped.startswith(" ") and not stripped.startswith("#"):
-            key, val = stripped.split(": ", 1)
-            cfg[key.strip()] = val.strip().strip("'\"")
-
-    return cfg
+    except Exception as e:
+        print(f"  Download failed for '{corpus_id}': {e}")
+        if dest.exists() and not any(dest.iterdir()):
+            shutil.rmtree(dest, ignore_errors=True)
+        print()
 
 
 def cmd_download_corpus(args: argparse.Namespace) -> None:
-    """Download benchmark corpora from YAML configs.
+    """Download benchmark corpora.
 
-    Replaces scripts/download-corpus.ps1.
+    Supports two modes:
+      --corpus <id,...>    Download specific corpora by id
+      --profile <id>       Download all corpora required by a benchmark profile
     """
-    corpus_list = [c.strip() for c in args.corpus.split(",") if c.strip()]
-    target_dir = REPO_ROOT / args.target_dir
+    # Resolve corpus list from profile or explicit --corpus flag
+    if args.profile:
+        corpus_list = corpora_for_profile(args.profile)
+        print(f"CPAC Corpus Downloader (profile: {args.profile})")
+    else:
+        corpus_list = [c.strip() for c in args.corpus.split(",") if c.strip()]
+        print("CPAC Corpus Downloader")
 
-    print("CPAC Corpus Downloader")
+    target_dir = REPO_ROOT / args.target_dir
     print("======================")
-    print(f"Target: {target_dir}\n")
+    print(f"Corpora:  {', '.join(corpus_list)}")
+    print(f"Target:   {target_dir}\n")
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
     for corpus_id in corpus_list:
-        config_path = CORPUS_CONFIG_DIR / f"corpus_{corpus_id}.yaml"
-        if not config_path.exists():
-            print(f"  WARNING: Config not found: {config_path} — skipping '{corpus_id}'")
-            continue
-
-        print(f"[{corpus_id}]")
-        cfg = _parse_corpus_yaml(config_path)
-        subdir = cfg.get("target_subdir", corpus_id)
-        dest = target_dir / subdir
-
-        # Skip if already populated
-        if dest.exists():
-            existing = list(dest.rglob("*"))
-            file_count = sum(1 for f in existing if f.is_file())
-            if file_count > 0:
-                total_mb = sum(f.stat().st_size for f in existing if f.is_file()) / (1024 * 1024)
-                print(f"  Already present: {dest} ({file_count} files, {total_mb:.1f} MB)\n")
-                continue
-
-        dest.mkdir(parents=True, exist_ok=True)
-        urls = cfg.get("download_url", [])
-        kind = cfg.get("download_kind", "")
-
-        try:
-            if len(urls) > 1 or kind == "http_file_multi":
-                # Multiple individual files
-                for i, url in enumerate(urls, 1):
-                    filename = url.split("?")[0].split("/")[-1]
-                    out_path = dest / filename
-                    print(f"  [{i}/{len(urls)}] {filename}")
-                    _download_file(url, out_path)
-            elif urls:
-                url = urls[0]
-                print(f"  Downloading: {url}")
-
-                if kind == "http_targz" or url.endswith((".tar.gz", ".tgz")):
-                    tmp = pathlib.Path(tempfile.mktemp(suffix=".tar.gz"))
-                    _download_file(url, tmp)
-                    print("  Extracting TAR.GZ...")
-                    subprocess.run(["tar", "-xzf", str(tmp), "-C", str(dest)], check=True)
-                    tmp.unlink(missing_ok=True)
-                elif kind == "http_zip" or url.endswith(".zip"):
-                    tmp = pathlib.Path(tempfile.mktemp(suffix=".zip"))
-                    _download_file(url, tmp)
-                    print("  Extracting ZIP...")
-                    import zipfile
-                    with zipfile.ZipFile(tmp) as zf:
-                        zf.extractall(dest)
-                    tmp.unlink(missing_ok=True)
-                else:
-                    filename = url.split("?")[0].split("/")[-1]
-                    _download_file(url, dest / filename)
-
-            file_count = sum(1 for f in dest.rglob("*") if f.is_file())
-            total_mb = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file()) / (1024 * 1024)
-            print(f"  Done: {file_count} files, {total_mb:.1f} MB\n")
-
-        except Exception as e:
-            print(f"  Download failed for '{corpus_id}': {e}")
-            if not any(dest.iterdir()):
-                shutil.rmtree(dest, ignore_errors=True)
-            print()
+        _download_single_corpus(corpus_id, target_dir)
 
     # Summary
     print("Summary:")
@@ -878,10 +1025,9 @@ def main() -> None:
     p.add_argument("-n", "--iterations", type=int, help="Override iteration count")
 
     # benchmark-all
-    p = sub.add_parser("benchmark-all", help="Run full corpus benchmark suite")
-    p.add_argument("--mode", choices=["quick", "balanced", "full"], default="balanced",
-                    help="Benchmark mode (default: balanced)")
-    p.add_argument("--corpus-dir", help="Override corpus directory")
+    p = sub.add_parser("benchmark-all", help="Run profile-driven corpus benchmark suite")
+    p.add_argument("--profile", default="balanced",
+                    help="Benchmark profile id (default: balanced). See benches/profiles/")
     p.add_argument("--skip-baselines", action="store_true", help="Skip baseline engines")
 
     # criterion
@@ -893,8 +1039,10 @@ def main() -> None:
 
     # download-corpus
     p = sub.add_parser("download-corpus", help="Download benchmark corpora")
-    p.add_argument("--corpus", default="canterbury,calgary,silesia,loghub2_2k",
-                    help="Comma-separated corpus IDs (default: canterbury,calgary,silesia,loghub2_2k)")
+    p.add_argument("--corpus", default="canterbury,calgary,silesia,loghub2_2k,enwik8",
+                    help="Comma-separated corpus IDs (default: canterbury,calgary,silesia,loghub2_2k,enwik8)")
+    p.add_argument("--profile",
+                    help="Download all corpora for a benchmark profile (overrides --corpus)")
     p.add_argument("--target-dir", default=".work/benchdata",
                     help="Target directory (default: .work/benchdata)")
 
