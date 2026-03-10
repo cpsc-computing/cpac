@@ -15,10 +15,54 @@ use cpac_types::{CpacError, CpacResult};
 pub enum PqcAlgorithm {
     /// ML-KEM-768 (FIPS 203) — key encapsulation.
     MlKem768,
+    /// ML-KEM-1024 (FIPS 203, Level 5) — key encapsulation.
+    MlKem1024,
     /// ML-DSA-65 (FIPS 204) — digital signatures.
     MlDsa65,
-    /// SLH-DSA-SHA2-128s (FIPS 205) — hash-based signatures (deferred).
+    /// ML-DSA-87 (FIPS 204, Level 5) — digital signatures.
+    MlDsa87,
+    /// SLH-DSA-SHA2-128s (FIPS 205) — hash-based signatures.
     SlhDsaSha2128s,
+}
+
+impl PqcAlgorithm {
+    /// Wire ID for serialisation in CPHE v2 / CPCE v2 headers.
+    #[must_use]
+    pub fn id(self) -> u8 {
+        match self {
+            PqcAlgorithm::MlKem768 => 1,
+            PqcAlgorithm::MlKem1024 => 2,
+            PqcAlgorithm::MlDsa65 => 10,
+            PqcAlgorithm::MlDsa87 => 11,
+            PqcAlgorithm::SlhDsaSha2128s => 20,
+        }
+    }
+
+    /// Decode from wire ID.
+    pub fn from_id(id: u8) -> cpac_types::CpacResult<Self> {
+        match id {
+            1 => Ok(PqcAlgorithm::MlKem768),
+            2 => Ok(PqcAlgorithm::MlKem1024),
+            10 => Ok(PqcAlgorithm::MlDsa65),
+            11 => Ok(PqcAlgorithm::MlDsa87),
+            20 => Ok(PqcAlgorithm::SlhDsaSha2128s),
+            _ => Err(cpac_types::CpacError::Encryption(format!(
+                "unknown PQC algorithm wire ID: {id}"
+            ))),
+        }
+    }
+
+    /// Human-readable label.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            PqcAlgorithm::MlKem768 => "ML-KEM-768",
+            PqcAlgorithm::MlKem1024 => "ML-KEM-1024",
+            PqcAlgorithm::MlDsa65 => "ML-DSA-65",
+            PqcAlgorithm::MlDsa87 => "ML-DSA-87",
+            PqcAlgorithm::SlhDsaSha2128s => "SLH-DSA-SHA2-128s",
+        }
+    }
 }
 
 /// A PQC key pair (serialized byte blobs).
@@ -33,7 +77,13 @@ pub struct PqcKeyPair {
 pub fn pqc_keygen(algo: PqcAlgorithm) -> CpacResult<PqcKeyPair> {
     match algo {
         PqcAlgorithm::MlKem768 => keygen_mlkem768(),
+        PqcAlgorithm::MlKem1024 => Err(CpacError::Encryption(
+            "ML-KEM-1024 keygen not yet implemented (Level 5 parameterisation pending)".into(),
+        )),
         PqcAlgorithm::MlDsa65 => keygen_mldsa65(),
+        PqcAlgorithm::MlDsa87 => Err(CpacError::Encryption(
+            "ML-DSA-87 keygen not yet implemented (Level 5 parameterisation pending)".into(),
+        )),
         PqcAlgorithm::SlhDsaSha2128s => Err(CpacError::Encryption(
             "SLH-DSA not yet available (signature crate version conflict)".into(),
         )),
@@ -70,10 +120,13 @@ pub fn pqc_decapsulate(
 pub fn pqc_sign(message: &[u8], secret_key: &[u8], algo: PqcAlgorithm) -> CpacResult<Vec<u8>> {
     match algo {
         PqcAlgorithm::MlDsa65 => sign_mldsa65(message, secret_key),
+        PqcAlgorithm::MlDsa87 => Err(CpacError::Encryption(
+            "ML-DSA-87 signing not yet implemented".into(),
+        )),
         PqcAlgorithm::SlhDsaSha2128s => {
             Err(CpacError::Encryption("SLH-DSA not yet available".into()))
         }
-        PqcAlgorithm::MlKem768 => Err(CpacError::Encryption(format!(
+        PqcAlgorithm::MlKem768 | PqcAlgorithm::MlKem1024 => Err(CpacError::Encryption(format!(
             "{algo:?} does not support signing"
         ))),
     }
@@ -88,10 +141,13 @@ pub fn pqc_verify(
 ) -> CpacResult<bool> {
     match algo {
         PqcAlgorithm::MlDsa65 => verify_mldsa65(message, signature, public_key),
+        PqcAlgorithm::MlDsa87 => Err(CpacError::Encryption(
+            "ML-DSA-87 verification not yet implemented".into(),
+        )),
         PqcAlgorithm::SlhDsaSha2128s => {
             Err(CpacError::Encryption("SLH-DSA not yet available".into()))
         }
-        PqcAlgorithm::MlKem768 => Err(CpacError::Encryption(format!(
+        PqcAlgorithm::MlKem768 | PqcAlgorithm::MlKem1024 => Err(CpacError::Encryption(format!(
             "{algo:?} does not support verification"
         ))),
     }

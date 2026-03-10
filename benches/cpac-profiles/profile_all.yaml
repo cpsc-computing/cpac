@@ -1,8 +1,9 @@
-# Balanced benchmark profile — standard evaluation (~310 MB, a few minutes)
-# Covers classic corpora plus Silesia, enwik8, images, and log samples.
+# All-corpus benchmark profile — everything we have downloaded
+# Classic corpora + cloud + logs + images = ~720 MB across ~800 files
+# Runtime: ~20-40 min depending on hardware
 
-id: balanced
-description: "Standard benchmark using classic corpora, Silesia, enwik8, images, log samples, and cloud configs"
+id: all
+description: "Full benchmark across all downloaded corpora: classic, cloud, logs, images"
 
 corpora:
   - canterbury
@@ -11,11 +12,14 @@ corpora:
   - enwik8
   - loghub2_2k
   - nasa_logs
-  - cloud_configs
   - kodak
+  - cloud_configs
+  - cloud_benchmark
 
 iterations: 3
-timeout_seconds: 300
+timeout_seconds: 900
+large_file_threshold_mb: 50
+large_file_iterations: 1
 track1: true
 skip_baselines: false
 

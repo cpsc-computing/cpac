@@ -32,6 +32,7 @@ lzma-rs = { workspace = true }
 zstd = { workspace = true }
 brotli = { workspace = true }
 bincode = { workspace = true }
+blake3 = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

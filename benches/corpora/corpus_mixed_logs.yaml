@@ -1,0 +1,15 @@
+id: mixed_logs
+name: Mixed Log Types (Archive Test)
+description: |
+  Multiple log formats from the same conceptual system: syslog, Apache access
+  logs, application logs with shared timestamps, hostnames, and IP patterns.
+  Tests cross-file redundancy from common log infrastructure tokens.
+target_subdir: logs
+# Re-uses loghub + nasa logs; no separate download needed.
+download_url: null
+download_kind: local
+license: Mixed (research use)
+note: |
+  Archive benchmark corpus: measures cross-file gains when compressing
+  related log files together. Log files share timestamps, hostnames,
+  severity levels, and structured patterns that solid-mode should exploit.

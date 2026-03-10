@@ -94,8 +94,9 @@ enum Commands {
         /// via adaptive trials.
         #[arg(long)]
         smart: bool,
-        /// Named preset: turbo, balanced, maximum, archive.
+        /// Named preset: turbo, balanced, maximum, archive, max-ratio.
         /// Auto-configures level, transforms, MSN, block size, and threading.
+        /// max-ratio forces brotli-11 with full MSN for absolute best ratio.
         /// Individual flags (--level, --smart, etc.) override the preset.
         #[arg(long)]
         preset: Option<String>,
@@ -113,6 +114,20 @@ enum Commands {
         /// Block size in bytes for streaming compression (default: 1 MiB).
         #[arg(long, default_value_t = 1 << 20, requires = "streaming")]
         stream_block: usize,
+        /// Disable automatic dictionary selection from .work/benchmarks/.
+        #[arg(long)]
+        no_auto_dict: bool,
+        /// Encrypt output with a password (reads CPAC_PASSWORD env or prompts).
+        /// Produces CPCE wire format (.cpac-enc) combining compression + encryption.
+        #[arg(long)]
+        encrypt: bool,
+        /// PQC hybrid key file for encryption (.cpac-pub).
+        /// When provided with --encrypt, uses X25519 + ML-KEM-768 instead of password.
+        #[arg(long, requires = "encrypt")]
+        encrypt_key: Option<PathBuf>,
+        /// AEAD algorithm for encryption: chacha20 or aes256gcm.
+        #[arg(long, default_value = "chacha20", requires = "encrypt")]
+        encrypt_algo: String,
     },
     /// Decompress a file (or stdin with -).
     #[command(alias = "d", alias = "x")]
@@ -140,6 +155,10 @@ enum Commands {
         /// Use streaming decompression (required for .cpac-stream files).
         #[arg(long)]
         streaming: bool,
+        /// Secret key file for CPCE PQC decryption (.cpac-sec).
+        /// Password decryption reads CPAC_PASSWORD env var or prompts.
+        #[arg(long)]
+        encrypt_key: Option<PathBuf>,
     },
     /// Show file info or host system details.
     #[command(alias = "i")]
@@ -195,6 +214,15 @@ enum Commands {
         /// Input file to analyze.
         input: PathBuf,
     },
+    /// Profile a file: trial compression matrix, gap analysis, recommendations.
+    #[command(alias = "p")]
+    Profile {
+        /// Input file to profile.
+        input: PathBuf,
+        /// Quick mode: fewer trials, faster results.
+        #[arg(long)]
+        quick: bool,
+    },
     /// Analyze file with Auto-CAS constraint inference.
     #[command(alias = "cas")]
     AutoCas {
@@ -234,6 +262,11 @@ enum Commands {
         /// Output archive file.
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Solid mode: concatenate all files and compress as one stream.
+        /// Better ratio for similar files (configs, logs) but requires
+        /// full decompression to extract any single file.
+        #[arg(long)]
+        solid: bool,
     },
     /// Extract a .cpar archive.
     #[command(alias = "ax")]
@@ -249,6 +282,49 @@ enum Commands {
     ArchiveList {
         /// Archive file.
         input: PathBuf,
+    },
+    /// Start a metrics/health HTTP server for monitoring.
+    ///
+    /// Exposes Prometheus-compatible metrics at /metrics and a health check at /health.
+    /// Designed for sidecar or daemon deployments in data center environments.
+    #[command(alias = "s")]
+    Serve {
+        /// Listen address (host:port).
+        #[arg(long, default_value = "127.0.0.1:9100")]
+        listen: String,
+        /// Enable Prometheus metrics endpoint at /metrics.
+        #[arg(long, default_value_t = true)]
+        metrics: bool,
+    },
+    /// Batch-compress files from a manifest or directory with content-aware routing.
+    ///
+    /// Each file's compression config is auto-tuned based on SSR analysis and
+    /// file extension. Shares a global thread pool and optional dictionary.
+    #[command(alias = "cb")]
+    CompressBatch {
+        /// Manifest YAML file listing files+configs, OR a directory to scan.
+        input: PathBuf,
+        /// Output directory for compressed files (default: alongside originals).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Overwrite existing output files.
+        #[arg(short, long)]
+        force: bool,
+        /// Worker threads (0 = auto: physical cores).
+        #[arg(short = 'T', long, default_value_t = 0)]
+        threads: usize,
+        /// Max concurrent files to compress in parallel.
+        #[arg(long, default_value_t = 4)]
+        concurrency: usize,
+        /// Shared pre-trained dictionary for all files.
+        #[arg(long)]
+        dict: Option<PathBuf>,
+        /// Content-aware routes file (YAML) mapping extensions to configs.
+        #[arg(long)]
+        routes: Option<PathBuf>,
+        /// Verbose output.
+        #[arg(short, long, action = clap::ArgAction::Count)]
+        verbose: u8,
     },
     /// Post-quantum cryptography operations.
     #[command(alias = "pq")]
@@ -461,6 +537,50 @@ fn build_resources(threads: usize, max_memory: usize) -> ResourceConfig {
     rc
 }
 
+/// Load raw zstd dictionary bytes from a .cpac-dict file.
+fn load_dict_bytes(p: &std::path::Path, verbose: u8) -> Vec<u8> {
+    let bytes = std::fs::read(p).unwrap_or_else(|e| {
+        eprintln!("Error reading dictionary '{}': {e}", p.display());
+        process::exit(1);
+    });
+    // If CPDI format, strip the 37-byte header to get raw zstd dict
+    if bytes.len() > 37 && &bytes[0..4] == b"CPDI" {
+        let size = u32::from_le_bytes([bytes[13], bytes[14], bytes[15], bytes[16]]) as usize;
+        if bytes.len() >= 37 + size {
+            if verbose >= 1 {
+                eprintln!("Loaded CPAC dictionary: {} bytes ({})", size, p.display());
+            }
+            return bytes[37..37 + size].to_vec();
+        }
+    }
+    if verbose >= 1 {
+        eprintln!("Loaded raw dictionary: {} bytes ({})", bytes.len(), p.display());
+    }
+    bytes
+}
+
+/// Try to auto-select a dictionary from .work/benchmarks/ catalog.
+fn auto_select_dict_for_input(input: &std::path::Path, verbose: u8) -> Option<Vec<u8>> {
+    let catalog_dir = std::path::Path::new(".work/benchmarks");
+    if !catalog_dir.is_dir() {
+        return None;
+    }
+    let catalog = cpac_dict::scan_catalog(catalog_dir).ok()?;
+    if catalog.is_empty() {
+        return None;
+    }
+    let filename = input.file_name().and_then(|s| s.to_str());
+    let entry = cpac_dict::auto_select_dictionary(filename, &catalog)?;
+    if verbose >= 1 {
+        eprintln!(
+            "Auto-selected dictionary: {} (stem={})",
+            entry.path.display(),
+            entry.stem,
+        );
+    }
+    Some(load_dict_bytes(&entry.path, verbose))
+}
+
 fn parse_level(s: &str) -> CompressionLevel {
     match s.to_ascii_lowercase().as_str() {
         "fast" | "f" | "1" => CompressionLevel::Fast,
@@ -489,8 +609,12 @@ fn cmd_compress(
     preset: Option<Preset>,
     accel: Option<AccelBackend>,
     dict: Option<PathBuf>,
+    no_auto_dict: bool,
     streaming: bool,
     stream_block: usize,
+    encrypt: bool,
+    encrypt_key: Option<PathBuf>,
+    encrypt_algo: String,
 ) {
     let backend = backend.map(|b| match parse_backend(&b) {
         Ok(v) => v,
@@ -500,28 +624,14 @@ fn cmd_compress(
         }
     });
 
-    // Load dictionary if provided
-    let dictionary: Option<Vec<u8>> = dict.map(|p| {
-        let bytes = std::fs::read(&p).unwrap_or_else(|e| {
-            eprintln!("Error reading dictionary '{}': {e}", p.display());
-            process::exit(1);
-        });
-        // If CPDI format, strip the 37-byte header to get raw zstd dict
-        if bytes.len() > 37 && &bytes[0..4] == b"CPDI" {
-            let size = u32::from_le_bytes([bytes[13], bytes[14], bytes[15], bytes[16]]) as usize;
-            if bytes.len() >= 37 + size {
-                if verbose >= 1 {
-                    eprintln!("Loaded CPAC dictionary: {} bytes", size);
-                }
-                return bytes[37..37 + size].to_vec();
-            }
-        }
-        // Raw zstd dict (no header)
-        if verbose >= 1 {
-            eprintln!("Loaded raw dictionary: {} bytes", bytes.len());
-        }
-        bytes
-    });
+    // Load dictionary: explicit --dict flag, or auto-select from catalog
+    let dictionary: Option<Vec<u8>> = if let Some(p) = dict {
+        Some(load_dict_bytes(&p, verbose))
+    } else if !no_auto_dict {
+        auto_select_dict_for_input(&input, verbose)
+    } else {
+        None
+    };
 
     let resources = build_resources(threads, max_memory);
     let files = collect_files(&input, recursive);
@@ -657,7 +767,62 @@ fn cmd_compress(
             }
         };
 
-        let ext = if streaming { ".cpac-stream" } else { CPAC_EXT };
+        // --- Phase 7: optional post-compression encryption ---
+        let (final_data, final_size, enc_label) = if encrypt {
+            let aead_algo = match parse_aead_algo(&encrypt_algo) {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    process::exit(1);
+                }
+            };
+            let encrypted = if let Some(ref key_path) = encrypt_key {
+                // PQC hybrid mode
+                let pub_data = std::fs::read(key_path).unwrap_or_else(|e| {
+                    eprintln!("Error reading public key '{}': {e}", key_path.display());
+                    process::exit(1);
+                });
+                cpac_streaming::cpce::cpce_encrypt_pqc(&compressed_data, &pub_data)
+                    .unwrap_or_else(|e| {
+                        eprintln!("PQC encryption failed: {e}");
+                        process::exit(1);
+                    })
+            } else {
+                // Password mode
+                let password = std::env::var("CPAC_PASSWORD").unwrap_or_else(|_| {
+                    eprint!("Password: ");
+                    let mut p = String::new();
+                    io::stdin().read_line(&mut p).unwrap();
+                    p.trim().to_string()
+                });
+                cpac_streaming::cpce::cpce_encrypt_password(
+                    &compressed_data,
+                    password.as_bytes(),
+                    aead_algo,
+                )
+                .unwrap_or_else(|e| {
+                    eprintln!("Encryption failed: {e}");
+                    process::exit(1);
+                })
+            };
+            let esz = encrypted.len();
+            let label = if encrypt_key.is_some() {
+                "encrypted+pqc"
+            } else {
+                "encrypted"
+            };
+            (encrypted, esz, Some(label))
+        } else {
+            (compressed_data, compressed_size, None)
+        };
+
+        let ext = if encrypt {
+            ".cpac-enc"
+        } else if streaming {
+            ".cpac-stream"
+        } else {
+            CPAC_EXT
+        };
         let out_path = if files.len() == 1 {
             output.clone().unwrap_or_else(|| {
                 let mut p = file_path.as_os_str().to_owned();
@@ -670,7 +835,7 @@ fn cmd_compress(
             PathBuf::from(p)
         };
 
-        write_output(&out_path, &compressed_data, force);
+        write_output(&out_path, &final_data, force);
 
         if let Some(ref pb) = progress_bar {
             pb.set_message(format!(
@@ -696,10 +861,16 @@ fn cmd_compress(
             println!("Original:   {}", format_size(original_size));
             println!("Compressed: {}", format_size(compressed_size));
             println!("Ratio:      {ratio:.2}x ({savings:.1}% saved)");
-            println!(
-                "Mode:       {}",
-                if streaming { "streaming" } else { "standard" }
-            );
+            let mode_str = match (streaming, enc_label) {
+                (true, Some(l)) => format!("streaming + {l}"),
+                (false, Some(l)) => format!("standard + {l}"),
+                (true, None) => "streaming".to_string(),
+                (false, None) => "standard".to_string(),
+            };
+            println!("Mode:       {mode_str}");
+            if encrypt {
+                println!("Encrypted:  {}", format_size(final_size));
+            }
             if verbose >= 3 {
                 println!("Threads:    {}", resources.max_threads);
                 println!("Memory:     {} MB", resources.max_memory_mb);
@@ -714,11 +885,19 @@ fn cmd_compress(
             } else {
                 0.0
             };
-            println!(
-                "{} -> {} [{ratio:.2}x]",
-                file_path.display(),
-                out_path.display()
-            );
+            if encrypt {
+                println!(
+                    "{} -> {} [{ratio:.2}x, encrypted]",
+                    file_path.display(),
+                    out_path.display()
+                );
+            } else {
+                println!(
+                    "{} -> {} [{ratio:.2}x]",
+                    file_path.display(),
+                    out_path.display()
+                );
+            }
         }
     }
 
@@ -737,15 +916,46 @@ fn cmd_decompress(
     threads: usize,
     mmap: bool,
     streaming: bool,
+    decrypt_key: Option<PathBuf>,
 ) {
     let use_mmap =
         mmap || (input.to_str() != Some("-") && cpac_streaming::mmap::should_use_mmap(&input));
+
+    // Read raw data first to check for CPCE magic.
+    let raw_data = read_input(&input);
+    let is_cpce = cpac_streaming::cpce::is_cpce(&raw_data);
+
+    // Phase 7: if CPCE-encrypted, decrypt first to get the inner compressed frame.
+    let data = if is_cpce {
+        if verbose >= 1 {
+            eprintln!("Detected CPCE encrypted frame, decrypting...");
+        }
+        let password = std::env::var("CPAC_PASSWORD").ok();
+        let sec_key_data = decrypt_key.as_ref().map(|p| {
+            std::fs::read(p).unwrap_or_else(|e| {
+                eprintln!("Error reading secret key '{}': {e}", p.display());
+                process::exit(1);
+            })
+        });
+        let pw_bytes = password.as_deref().map(|s| s.as_bytes());
+        let sk_bytes = sec_key_data.as_deref();
+
+        match cpac_streaming::cpce::cpce_auto_decrypt(&raw_data, pw_bytes, sk_bytes) {
+            Ok(inner) => inner,
+            Err(e) => {
+                eprintln!("CPCE decryption failed for '{}': {e}", input.display());
+                eprintln!("Hint: Set CPAC_PASSWORD env var or provide --encrypt-key with secret key.");
+                process::exit(1);
+            }
+        }
+    } else {
+        raw_data
+    };
 
     // Detect streaming format by filename or explicit flag.
     let is_stream = streaming || input.extension().is_some_and(|e| e == "cpac-stream");
 
     let decompressed_data = if is_stream {
-        let data = read_input(&input);
         let mut decomp = match cpac_streaming::stream::StreamingDecompressor::new() {
             Ok(d) => d,
             Err(e) => {
@@ -762,7 +972,8 @@ fn cmd_decompress(
             process::exit(1);
         }
         decomp.read_output()
-    } else if use_mmap && input.to_str() != Some("-") {
+    } else if !is_cpce && use_mmap && input.to_str() != Some("-") {
+        // mmap path only when not CPCE (we already read into memory for CPCE)
         match cpac_streaming::mmap::mmap_decompress(&input) {
             Ok(r) => r.data,
             Err(e) => {
@@ -772,7 +983,6 @@ fn cmd_decompress(
         }
     } else {
         let resources = build_resources(threads, 0);
-        let data = read_input(&input);
         let res = if cpac_engine::is_cpbl(&data) {
             cpac_engine::decompress_parallel(&data, resources.max_threads)
         } else {
@@ -795,7 +1005,8 @@ fn cmd_decompress(
     let out_path = output.unwrap_or_else(|| {
         let s = input.to_string_lossy();
         if let Some(stripped) = s
-            .strip_suffix(".cpac-stream")
+            .strip_suffix(".cpac-enc")
+            .or_else(|| s.strip_suffix(".cpac-stream"))
             .or_else(|| s.strip_suffix(CPAC_EXT))
         {
             PathBuf::from(stripped)
@@ -818,21 +1029,26 @@ fn cmd_decompress(
         println!("Output:      {}", out_path.display());
         println!("Compressed:  {}", format_size(input_size));
         println!("Original:    {}", format_size(decompressed_data.len()));
-        println!(
-            "Mode:        {}",
-            if is_stream { "streaming" } else { "standard" }
-        );
+        let mode_str = match (is_stream, is_cpce) {
+            (true, true) => "streaming + decrypted",
+            (false, true) => "standard + decrypted",
+            (true, false) => "streaming",
+            (false, false) => "standard",
+        };
+        println!("Mode:        {mode_str}");
         if verbose >= 3 {
             let resources = build_resources(threads, 0);
             println!("Threads:     {}", resources.max_threads);
             println!("MMap:        {use_mmap}");
         }
     } else {
+        let dec_label = if is_cpce { ", decrypted" } else { "" };
         println!(
-            "{} -> {} [{}]",
+            "{} -> {} [{}{}]",
             input.display(),
             out_path.display(),
-            format_size(decompressed_data.len())
+            format_size(decompressed_data.len()),
+            dec_label,
         );
     }
 }
@@ -844,6 +1060,24 @@ fn cmd_info(input: Option<PathBuf>, host: bool) {
         let rc = cpac_engine::auto_resource_config();
         println!("  Threads:   {} (physical cores)", rc.max_threads);
         println!("  Mem cap:   {} MB (25% of RAM)", rc.max_memory_mb);
+
+        // Accelerator summary
+        let accels = cpac_engine::accel::detect_accelerators();
+        let selected = cpac_engine::accel::select_accelerator(None, &accels);
+        println!();
+        println!("Accelerators:");
+        for a in &accels {
+            let marker = if *a == selected { " (active)" } else { "" };
+            println!("  {:?}{marker}", a);
+        }
+        println!();
+        println!("Env vars to enable hardware accel:");
+        println!("  CPAC_QAT_ENABLED=1     Intel QAT");
+        println!("  CPAC_IAA_ENABLED=1     Intel IAA (Sapphire Rapids+)");
+        println!("  CPAC_GPU_ENABLED=1     GPU Compute (CUDA/Vulkan)");
+        println!("  CPAC_XILINX_ENABLED=1  AMD Xilinx Alveo FPGA");
+        println!("  CPAC_SVE2_ENABLED=1    ARM SVE2 (AArch64 only)");
+
         if input.is_none() {
             return;
         }
@@ -1251,20 +1485,31 @@ fn cmd_decrypt(input: PathBuf, output: Option<PathBuf>, algorithm: String) {
     );
 }
 
-fn cmd_archive_create(input: PathBuf, output: Option<PathBuf>) {
+fn cmd_archive_create(input: PathBuf, output: Option<PathBuf>, solid: bool) {
     if !input.is_dir() {
         eprintln!("Error: {} is not a directory", input.display());
         process::exit(1);
     }
     let config = CompressConfig::default();
-    let archive_data = match cpac_archive::create_archive(&input, &config) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("Archive creation error: {e}");
-            process::exit(1);
+    let archive_data = if solid {
+        match cpac_archive::create_archive_solid(&input, &config) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("Archive creation error (solid): {e}");
+                process::exit(1);
+            }
+        }
+    } else {
+        match cpac_archive::create_archive(&input, &config) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("Archive creation error: {e}");
+                process::exit(1);
+            }
         }
     };
 
+    let mode_str = if solid { "solid" } else { "regular" };
     let out_path = output.unwrap_or_else(|| {
         let mut p = input.as_os_str().to_owned();
         p.push(".cpar");
@@ -1273,10 +1518,11 @@ fn cmd_archive_create(input: PathBuf, output: Option<PathBuf>) {
 
     write_output(&out_path, &archive_data, true);
     println!(
-        "{} -> {} ({})",
+        "{} -> {} ({}, {})",
         input.display(),
         out_path.display(),
-        format_size(archive_data.len())
+        format_size(archive_data.len()),
+        mode_str,
     );
 }
 
@@ -1525,6 +1771,20 @@ fn cmd_analyze(input: PathBuf) {
     print!("{}", cpac_engine::format_profile(&profile));
 }
 
+fn cmd_profile(input: PathBuf, quick: bool) {
+    let data = read_input(&input);
+    let filename = input.to_str();
+    match cpac_engine::profile_file(&data, filename, quick) {
+        Ok(result) => {
+            print!("{}", cpac_engine::format_profile_result(&result));
+        }
+        Err(e) => {
+            eprintln!("Profiling error: {e}");
+            process::exit(1);
+        }
+    }
+}
+
 fn cmd_lab(action: LabAction) {
     match action {
         LabAction::Calibrate {
@@ -1600,6 +1860,330 @@ fn cmd_lab(action: LabAction) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 8A: Prometheus metrics endpoint
+// ---------------------------------------------------------------------------
+
+fn cmd_serve(listen: String, _metrics: bool) {
+    use std::net::TcpListener;
+    use std::io::{BufRead, BufReader};
+
+    let listener = TcpListener::bind(&listen).unwrap_or_else(|e| {
+        eprintln!("Error binding to {listen}: {e}");
+        process::exit(1);
+    });
+    println!("CPAC metrics server listening on http://{listen}");
+    println!("  GET /metrics  — Prometheus metrics");
+    println!("  GET /health   — health check");
+    println!("Press Ctrl+C to stop.\n");
+
+    // Global counters (atomic for thread-safety if we ever go async)
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static REQ_COUNT: AtomicU64 = AtomicU64::new(0);
+    let start = std::time::Instant::now();
+
+    for stream in listener.incoming() {
+        let mut stream = match stream {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        REQ_COUNT.fetch_add(1, Ordering::Relaxed);
+
+        // Read first request line
+        let mut reader = BufReader::new(&stream);
+        let mut line = String::new();
+        if reader.read_line(&mut line).is_err() {
+            continue;
+        }
+
+        let (status, content_type, body) = if line.starts_with("GET /metrics") {
+            let host_info = cpac_engine::cached_host_info();
+            let rc = cpac_engine::auto_resource_config();
+            let uptime = start.elapsed().as_secs();
+            let reqs = REQ_COUNT.load(Ordering::Relaxed);
+
+            let body = format!(
+                "# HELP cpac_info CPAC build information.\n\
+                 # TYPE cpac_info gauge\n\
+                 cpac_info{{version=\"{}\"}} 1\n\
+                 # HELP cpac_uptime_seconds Server uptime in seconds.\n\
+                 # TYPE cpac_uptime_seconds counter\n\
+                 cpac_uptime_seconds {}\n\
+                 # HELP cpac_requests_total Total HTTP requests served.\n\
+                 # TYPE cpac_requests_total counter\n\
+                 cpac_requests_total {}\n\
+                 # HELP cpac_threads Available worker threads.\n\
+                 # TYPE cpac_threads gauge\n\
+                 cpac_threads {}\n\
+                 # HELP cpac_memory_cap_mb Memory budget in MB.\n\
+                 # TYPE cpac_memory_cap_mb gauge\n\
+                 cpac_memory_cap_mb {}\n\
+                 # HELP cpac_host_cores Physical CPU cores.\n\
+                 # TYPE cpac_host_cores gauge\n\
+                 cpac_host_cores {}\n",
+                cpac_engine::VERSION,
+                uptime,
+                reqs,
+                rc.max_threads,
+                rc.max_memory_mb,
+                host_info.physical_cores,
+            );
+            ("200 OK", "text/plain; version=0.0.4; charset=utf-8", body)
+        } else if line.starts_with("GET /health") {
+            let body = "{\"status\":\"ok\"}\n".to_string();
+            ("200 OK", "application/json", body)
+        } else {
+            ("404 Not Found", "text/plain", "Not Found\n".to_string())
+        };
+
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = stream.write_all(response.as_bytes());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7A+7B: Batch compression with content-aware routing
+// ---------------------------------------------------------------------------
+
+/// Default routing table: maps file extension patterns to compression configs.
+fn default_route(ext: &str) -> CompressConfig {
+    let mut cfg = CompressConfig::default();
+    match ext {
+        // Text/structured → enable MSN + smart transforms
+        "json" | "jsonl" | "ndjson" | "geojson" => {
+            cfg.enable_msn = true;
+            cfg.enable_smart_transforms = true;
+        }
+        "csv" | "tsv" | "parquet" => {
+            cfg.enable_msn = true;
+            cfg.enable_smart_transforms = true;
+        }
+        "xml" | "html" | "htm" | "svg" | "xhtml" => {
+            cfg.enable_msn = true;
+            cfg.enable_smart_transforms = true;
+        }
+        "yaml" | "yml" | "toml" | "ini" | "cfg" | "conf" | "tf" | "hcl" => {
+            cfg.enable_msn = true;
+            cfg.enable_smart_transforms = true;
+        }
+        // Logs → MSN + smart
+        "log" | "syslog" => {
+            cfg.enable_msn = true;
+            cfg.enable_smart_transforms = true;
+        }
+        // Source code → smart transforms, brotli for ratio
+        "py" | "rs" | "go" | "js" | "ts" | "java" | "c" | "cpp" | "h" | "rb" | "sh" => {
+            cfg.enable_smart_transforms = true;
+            cfg.backend = Some(Backend::Brotli);
+        }
+        // Already compressed → skip (raw passthrough)
+        "gz" | "bz2" | "xz" | "zst" | "zip" | "rar" | "7z" | "lz4" => {
+            cfg.backend = Some(Backend::Raw);
+        }
+        // Binary/media → fast zstd, no transforms
+        "exe" | "dll" | "so" | "dylib" | "bin" | "o" => {
+            cfg.backend = Some(Backend::Zstd);
+            cfg.level = cpac_types::CompressionLevel::Fast;
+        }
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "mp4" | "mp3" | "ogg" | "flac" => {
+            cfg.backend = Some(Backend::Raw);
+        }
+        // Default: auto-detect via SSR
+        _ => {}
+    }
+    cfg
+}
+
+/// Load a YAML routes file mapping extensions to overrides.
+fn load_routes_file(path: &std::path::Path) -> Result<std::collections::HashMap<String, String>, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read routes file '{}': {e}", path.display()))?;
+    // Simple YAML: ext: preset_name (one per line)
+    let mut map = std::collections::HashMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((ext, preset)) = line.split_once(':') {
+            map.insert(ext.trim().to_string(), preset.trim().to_string());
+        }
+    }
+    Ok(map)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_compress_batch(
+    input: PathBuf,
+    output_dir: Option<PathBuf>,
+    force: bool,
+    threads: usize,
+    concurrency: usize,
+    dict: Option<PathBuf>,
+    routes: Option<PathBuf>,
+    verbose: u8,
+) {
+    let resources = build_resources(threads, 0);
+
+    // Load shared dictionary
+    let dictionary: Option<Vec<u8>> = dict.map(|p| load_dict_bytes(&p, verbose));
+
+    // Load custom routes (if provided)
+    let custom_routes = routes.map(|p| {
+        load_routes_file(&p).unwrap_or_else(|e| {
+            eprintln!("Error: {e}");
+            process::exit(1);
+        })
+    });
+
+    // Collect files: if input is directory, scan recursively; else treat as manifest YAML.
+    let files: Vec<PathBuf> = if input.is_dir() {
+        let mut out = Vec::new();
+        collect_files_recursive(&input, &mut out);
+        out
+    } else if input.extension().is_some_and(|e| e == "yaml" || e == "yml") {
+        // Parse manifest: list of file paths (one per line for simplicity)
+        let text = std::fs::read_to_string(&input).unwrap_or_else(|e| {
+            eprintln!("Error reading manifest '{}': {e}", input.display());
+            process::exit(1);
+        });
+        text.lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(PathBuf::from)
+            .filter(|p| p.is_file())
+            .collect()
+    } else {
+        eprintln!("Error: batch input must be a directory or YAML manifest");
+        process::exit(1);
+    };
+
+    if files.is_empty() {
+        eprintln!("No files found to compress.");
+        return;
+    }
+
+    println!("CPAC Batch Compress: {} files, {} concurrent", files.len(), concurrency);
+
+    // Create output dir if needed
+    if let Some(ref dir) = output_dir {
+        std::fs::create_dir_all(dir).unwrap_or_else(|e| {
+            eprintln!("Error creating output directory '{}': {e}", dir.display());
+            process::exit(1);
+        });
+    }
+
+    let pb = ProgressBar::new(files.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{bar:40.cyan/blue}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("█▓░"),
+    );
+
+    let mut total_orig: u64 = 0;
+    let mut total_comp: u64 = 0;
+    let mut errors: usize = 0;
+
+    // Process files (sequential for now; concurrency reserved for future rayon file-level parallelism)
+    let _ = concurrency; // Reserved for future use
+    for file_path in &files {
+        let ext = file_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        // Content-aware routing: custom routes > default route table
+        let mut config = if let Some(ref routes_map) = custom_routes {
+            if let Some(preset_name) = routes_map.get(&ext) {
+                if let Some(preset) = Preset::from_str_loose(preset_name) {
+                    CompressConfig::from_preset(preset)
+                } else {
+                    default_route(&ext)
+                }
+            } else {
+                default_route(&ext)
+            }
+        } else {
+            default_route(&ext)
+        };
+
+        config.resources = Some(resources.clone());
+        config.dictionary = dictionary.clone();
+
+        let data = std::fs::read(file_path).unwrap_or_else(|e| {
+            eprintln!("Error reading '{}': {e}", file_path.display());
+            errors += 1;
+            Vec::new()
+        });
+        if data.is_empty() && errors > 0 {
+            pb.inc(1);
+            continue;
+        }
+
+        let orig_size = data.len();
+        let result = cpac_engine::compress(&data, &config);
+
+        match result {
+            Ok(r) => {
+                let out_path = if let Some(ref dir) = output_dir {
+                    let name = file_path.file_name().unwrap_or_default();
+                    let mut p = dir.join(name);
+                    let mut s = p.as_os_str().to_owned();
+                    s.push(CPAC_EXT);
+                    p = PathBuf::from(s);
+                    p
+                } else {
+                    let mut s = file_path.as_os_str().to_owned();
+                    s.push(CPAC_EXT);
+                    PathBuf::from(s)
+                };
+
+                write_output(&out_path, &r.data, force);
+                total_orig += orig_size as u64;
+                total_comp += r.data.len() as u64;
+
+                if verbose >= 1 {
+                    let ratio = orig_size as f64 / r.data.len().max(1) as f64;
+                    println!(
+                        "  {} -> {} [{ratio:.2}x] route={ext}",
+                        file_path.display(),
+                        out_path.display()
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("  Error compressing '{}': {e}", file_path.display());
+                errors += 1;
+            }
+        }
+
+        pb.set_message(format!(
+            "{}",
+            file_path.file_name().unwrap_or_default().to_string_lossy()
+        ));
+        pb.inc(1);
+    }
+
+    pb.finish_with_message("Done");
+
+    let overall_ratio = if total_comp > 0 {
+        total_orig as f64 / total_comp as f64
+    } else {
+        0.0
+    };
+    println!(
+        "\nBatch complete: {} files, {} -> {} ({overall_ratio:.2}x), {errors} errors",
+        files.len(),
+        format_size(total_orig as usize),
+        format_size(total_comp as usize),
+    );
+}
+
 fn cmd_completions(shell: Shell) {
     let mut cmd = Cli::command();
     generate(shell, &mut cmd, "cpac", &mut io::stdout());
@@ -1631,8 +2215,12 @@ fn main() {
             preset,
             accel,
             dict,
+            no_auto_dict,
             streaming,
             stream_block,
+            encrypt,
+            encrypt_key,
+            encrypt_algo,
         } => cmd_compress(
             input,
             output,
@@ -1652,8 +2240,12 @@ fn main() {
             preset.and_then(|s| Preset::from_str_loose(&s)),
             AccelBackend::from_str_loose(&accel),
             dict,
+            no_auto_dict,
             streaming,
             stream_block,
+            encrypt,
+            encrypt_key,
+            encrypt_algo,
         ),
         Commands::Decompress {
             input,
@@ -1664,8 +2256,9 @@ fn main() {
             threads,
             mmap,
             streaming,
+            encrypt_key,
         } => cmd_decompress(
-            input, output, force, keep, verbose, threads, mmap, streaming,
+            input, output, force, keep, verbose, threads, mmap, streaming, encrypt_key,
         ),
         Commands::Info { input, host } => cmd_info(input, host),
         Commands::ListProfiles => cmd_list_profiles(),
@@ -1691,6 +2284,7 @@ fn main() {
             discovery,
         ),
         Commands::Analyze { input } => cmd_analyze(input),
+        Commands::Profile { input, quick } => cmd_profile(input, quick),
         Commands::AutoCas { input, compress } => cmd_auto_cas(input, compress),
         Commands::Encrypt {
             input,
@@ -1702,9 +2296,20 @@ fn main() {
             output,
             algorithm,
         } => cmd_decrypt(input, output, algorithm),
-        Commands::ArchiveCreate { input, output } => cmd_archive_create(input, output),
+        Commands::ArchiveCreate { input, output, solid } => cmd_archive_create(input, output, solid),
         Commands::ArchiveExtract { input, output } => cmd_archive_extract(input, output),
         Commands::ArchiveList { input } => cmd_archive_list(input),
+        Commands::Serve { listen, metrics } => cmd_serve(listen, metrics),
+        Commands::CompressBatch {
+            input,
+            output,
+            force,
+            threads,
+            concurrency,
+            dict,
+            routes,
+            verbose,
+        } => cmd_compress_batch(input, output, force, threads, concurrency, dict, routes, verbose),
         Commands::Pqc { action } => cmd_pqc(action),
         Commands::Lab { action } => cmd_lab(action),
         Commands::Completions { shell } => cmd_completions(shell),

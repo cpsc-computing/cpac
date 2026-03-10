@@ -1,0 +1,16 @@
+id: mixed_configs
+name: Mixed Cloud Configs (Archive Test)
+description: |
+  Kubernetes YAML + CloudFormation JSON/YAML + Terraform .tf files combined.
+  Tests cross-file pattern exploitation in archive mode — these files share
+  common keys, indentation patterns, cloud resource identifiers, and JSON
+  structural tokens that should benefit from solid-mode compression.
+target_subdir: cloud/configs
+# Re-uses the existing cloud_configs download; no separate download needed.
+download_url: null
+download_kind: local
+license: Mixed (Apache 2.0/MIT-0)
+note: |
+  Archive benchmark corpus: measures cross-file gains when compressing
+  heterogeneous cloud config files together vs individually.
+  Extension mix: ~40% JSON, ~45% YAML/YML, ~15% TF/HCL.

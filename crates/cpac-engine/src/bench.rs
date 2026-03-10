@@ -37,6 +37,10 @@ pub enum BaselineEngine {
     Gzip9,
     /// Zstandard level 3 (native, not CPAC pipeline).
     Zstd3,
+    /// Zstandard level 12 — high compression baseline.
+    Zstd12,
+    /// Zstandard level 19 — maximum compression baseline.
+    Zstd19,
     /// Brotli level 11 (native, not CPAC pipeline).
     Brotli11,
     /// LZMA level 6 (via lzma-rs).
@@ -49,6 +53,8 @@ impl BaselineEngine {
         match self {
             BaselineEngine::Gzip9 => "gzip-9",
             BaselineEngine::Zstd3 => "zstd-3",
+            BaselineEngine::Zstd12 => "zstd-12",
+            BaselineEngine::Zstd19 => "zstd-19",
             BaselineEngine::Brotli11 => "brotli-11",
             BaselineEngine::Lzma6 => "lzma-6",
         }
@@ -59,6 +65,8 @@ impl BaselineEngine {
         &[
             BaselineEngine::Gzip9,
             BaselineEngine::Zstd3,
+            BaselineEngine::Zstd12,
+            BaselineEngine::Zstd19,
             BaselineEngine::Brotli11,
             BaselineEngine::Lzma6,
         ]
@@ -528,6 +536,10 @@ fn baseline_compress(data: &[u8], engine: BaselineEngine) -> CpacResult<Vec<u8>>
         }
         BaselineEngine::Zstd3 => zstd::encode_all(std::io::Cursor::new(data), 3)
             .map_err(|e| cpac_types::CpacError::CompressFailed(format!("zstd-3: {e}"))),
+        BaselineEngine::Zstd12 => zstd::encode_all(std::io::Cursor::new(data), 12)
+            .map_err(|e| cpac_types::CpacError::CompressFailed(format!("zstd-12: {e}"))),
+        BaselineEngine::Zstd19 => zstd::encode_all(std::io::Cursor::new(data), 19)
+            .map_err(|e| cpac_types::CpacError::CompressFailed(format!("zstd-19: {e}"))),
         BaselineEngine::Brotli11 => {
             let mut out = Vec::new();
             let params = brotli::enc::BrotliEncoderParams {
@@ -558,8 +570,9 @@ fn baseline_decompress(data: &[u8], engine: BaselineEngine) -> CpacResult<Vec<u8
                 .map_err(|e| cpac_types::CpacError::DecompressFailed(format!("gzip: {e}")))?;
             Ok(out)
         }
-        BaselineEngine::Zstd3 => zstd::decode_all(std::io::Cursor::new(data))
-            .map_err(|e| cpac_types::CpacError::DecompressFailed(format!("zstd-3: {e}"))),
+        BaselineEngine::Zstd3 | BaselineEngine::Zstd12 | BaselineEngine::Zstd19 =>
+            zstd::decode_all(std::io::Cursor::new(data))
+                .map_err(|e| cpac_types::CpacError::DecompressFailed(format!("zstd: {e}"))),
         BaselineEngine::Brotli11 => {
             let mut out = Vec::new();
             brotli::BrotliDecompress(&mut std::io::Cursor::new(data), &mut out)
@@ -893,8 +906,8 @@ mod tests {
         let dir = create_temp_corpus();
         let runner = BenchmarkRunner::new(BenchProfile::Quick);
         let results = runner.bench_directory(dir.path(), None);
-        // 2 files × (5 CPAC backends + 4 baselines) = 18 results
-        assert_eq!(results.len(), 18);
+        // 2 files × (5 CPAC backends + 6 baselines) = 22 results
+        assert_eq!(results.len(), 22);
     }
 
     #[test]

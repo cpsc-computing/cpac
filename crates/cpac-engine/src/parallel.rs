@@ -36,6 +36,40 @@ pub const DEFAULT_BLOCK_SIZE: usize = 4 << 20;
 /// overhead dominated for files under ~10 MB.
 pub const PARALLEL_THRESHOLD: usize = 4 * 1024 * 1024;
 
+/// Small block size: 4 MiB.  Used for high-entropy or small files.
+pub const BLOCK_SIZE_SMALL: usize = 4 << 20;
+/// Medium block size: 16 MiB.  Used for medium-entropy data.
+pub const BLOCK_SIZE_MEDIUM: usize = 16 << 20;
+/// Large block size: 32 MiB.  Used for low-entropy, highly-compressible data.
+pub const BLOCK_SIZE_LARGE: usize = 32 << 20;
+
+/// Phase 4C: Choose block size adaptively based on entropy and file size.
+///
+/// Heuristic:
+/// - Low entropy (< 4.0 bits/byte): large blocks (32 MB) — zstd benefits from
+///   more LZ77 context on highly-redundant data (e.g. logs, YAML).
+/// - Medium entropy (4.0–6.5): medium blocks (16 MB) — balanced.
+/// - High entropy (> 6.5): small blocks (4 MB) — little back-reference benefit,
+///   prefer more parallelism.
+///
+/// Additionally, file size matters: if the file is < 64 MB, large blocks would
+/// produce too few blocks for effective parallelism.
+#[must_use]
+pub fn adaptive_block_size(entropy_estimate: f64, file_size: usize) -> usize {
+    // For smaller files, cap block size so we get at least 2 blocks
+    let max_block = file_size / 2;
+
+    let ideal = if entropy_estimate < 4.0 {
+        BLOCK_SIZE_LARGE
+    } else if entropy_estimate < 6.5 {
+        BLOCK_SIZE_MEDIUM
+    } else {
+        BLOCK_SIZE_SMALL
+    };
+
+    ideal.min(max_block).max(BLOCK_SIZE_SMALL)
+}
+
 /// CPBL header: magic(4) + version(1) + `block_count(4)` + `original_size(8)` = 17 bytes.
 const CPBL_HEADER_SIZE: usize = 4 + 1 + 4 + 8;
 
@@ -67,15 +101,27 @@ pub fn compress_parallel(
     let blocks: Vec<&[u8]> = data.chunks(bs).collect();
     let block_count = blocks.len();
 
-    // Configure rayon thread pool
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads.max(1))
-        .build()
-        .map_err(|e| CpacError::CompressFailed(format!("rayon pool: {e}")))?;
+    // Use shared global thread pool (Phase 4B) instead of creating a new one per call.
+    let pool = crate::pool::get_or_init_thread_pool(num_threads);
 
     // Compress blocks in parallel with disable_parallel flag to prevent recursion
     let mut block_config = config.clone();
     block_config.disable_parallel = true;
+
+    // Phase 4A: MSN field-map caching — probe the first block to discover
+    // the domain and build the field map, then reuse it across all blocks.
+    // This avoids O(N_blocks × N_domains) detection overhead for large
+    // homogeneous files (e.g. 100 MB YAML split into 25 × 4 MB blocks).
+    if config.enable_msn && block_config.cached_msn_metadata.is_none() && !blocks.is_empty() {
+        let probe_filename = config.filename.as_deref();
+        if let Ok(probe_result) = cpac_msn::extract(blocks[0], probe_filename, config.msn_confidence) {
+            if probe_result.applied {
+                if let Ok(encoded) = cpac_msn::encode_metadata_compact(&probe_result.metadata()) {
+                    block_config.cached_msn_metadata = Some(encoded);
+                }
+            }
+        }
+    }
 
     let compressed_blocks: Vec<CpacResult<Vec<u8>>> = pool.install(|| {
         blocks
@@ -182,11 +228,8 @@ pub fn decompress_parallel(data: &[u8], num_threads: usize) -> CpacResult<Decomp
         cursor += sz;
     }
 
-    // Decompress blocks in parallel
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads.max(1))
-        .build()
-        .map_err(|e| CpacError::DecompressFailed(format!("rayon pool: {e}")))?;
+    // Use shared global thread pool (Phase 4B) instead of creating a new one per call.
+    let pool = crate::pool::get_or_init_thread_pool(num_threads);
 
     let decompressed_blocks: Vec<CpacResult<Vec<u8>>> = pool.install(|| {
         blocks
@@ -276,5 +319,33 @@ mod tests {
         let compressed = compress_parallel(data, &config, DEFAULT_BLOCK_SIZE, 1).unwrap();
         let decompressed = decompress_parallel(&compressed.data, 1).unwrap();
         assert_eq!(decompressed.data, data);
+    }
+
+    #[test]
+    fn adaptive_block_size_low_entropy() {
+        // Low entropy → large blocks (32 MB) when file is large enough
+        let bs = adaptive_block_size(2.5, 256 << 20);
+        assert_eq!(bs, BLOCK_SIZE_LARGE);
+    }
+
+    #[test]
+    fn adaptive_block_size_medium_entropy() {
+        // Medium entropy → medium blocks (16 MB) when file is large enough
+        let bs = adaptive_block_size(5.0, 256 << 20);
+        assert_eq!(bs, BLOCK_SIZE_MEDIUM);
+    }
+
+    #[test]
+    fn adaptive_block_size_high_entropy() {
+        // High entropy → small blocks (4 MB)
+        let bs = adaptive_block_size(7.5, 256 << 20);
+        assert_eq!(bs, BLOCK_SIZE_SMALL);
+    }
+
+    #[test]
+    fn adaptive_block_size_small_file_clamp() {
+        // Even with low entropy, small file → clamp to BLOCK_SIZE_SMALL
+        let bs = adaptive_block_size(2.5, 8 << 20);
+        assert_eq!(bs, BLOCK_SIZE_SMALL);
     }
 }

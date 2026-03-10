@@ -191,6 +191,113 @@ impl CpacDictionary {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Dictionary catalog: auto-select best dictionary for a file
+// ---------------------------------------------------------------------------
+
+/// Dictionary catalog entry (filename stem used as domain hint).
+#[derive(Debug, Clone)]
+pub struct CatalogEntry {
+    /// File path to the `.cpac-dict` file.
+    pub path: std::path::PathBuf,
+    /// Filename stem (e.g., "2k" from "2k.cpac-dict" → matches logs).
+    pub stem: String,
+    /// Dictionary metadata (loaded lazily).
+    pub metadata: DictionaryMetadata,
+}
+
+/// Scan a directory for `.cpac-dict` files and return catalog entries.
+///
+/// # Errors
+/// Returns an error if the directory cannot be read.
+pub fn scan_catalog(dir: &Path) -> CpacResult<Vec<CatalogEntry>> {
+    let mut entries = Vec::new();
+    let read_dir = std::fs::read_dir(dir)
+        .map_err(|e| CpacError::IoError(format!("scan catalog {}: {e}", dir.display())))?;
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("cpac-dict") {
+            if let Ok(dict) = CpacDictionary::load_from_file(&path) {
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                entries.push(CatalogEntry {
+                    path,
+                    stem,
+                    metadata: dict.metadata,
+                });
+            }
+        }
+    }
+    entries.sort_by(|a, b| b.metadata.corpus_size.cmp(&a.metadata.corpus_size));
+    Ok(entries)
+}
+
+/// Domain-based keyword matching rules for dictionary auto-selection.
+/// Maps file extension / filename patterns to dictionary stem keywords.
+///
+/// Phase 5A: expanded with cloud/datacenter workload patterns.
+const DOMAIN_HINTS: &[(&[&str], &[&str])] = &[
+    // (file extensions/patterns, dictionary stem keywords to match)
+    // --- Logs ---
+    (&["log", "syslog"], &["log", "2k", "loghub", "syslog"]),
+    // --- Terraform / IaC ---
+    (&["tf", "tfvars", "tfstate"], &["terraform", "cloud", "config", "iac"]),
+    // --- Kubernetes manifests ---
+    (&["yaml", "yml"], &["kubernetes", "k8s", "ansible", "cloud", "config", "text"]),
+    // --- Ansible ---
+    (&["j2", "jinja2"], &["ansible", "cloud", "config", "text"]),
+    // --- General structured data ---
+    (&["json", "toml", "xml", "ini", "conf", "cfg"], &["config", "cloud", "text"]),
+    // --- Prometheus / metrics ---
+    (&["prom", "metrics"], &["prometheus", "metrics", "log"]),
+    // --- Database / analytics ---
+    (&["sql", "parquet", "arrow", "avro", "orc"], &["database", "analytics", "binary"]),
+    // --- Container / image layers ---
+    (&["tar", "layer"], &["docker", "container", "binary"]),
+    // --- Plain text / docs ---
+    (&["txt", "md", "rst", "csv", "tsv"], &["text", "canterbury"]),
+    // --- Source code ---
+    (&["c", "h", "rs", "py", "go", "js", "ts", "java", "rb", "cpp", "hpp"],
+        &["source", "code", "text"]),
+];
+
+/// Auto-select the best dictionary for a file based on its name/extension.
+///
+/// Returns `None` if no suitable dictionary is found or the catalog is empty.
+pub fn auto_select_dictionary<'a>(
+    filename: Option<&str>,
+    catalog: &'a [CatalogEntry],
+) -> Option<&'a CatalogEntry> {
+    if catalog.is_empty() {
+        return None;
+    }
+
+    let ext = filename
+        .and_then(|f| f.rsplit_once('.'))
+        .map(|(_, e)| e.to_lowercase());
+
+    // Try domain-specific match first
+    if let Some(extension) = &ext {
+        for &(exts, keywords) in DOMAIN_HINTS {
+            if exts.iter().any(|e| e == extension) {
+                // Find a catalog entry whose stem matches any keyword
+                for entry in catalog {
+                    let stem_lower = entry.stem.to_lowercase();
+                    if keywords.iter().any(|kw| stem_lower.contains(kw)) {
+                        return Some(entry);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: return the largest dictionary (most general)
+    catalog.first()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

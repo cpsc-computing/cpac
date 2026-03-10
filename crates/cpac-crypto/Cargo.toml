@@ -8,6 +8,7 @@ license.workspace = true
 [features]
 default = []
 pqc = ["dep:ml-kem", "dep:ml-dsa"]  # slh-dsa deferred: signature crate version conflict
+hqc = ["dep:pqcrypto-hqc", "dep:pqcrypto-traits"]  # EXPERIMENTAL: pre-standard HQC (NIST draft ~2026, final ~2027)
 
 [dependencies]
 cpac-types = { workspace = true }
@@ -22,3 +23,5 @@ rand = "0.8"
 zeroize = { version = "1", features = ["derive"] }
 ml-kem = { version = "0.2", optional = true }
 ml-dsa = { version = "0.0.4", optional = true }
+pqcrypto-hqc = { version = "0.2", optional = true }
+pqcrypto-traits = { version = "0.3", optional = true }

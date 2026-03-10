@@ -78,9 +78,12 @@ pub fn analyze_structure(data: &[u8], filename: Option<&str>) -> StructureProfil
     }
 
     // Step 4: Build overall recommendation
+    let ext = filename
+        .and_then(|f| f.rsplit_once('.'))
+        .map(|(_, e)| e);
     let recommended_chain = if overall_constraints.is_empty() {
         // No columnar data — recommend based on SSR characteristics
-        recommend_from_ssr(&ssr)
+        recommend_from_ssr(&ssr, ext)
     } else {
         recommend_transforms(&overall_constraints)
     };
@@ -150,6 +153,8 @@ struct CalibrationEntry {
     #[allow(dead_code)]
     avg_gain: f64,
     files: usize,
+    /// Per-extension win rates (ext → (win_rate, files)).
+    by_extension: HashMap<String, (f64, usize)>,
 }
 
 /// Loaded calibration data: transform name → entry.
@@ -175,12 +180,27 @@ fn load_calibration() -> &'static Option<CalibrationMap> {
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0);
                 let files = overall.get("files").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+                // Load per-extension data
+                let mut by_extension = HashMap::new();
+                if let Some(ext_obj) = val.get("by_extension").and_then(|v| v.as_object()) {
+                    for (ext, ext_val) in ext_obj {
+                        if let (Some(wr), Some(fc)) = (
+                            ext_val.get("win_rate").and_then(|v| v.as_f64()),
+                            ext_val.get("files").and_then(|v| v.as_u64()),
+                        ) {
+                            by_extension.insert(ext.clone(), (wr, fc as usize));
+                        }
+                    }
+                }
+
                 map.insert(
                     name.clone(),
                     CalibrationEntry {
                         win_rate,
                         avg_gain,
                         files,
+                        by_extension,
                     },
                 );
             }
@@ -189,17 +209,43 @@ fn load_calibration() -> &'static Option<CalibrationMap> {
     })
 }
 
-/// Look up calibrated win-rate for a transform.  Returns `None` if no
-/// calibration data is available or the transform isn't in the data.
-fn calibrated_confidence(name: &str) -> Option<f64> {
+/// Look up calibrated win-rate for a transform, optionally scoped to a file
+/// extension.
+///
+/// **Design principle**: extension is a *hint* that tells us which calibration
+/// bucket to check first.  The primary decision is always structural (SSR
+/// entropy, ASCII ratio, size).  When no extension-specific calibration data
+/// exists, we return `None` so the SSR-based heuristic defaults in
+/// [`recommend_from_ssr`] drive the decision.  The overall (cross-corpus)
+/// rate is only used as a fallback when the extension IS known but has too
+/// few per-extension samples — because at least we know the file's domain.
+///
+/// Returning `None` for unknown-extension files avoids corpus dilution: e.g.
+/// the bwt_chain overall rate (1.7%) is meaningless for extensionless Silesia
+/// files that structurally benefit from BWT at 58% win rate on their domain.
+fn calibrated_confidence(name: &str, ext: Option<&str>) -> Option<f64> {
     let cal = load_calibration().as_ref()?;
     let entry = cal.get(name)?;
-    // Only trust entries with >= 10 data points.
-    if entry.files >= 10 {
-        Some(entry.win_rate)
-    } else {
-        None
+
+    if let Some(extension) = ext {
+        // Extension known — use per-extension rate when we have enough data
+        let key = if extension.is_empty() { "(none)" } else { extension };
+        if let Some(&(wr, fc)) = entry.by_extension.get(key) {
+            if fc >= 5 {
+                return Some(wr);
+            }
+        }
+        // Known extension but sparse data — fall back to overall
+        if entry.files >= 10 {
+            return Some(entry.win_rate);
+        }
     }
+
+    // No extension (or no calibration data at all): return None so the
+    // caller uses the SSR-structural default.  The overall rate is
+    // unreliable here — it's dominated by whichever corpus has the most
+    // files, not by structural similarity to this file.
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -223,16 +269,16 @@ fn calibrated_confidence(name: &str) -> Option<f64> {
 /// | bwt_chain   | large text         | ~60%      | ascii_ratio > 0.85, size > 32 KB    |
 /// | byte_plane  | medical/sci binary | situational| ascii_ratio < 0.50, entropy < 6.0  |
 /// | delta/rle/context_split on Serial: **never** (always hurts or zero gain)           |
-fn recommend_from_ssr(ssr: &SSRResult) -> Vec<TransformRecommendation> {
+fn recommend_from_ssr(ssr: &SSRResult, ext: Option<&str>) -> Vec<TransformRecommendation> {
     let mut recs = Vec::new();
 
     let is_text = ssr.ascii_ratio > 0.80;
     let is_binary = ssr.ascii_ratio < 0.50;
     let size = ssr.data_size;
 
-    // --- Tier 1: normalize (99.9% win-rate on structured text) ---
+    // --- Tier 1: normalize (94.7% overall win-rate on structured text) ---
     if is_text {
-        let confidence = calibrated_confidence("normalize").unwrap_or(0.95);
+        let confidence = calibrated_confidence("normalize", ext).unwrap_or(0.95);
         recs.push(TransformRecommendation {
             name: "normalize".to_string(),
             priority: 5,
@@ -242,8 +288,9 @@ fn recommend_from_ssr(ssr: &SSRResult) -> Vec<TransformRecommendation> {
 
     // --- Tier 1: bwt_chain (dominant on large text) ---
     // SA-IS BWT is O(n) — cap raised to 64 MiB (BWT_MAX_SIZE).
+    // Per-extension calibration avoids dilution from small config files.
     if is_text && ssr.entropy_estimate < 5.5 && size > 32_768 && size <= 64_000_000 {
-        let confidence = calibrated_confidence("bwt_chain").unwrap_or(0.60);
+        let confidence = calibrated_confidence("bwt_chain", ext).unwrap_or(0.60);
         recs.push(TransformRecommendation {
             name: "bwt_chain".to_string(),
             priority: 10,

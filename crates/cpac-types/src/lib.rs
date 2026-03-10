@@ -161,6 +161,11 @@ pub enum Preset {
     Maximum,
     /// Cold storage: zstd-19, all threads, aggressive transforms + MSN, 16 MB blocks.
     Archive,
+    /// Phase 5B: Absolute maximum ratio using brotli-11 backend.
+    /// Designed for write-once cold storage where compress time is irrelevant
+    /// but every byte of storage cost matters. Forces Brotli backend at
+    /// Best level with full MSN + smart transforms and 32 MB blocks.
+    MaxRatio,
 }
 
 impl Preset {
@@ -171,6 +176,7 @@ impl Preset {
             "balanced" | "b" | "default" => Some(Self::Balanced),
             "maximum" | "max" | "m" => Some(Self::Maximum),
             "archive" | "arc" | "a" => Some(Self::Archive),
+            "maxratio" | "max-ratio" | "mr" => Some(Self::MaxRatio),
             _ => None,
         }
     }
@@ -182,7 +188,7 @@ impl Preset {
             Self::Turbo => CompressionLevel::Fast,
             Self::Balanced => CompressionLevel::Default,
             Self::Maximum => CompressionLevel::High,
-            Self::Archive => CompressionLevel::Best,
+            Self::Archive | Self::MaxRatio => CompressionLevel::Best,
         }
     }
 
@@ -192,17 +198,26 @@ impl Preset {
         !matches!(self, Self::Turbo)
     }
 
+    /// Whether this preset forces a specific backend.
+    #[must_use]
+    pub fn forced_backend(self) -> Option<Backend> {
+        match self {
+            Self::MaxRatio => Some(Backend::Brotli),
+            _ => None,
+        }
+    }
+
     /// Whether MSN is enabled.
     #[must_use]
     pub fn msn_enabled(self) -> bool {
-        matches!(self, Self::Maximum | Self::Archive)
+        matches!(self, Self::Maximum | Self::Archive | Self::MaxRatio)
     }
 
     /// MSN confidence threshold.
     #[must_use]
     pub fn msn_confidence(self) -> f64 {
         match self {
-            Self::Archive => 0.3,
+            Self::Archive | Self::MaxRatio => 0.3,
             _ => 0.5,
         }
     }
@@ -211,10 +226,11 @@ impl Preset {
     #[must_use]
     pub fn block_size(self) -> usize {
         match self {
-            Self::Turbo => 1 << 20,    // 1 MB
-            Self::Balanced => 4 << 20, // 4 MB
-            Self::Maximum => 8 << 20,  // 8 MB
-            Self::Archive => 16 << 20, // 16 MB
+            Self::Turbo => 1 << 20,     // 1 MB
+            Self::Balanced => 4 << 20,  // 4 MB
+            Self::Maximum => 8 << 20,   // 8 MB
+            Self::Archive => 16 << 20,  // 16 MB
+            Self::MaxRatio => 32 << 20, // 32 MB — maximum context for brotli
         }
     }
 }
@@ -226,6 +242,7 @@ impl std::fmt::Display for Preset {
             Self::Balanced => write!(f, "balanced"),
             Self::Maximum => write!(f, "maximum"),
             Self::Archive => write!(f, "archive"),
+            Self::MaxRatio => write!(f, "max-ratio"),
         }
     }
 }
@@ -447,6 +464,37 @@ impl ResourceConfig {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Encryption configuration
+// ---------------------------------------------------------------------------
+
+/// Encryption mode for integrated compress+encrypt.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EncryptionMode {
+    /// No encryption.
+    #[default]
+    None,
+    /// Password-based: Argon2id KDF + AEAD.
+    Password,
+    /// Post-quantum hybrid: X25519 + ML-KEM-768 key agreement + AEAD.
+    PqcHybrid,
+}
+
+/// Encryption configuration attached to compression.
+#[derive(Clone, Debug, Default)]
+pub struct EncryptionConfig {
+    /// Encryption mode.
+    pub mode: EncryptionMode,
+    /// Password bytes (for `Password` mode). Cleared after use.
+    pub password: Option<Vec<u8>>,
+    /// Recipient public key file contents (for `PqcHybrid` mode).
+    /// Format: x25519_pub(32B) ++ mlkem_pub(N B).
+    pub recipient_public_key: Option<Vec<u8>>,
+    /// Our secret key file contents (for decryption in `PqcHybrid` mode).
+    /// Format: x25519_sec(32B) ++ mlkem_sec(N B).
+    pub secret_key: Option<Vec<u8>>,
+}
+
 /// Configuration for compression.
 #[derive(Clone, Debug)]
 pub struct CompressConfig {
@@ -496,6 +544,19 @@ pub struct CompressConfig {
     pub block_size: usize,
     /// Hardware accelerator preference (None = auto-detect best available).
     pub accelerator: Option<AccelBackend>,
+
+    // --- Phase 4A: MSN field-map caching ---
+    /// Cached MSN metadata (opaque encoded bytes from `encode_metadata_compact`).
+    /// When set, block-level compression reuses this metadata instead of
+    /// re-running domain detection on every block. Populated automatically
+    /// by `compress_parallel` after probing the first block.
+    /// Default: None.
+    pub cached_msn_metadata: Option<Vec<u8>>,
+
+    // --- Phase 7: integrated encryption ---
+    /// Encryption config for compress-then-encrypt (CPCE format).
+    /// Default: no encryption.
+    pub encryption: EncryptionConfig,
 }
 
 impl Default for CompressConfig {
@@ -516,6 +577,8 @@ impl Default for CompressConfig {
             preset: None,
             block_size: 0,
             accelerator: None,
+            cached_msn_metadata: None,
+            encryption: EncryptionConfig::default(),
         }
     }
 }
@@ -527,6 +590,7 @@ impl CompressConfig {
     #[must_use]
     pub fn from_preset(preset: Preset) -> Self {
         Self {
+            backend: preset.forced_backend(),
             level: preset.level(),
             enable_smart_transforms: preset.smart_transforms(),
             enable_msn: preset.msn_enabled(),

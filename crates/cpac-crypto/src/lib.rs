@@ -14,6 +14,8 @@
 )]
 
 pub mod aead;
+#[cfg(feature = "hqc")]
+pub mod hqc;
 #[cfg(feature = "pqc")]
 pub mod hybrid;
 pub mod kdf;

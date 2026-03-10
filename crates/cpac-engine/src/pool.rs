@@ -73,6 +73,45 @@ pub fn global_pool() -> &'static BufferPool {
     POOL.get_or_init(|| BufferPool::new(32))
 }
 
+// ---------------------------------------------------------------------------
+// Shared Rayon thread pool (Phase 4B)
+// ---------------------------------------------------------------------------
+
+/// Return a shared global Rayon thread pool sized for the host.
+///
+/// Creating a `rayon::ThreadPool` per call to `compress_parallel` /
+/// `decompress_parallel` is measurably expensive when processing many
+/// files in batch mode (thread creation + TLS setup per pool).  This
+/// function lazily initialises a single pool and reuses it for all
+/// parallel compression/decompression work.
+///
+/// The pool size defaults to the physical thread count reported by
+/// `rayon::current_num_threads()`.  An explicit size can be requested
+/// via `get_or_init_thread_pool`.
+pub fn global_thread_pool() -> &'static rayon::ThreadPool {
+    get_or_init_thread_pool(0)
+}
+
+/// Return the shared thread pool, initialising with `num_threads` if
+/// this is the first call.  Subsequent calls ignore `num_threads` and
+/// return the existing pool.  Pass 0 for auto-detection.
+pub fn get_or_init_thread_pool(num_threads: usize) -> &'static rayon::ThreadPool {
+    use std::sync::OnceLock;
+    static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
+    POOL.get_or_init(|| {
+        let n = if num_threads == 0 {
+            rayon::current_num_threads()
+        } else {
+            num_threads
+        };
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(n.max(1))
+            .thread_name(|idx| format!("cpac-worker-{idx}"))
+            .build()
+            .expect("failed to create CPAC global thread pool")
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

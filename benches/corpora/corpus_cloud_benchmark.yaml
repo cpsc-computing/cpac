@@ -1,0 +1,18 @@
+id: cloud_benchmark
+name: Cloud Benchmark Sample
+description: Curated representative sample from cloud_configs + cloud_expanded corpora
+target_subdir: cloud/benchmark_sample
+
+# Pre-populated by create_cloud_sample.ps1 — no download needed
+download_url: []
+download_kind: none
+
+license: Mixed (Apache-2.0/MPL-2.0/MIT-0)
+citation: |
+  Curated sample from cloud_configs and cloud_expanded corpora.
+  See those corpus configs for original source attributions.
+
+note: |
+  266 representative cloud config files (50 JSON, 50 YAML, 50 YML, 50 TF,
+  34 HCL, 32 TFSTATE) selected from the full cloud corpus.
+  Files are 1KB-5MB, suitable for fast per-file benchmarking.

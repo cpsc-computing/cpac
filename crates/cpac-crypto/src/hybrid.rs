@@ -17,8 +17,10 @@ use cpac_types::{CpacError, CpacResult};
 /// CPHE magic bytes.
 pub const CPHE_MAGIC: &[u8; 4] = b"CPHE";
 
-/// Current CPHE format version.
-pub const CPHE_VERSION: u8 = 1;
+/// CPHE v1 (legacy, no algorithm IDs).
+pub const CPHE_VERSION_V1: u8 = 1;
+/// CPHE v2 (algorithm agility — includes KEM, AEAD, KDF IDs).
+pub const CPHE_VERSION: u8 = 2;
 
 /// A hybrid key pair (X25519 + ML-KEM-768).
 #[derive(Clone, Debug)]
@@ -85,15 +87,21 @@ pub fn hybrid_encrypt(
         crate::aead::AeadAlgorithm::ChaCha20Poly1305,
     )?;
 
-    // 5. Encode CPHE frame
+    // 5. Encode CPHE v2 frame (with algorithm agility IDs)
+    //    v2 layout: CPHE(4) | version(1) | kem_id(1) | aead_id(1) | kdf_id(1) |
+    //               x25519_pub(32) | mlkem_ct_len(2 LE) | mlkem_ct |
+    //               nonce_len(1) | nonce | ciphertext
     let eph_pub = eph.public.to_bytes();
     let mlkem_ct_len = mlkem_ct.len() as u16;
     let nonce_len = nonce.len() as u8;
 
-    let total = 4 + 1 + 32 + 2 + mlkem_ct.len() + 1 + nonce.len() + ciphertext.len();
+    let total = 4 + 1 + 3 + 32 + 2 + mlkem_ct.len() + 1 + nonce.len() + ciphertext.len();
     let mut out = Vec::with_capacity(total);
     out.extend_from_slice(CPHE_MAGIC);
-    out.push(CPHE_VERSION);
+    out.push(CPHE_VERSION);                                          // v2
+    out.push(crate::pqc::PqcAlgorithm::MlKem768.id());              // kem_id
+    out.push(crate::aead::AeadAlgorithm::ChaCha20Poly1305.id());    // aead_id
+    out.push(crate::kdf::KdfAlgorithm::HkdfSha256.id());            // kdf_id
     out.extend_from_slice(&eph_pub);
     out.extend_from_slice(&mlkem_ct_len.to_le_bytes());
     out.extend_from_slice(&mlkem_ct);
@@ -110,7 +118,7 @@ pub fn hybrid_decrypt(
     our_x25519_secret: &[u8],
     our_mlkem_secret: &[u8],
 ) -> CpacResult<Vec<u8>> {
-    // Parse CPHE header
+    // Parse CPHE header — supports both v1 (legacy) and v2 (agile)
     if cphe_data.len() < 4 + 1 + 32 + 2 {
         return Err(CpacError::Encryption("CPHE data too short".into()));
     }
@@ -118,25 +126,46 @@ pub fn hybrid_decrypt(
         return Err(CpacError::Encryption("not a CPHE frame".into()));
     }
     let version = cphe_data[4];
-    if version != CPHE_VERSION {
-        return Err(CpacError::Encryption(format!(
-            "unsupported CPHE version: {version}"
-        )));
-    }
 
-    let eph_pub_bytes: [u8; 32] = cphe_data[5..37]
+    // Determine layout offsets based on version
+    let (kem_algo, aead_algo, data_start) = match version {
+        CPHE_VERSION_V1 => (
+            crate::pqc::PqcAlgorithm::MlKem768,
+            crate::aead::AeadAlgorithm::ChaCha20Poly1305,
+            5usize, // v1: data starts right after version byte
+        ),
+        CPHE_VERSION => {
+            if cphe_data.len() < 8 {
+                return Err(CpacError::Encryption("CPHE v2 header too short".into()));
+            }
+            let kem = crate::pqc::PqcAlgorithm::from_id(cphe_data[5])?;
+            let aead = crate::aead::AeadAlgorithm::from_id(cphe_data[6])?;
+            let _kdf = crate::kdf::KdfAlgorithm::from_id(cphe_data[7])?;
+            (kem, aead, 8usize) // v2: 3 extra ID bytes
+        }
+        _ => {
+            return Err(CpacError::Encryption(format!(
+                "unsupported CPHE version: {version}"
+            )));
+        }
+    };
+
+    let eph_pub_bytes: [u8; 32] = cphe_data[data_start..data_start + 32]
         .try_into()
         .map_err(|_| CpacError::Encryption("bad ephemeral public key".into()))?;
     let eph_pub = x25519_dalek::PublicKey::from(eph_pub_bytes);
 
-    let mlkem_ct_len = u16::from_le_bytes([cphe_data[37], cphe_data[38]]) as usize;
-    let mlkem_ct_end = 39 + mlkem_ct_len;
+    let ct_len_offset = data_start + 32;
+    let mlkem_ct_len =
+        u16::from_le_bytes([cphe_data[ct_len_offset], cphe_data[ct_len_offset + 1]]) as usize;
+    let mlkem_ct_start = ct_len_offset + 2;
+    let mlkem_ct_end = mlkem_ct_start + mlkem_ct_len;
     if cphe_data.len() < mlkem_ct_end + 1 {
         return Err(CpacError::Encryption(
             "CPHE truncated ML-KEM ciphertext".into(),
         ));
     }
-    let mlkem_ct = &cphe_data[39..mlkem_ct_end];
+    let mlkem_ct = &cphe_data[mlkem_ct_start..mlkem_ct_end];
 
     let nonce_len = cphe_data[mlkem_ct_end] as usize;
     let nonce_end = mlkem_ct_end + 1 + nonce_len;
@@ -153,23 +182,15 @@ pub fn hybrid_decrypt(
     let our_sk = x25519_dalek::StaticSecret::from(our_sk_bytes);
     let x_shared = crate::keys::x25519_shared_secret(&our_sk, &eph_pub);
 
-    // 2. ML-KEM-768 decapsulate
-    let mlkem_ss = crate::pqc::pqc_decapsulate(
-        mlkem_ct,
-        our_mlkem_secret,
-        crate::pqc::PqcAlgorithm::MlKem768,
-    )?;
+    // 2. ML-KEM decapsulate (algorithm from header)
+    let mlkem_ss =
+        crate::pqc::pqc_decapsulate(mlkem_ct, our_mlkem_secret, kem_algo)?;
 
     // 3. Combine shared secrets
     let combined_key = derive_hybrid_key(&x_shared, &mlkem_ss)?;
 
-    // 4. AEAD decrypt
-    crate::aead::decrypt_aead(
-        ciphertext,
-        &combined_key,
-        nonce,
-        crate::aead::AeadAlgorithm::ChaCha20Poly1305,
-    )
+    // 4. AEAD decrypt (algorithm from header)
+    crate::aead::decrypt_aead(ciphertext, &combined_key, nonce, aead_algo)
 }
 
 /// Derive a 32-byte key from two shared secrets via HKDF-SHA256.

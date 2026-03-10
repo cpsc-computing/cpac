@@ -753,6 +753,28 @@ See [TRANSFORMS.md](TRANSFORMS.md) for the full transform pipeline
 documentation including SSR gates, confidence thresholds, active/dead
 status, and benchmark evidence.
 
+## Hardware Acceleration
+
+CPAC supports hardware-accelerated entropy coding via the `--accel` flag.
+By default (`--accel auto`), software fallback is used. To enable a hardware
+backend, set the corresponding environment variable before running `cpac`:
+
+| Env Variable | Backend | Notes |
+|---|---|---|
+| `CPAC_QAT_ENABLED=1` | Intel QAT | Requires QAT driver & device |
+| `CPAC_IAA_ENABLED=1` | Intel IAA | Sapphire Rapids+ |
+| `CPAC_GPU_ENABLED=1` | GPU Compute | CUDA or Vulkan runtime |
+| `CPAC_XILINX_ENABLED=1` | AMD Xilinx Alveo | FPGA bitstream loaded |
+| `CPAC_SVE2_ENABLED=1` | ARM SVE2 | AArch64 only |
+
+Run `cpac info --host` to see detected accelerators and active selection.
+
+CLI flag `--accel <backend>` overrides auto-detection:
+```bash
+cpac compress file.log --accel qat     # Force QAT
+cpac compress file.log --accel software # Force software
+```
+
 ## Planned Enhancements
 
 ### Infrastructure (Signal-Driven)

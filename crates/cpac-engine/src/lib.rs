@@ -17,13 +17,18 @@
 
 pub mod accel;
 pub mod analyzer;
+pub mod bandwidth;
 pub mod bench;
 pub mod corpus;
+pub mod dedup;
 pub mod host;
 pub mod parallel;
 pub mod pool;
+pub mod profiler;
+pub mod wal;
 
 pub use analyzer::{analyze_structure, format_profile, ColumnProfile, StructureProfile};
+pub use profiler::{format_profile_result, profile_file, GapEntry, ProfileResult, Recommendation, TrialResult};
 pub use bench::{check_regressions, load_baseline, save_baseline};
 pub use bench::{
     BaselineEngine, BaselineEntry, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary,
@@ -36,9 +41,10 @@ pub use cpac_types::{
 };
 pub use host::{auto_resource_config, cached_host_info, detect_host, HostInfo, SimdTier};
 pub use parallel::{
-    compress_parallel, decompress_parallel, is_cpbl, CPBL_MAGIC, DEFAULT_BLOCK_SIZE,
-    PARALLEL_THRESHOLD,
+    adaptive_block_size, compress_parallel, decompress_parallel, is_cpbl, BLOCK_SIZE_LARGE,
+    BLOCK_SIZE_MEDIUM, BLOCK_SIZE_SMALL, CPBL_MAGIC, DEFAULT_BLOCK_SIZE, PARALLEL_THRESHOLD,
 };
+pub use pool::{get_or_init_thread_pool, global_thread_pool};
 
 /// Engine version string.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -107,10 +113,11 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // Done BEFORE MSN extraction so we don't waste time extracting MSN on the full
     // file only to discard the result — each parallel block applies MSN independently.
     // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel).
+    // Phase 4C: when no explicit block size is set, use entropy-adaptive sizing.
     let effective_block_size = if config.block_size > 0 {
         config.block_size
     } else {
-        DEFAULT_BLOCK_SIZE
+        parallel::adaptive_block_size(ssr.entropy_estimate, original_size)
     };
     let adaptive_threshold = effective_block_size.max(parallel::PARALLEL_THRESHOLD);
     if !config.disable_parallel && original_size >= adaptive_threshold && backend != Backend::Raw {
@@ -130,15 +137,35 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // When Some(Track::Track2), MSN is always bypassed.
     let effective_track = config.force_track.unwrap_or(ssr.track);
     let (msn_data, msn_metadata) = if config.enable_msn && effective_track == Track::Track1 {
-        match cpac_msn::extract(data, msn_filename, config.msn_confidence) {
-            Ok(result) if result.applied => {
+        // Phase 4A: if a cached MSN metadata was provided (from parallel block
+        // probing), use extract_with_metadata for consistent field indices and
+        // to skip the O(N-domains) detection loop.
+        let msn_result = if let Some(ref cached_bytes) = config.cached_msn_metadata {
+            cpac_msn::decode_metadata_compact(cached_bytes)
+                .ok()
+                .and_then(|meta| cpac_msn::extract_with_metadata(data, &meta).ok())
+        } else {
+            None
+        };
+        let msn_result = msn_result.unwrap_or_else(|| {
+            cpac_msn::extract(data, msn_filename, config.msn_confidence)
+                .unwrap_or_else(|_| cpac_msn::MsnResult::passthrough(data))
+        });
+        match msn_result {
+            result if result.applied => {
                 // MSN succeeded - use residual as input, store metadata (without residual).
                 // Encode as compact MessagePack (~30-40% smaller than JSON).
                 let metadata = cpac_msn::encode_metadata_compact(&result.metadata())?;
-                // Safety check: only use MSN if residual + metadata is strictly
-                // smaller than the original.  If not, the metadata overhead
-                // (stored in the frame) would negate any compression gain.
-                if result.residual.len() + metadata.len() < data.len() {
+                // Safety check: only use MSN if residual + metadata is
+                // meaningfully smaller than the original.  A bare "strictly
+                // smaller" test is insufficient because MSN token substitution
+                // disrupts the entropy coder's LZ77 back-references; even when
+                // the raw residual is a few bytes smaller, the post-entropy
+                // compressed output can be *larger*.  Require at least 5% raw
+                // savings so that the residual's improved redundancy structure
+                // outweighs any back-reference disruption.
+                let msn_savings_margin = data.len() / 20; // 5%
+                if result.residual.len() + metadata.len() + msn_savings_margin < data.len() {
                     // Roundtrip verification: reconstruct from the residual and confirm
                     // the output bytes exactly match the original block.  This catches
                     // extraction bugs where global String::replace interactions produce a
@@ -203,7 +230,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                     (data.to_vec(), Vec::new())
                 }
             }
-            Ok(_) => {
+            _ => {
                 // Domain detected but applied=false — confidence below threshold.
                 if msn_verbose {
                     eprintln!(
@@ -211,10 +238,6 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                         config.msn_confidence,
                     );
                 }
-                (data.to_vec(), Vec::new())
-            }
-            Err(_) => {
-                // MSN extraction error — fall back to passthrough.
                 (data.to_vec(), Vec::new())
             }
         }
@@ -237,7 +260,11 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // Skip preprocessing for:
     // - Raw backend (passthrough mode)
     // - Small files (< 4KB) where overhead exceeds benefit
-    let should_preprocess = backend != Backend::Raw && original_size >= PREPROCESS_THRESHOLD;
+    // - Binary-detected data (OLE2, CCITT fax, ELF, PE) — transforms expand binary data,
+    //   causing massive ratio regression vs. raw zstd (e.g. kennedy.xls -36.6%).
+    let is_binary_domain = ssr.domain_hint == Some(cpac_types::DomainHint::Binary);
+    let should_preprocess =
+        backend != Backend::Raw && original_size >= PREPROCESS_THRESHOLD && !is_binary_domain;
 
     // Track DAG descriptor for the frame header (non-empty when smart transforms used).
     let mut dag_descriptor: Vec<u8> = Vec::new();
@@ -715,6 +742,135 @@ mod tests {
         let compressed = compress(data, &config).unwrap();
         let decompressed = decompress(&compressed.data).unwrap();
         assert_eq!(decompressed.data, data);
+    }
+
+    #[test]
+    fn roundtrip_smart_transforms_large_text() {
+        // Large text data (>32KB) to trigger bwt_chain recommendation.
+        // This reproduces the bench_file verification failures on silesia/dickens, nci, etc.
+        let sentence = b"The quick brown fox jumps over the lazy dog. ";
+        let data: Vec<u8> = sentence.iter().copied().cycle().take(50_000).collect();
+        assert!(data.len() > 32_768, "data must exceed bwt_chain size gate");
+
+        let config = CompressConfig {
+            backend: Some(Backend::Zstd),
+            enable_smart_transforms: true,
+            disable_parallel: true, // single-block to isolate transform behavior
+            ..Default::default()
+        };
+        let compressed = compress(&data, &config).unwrap();
+        let decompressed = decompress(&compressed.data).unwrap();
+        assert_eq!(
+            decompressed.data, data,
+            "smart transforms large text roundtrip failed (len={})",
+            data.len()
+        );
+    }
+
+    #[test]
+    fn roundtrip_bwt_chain_direct_large() {
+        // Test BWT chain transform directly on large data.
+        use cpac_transforms::BwtChainTransform;
+        use cpac_transforms::TransformNode;
+
+        let sentence = b"The quick brown fox jumps over the lazy dog. ";
+        let data: Vec<u8> = sentence.iter().copied().cycle().take(100_000).collect();
+        let ctx = cpac_transforms::TransformContext {
+            entropy_estimate: 4.0,
+            ascii_ratio: 1.0,
+            data_size: data.len(),
+        };
+        let t = BwtChainTransform;
+        let input = cpac_types::CpacType::Serial(data.clone());
+        let (encoded, meta) = t.encode(input, &ctx).unwrap();
+        let decoded = t.decode(encoded, &meta).unwrap();
+        match decoded {
+            cpac_types::CpacType::Serial(d) => {
+                assert_eq!(d.len(), data.len(), "BWT chain size mismatch");
+                assert_eq!(d, data, "BWT chain content mismatch on 100KB data");
+            }
+            _ => panic!("expected Serial"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_bwt_chain_direct_5mb() {
+        // Test BWT chain transform on ~5MB data (block-sized).
+        use cpac_transforms::BwtChainTransform;
+        use cpac_transforms::TransformNode;
+
+        let sentence = b"The quick brown fox jumps over the lazy dog. ";
+        let data: Vec<u8> = sentence.iter().copied().cycle().take(5_000_000).collect();
+        let ctx = cpac_transforms::TransformContext {
+            entropy_estimate: 4.0,
+            ascii_ratio: 1.0,
+            data_size: data.len(),
+        };
+        let t = BwtChainTransform;
+        let input = cpac_types::CpacType::Serial(data.clone());
+        let (encoded, meta) = t.encode(input, &ctx).unwrap();
+        let decoded = t.decode(encoded, &meta).unwrap();
+        match decoded {
+            cpac_types::CpacType::Serial(d) => {
+                assert_eq!(d.len(), data.len(), "BWT chain 5MB size mismatch");
+                assert_eq!(d, data, "BWT chain 5MB content mismatch");
+            }
+            _ => panic!("expected Serial"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_smart_transforms_parallel_text() {
+        // >4MB text triggers parallel compression with smart transforms.
+        // This is the exact path that fails in bench_file on silesia files.
+        let sentence = b"The quick brown fox jumps over the lazy dog. ";
+        let data: Vec<u8> = sentence.iter().copied().cycle()
+            .take(parallel::PARALLEL_THRESHOLD + 1_000_000).collect();
+
+        let config = CompressConfig {
+            backend: Some(Backend::Zstd),
+            enable_smart_transforms: true,
+            // NOTE: do NOT set disable_parallel — we want the parallel path
+            ..Default::default()
+        };
+        let compressed = compress(&data, &config).unwrap();
+        assert!(is_cpbl(&compressed.data), "expected CPBL parallel frame");
+        let decompressed = decompress(&compressed.data).unwrap();
+        assert_eq!(
+            decompressed.data.len(), data.len(),
+            "parallel smart transforms size mismatch"
+        );
+        assert_eq!(
+            decompressed.data, data,
+            "parallel smart transforms roundtrip failed (len={})",
+            data.len()
+        );
+    }
+
+    #[test]
+    fn roundtrip_normalize_direct_large() {
+        // Test normalize transform directly on large text.
+        use cpac_transforms::NormalizeTransform;
+        use cpac_transforms::TransformNode;
+
+        let data: Vec<u8> = b"{\n  \"name\": \"Alice\",\n  \"age\": 30\n}\n"
+            .iter().copied().cycle().take(100_000).collect();
+        let ctx = cpac_transforms::TransformContext {
+            entropy_estimate: 4.0,
+            ascii_ratio: 1.0,
+            data_size: data.len(),
+        };
+        let t = NormalizeTransform;
+        let input = cpac_types::CpacType::Serial(data.clone());
+        let (encoded, meta) = t.encode(input, &ctx).unwrap();
+        let decoded = t.decode(encoded, &meta).unwrap();
+        match decoded {
+            cpac_types::CpacType::Serial(d) => {
+                assert_eq!(d.len(), data.len(), "normalize size mismatch");
+                assert_eq!(d, data, "normalize content mismatch on 100KB data");
+            }
+            _ => panic!("expected Serial"),
+        }
     }
 
     #[test]

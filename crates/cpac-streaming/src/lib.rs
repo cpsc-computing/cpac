@@ -13,6 +13,8 @@
     clippy::missing_panics_doc
 )]
 
+pub mod cloud;
+pub mod cpce;
 pub mod mmap;
 pub mod stream;
 

@@ -9,6 +9,37 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use sha2::Sha256;
 
+/// Supported KDF algorithms (for wire-format agility).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KdfAlgorithm {
+    /// HKDF-SHA256.
+    HkdfSha256,
+    /// Argon2id (password-based).
+    Argon2id,
+}
+
+impl KdfAlgorithm {
+    /// Wire ID for serialisation.
+    #[must_use]
+    pub fn id(self) -> u8 {
+        match self {
+            KdfAlgorithm::HkdfSha256 => 1,
+            KdfAlgorithm::Argon2id => 2,
+        }
+    }
+
+    /// Decode from wire ID.
+    pub fn from_id(id: u8) -> CpacResult<Self> {
+        match id {
+            1 => Ok(KdfAlgorithm::HkdfSha256),
+            2 => Ok(KdfAlgorithm::Argon2id),
+            _ => Err(CpacError::Encryption(format!(
+                "unknown KDF algorithm: {id}"
+            ))),
+        }
+    }
+}
+
 /// Derive a 32-byte key using HKDF-SHA256.
 pub fn derive_key_hkdf(ikm: &[u8], salt: &[u8], info: &[u8]) -> CpacResult<[u8; 32]> {
     let hk = Hkdf::<Sha256>::new(Some(salt), ikm);

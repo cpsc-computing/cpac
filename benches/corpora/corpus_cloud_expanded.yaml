@@ -1,0 +1,47 @@
+id: cloud_expanded
+name: Expanded Cloud Infrastructure Data
+description: Terraform examples, Helm charts, ArgoCD manifests, OpenTelemetry configs, Prometheus rules
+target_subdir: cloud/expanded
+
+# Public GitHub repos with cloud infrastructure files
+download_url:
+  # Terraform examples (HCL + JSON state patterns)
+  - https://github.com/hashicorp/terraform/archive/refs/heads/main.zip
+  # Helm charts — massive YAML collection (K8s manifests, values files)
+  - https://github.com/bitnami/charts/archive/refs/heads/main.zip
+  # ArgoCD — K8s-heavy GitOps manifests
+  - https://github.com/argoproj/argo-cd/archive/refs/heads/master.zip
+  # OpenTelemetry collector — config YAML, pipeline definitions
+  - https://github.com/open-telemetry/opentelemetry-collector-contrib/archive/refs/heads/main.zip
+  # Prometheus — config + recording/alerting rule YAML
+  - https://github.com/prometheus/prometheus/archive/refs/heads/main.zip
+
+download_kind: http_zip_multi
+
+# Extract only cloud config/manifest files
+extract_paths:
+  - "**/*.json"
+  - "**/*.yaml"
+  - "**/*.yml"
+  - "**/*.tf"
+  - "**/*.hcl"
+  - "**/*.tfvars"
+  - "**/*.tfstate"
+  - "*.json"
+  - "*.yaml"
+  - "*.yml"
+  - "*.tf"
+
+license: Mixed (MPL-2.0/Apache-2.0/MIT)
+citation: |
+  Terraform: https://github.com/hashicorp/terraform (MPL-2.0)
+  Bitnami Charts: https://github.com/bitnami/charts (Apache-2.0)
+  ArgoCD: https://github.com/argoproj/argo-cd (Apache-2.0)
+  OpenTelemetry Collector Contrib: https://github.com/open-telemetry/opentelemetry-collector-contrib (Apache-2.0)
+  Prometheus: https://github.com/prometheus/prometheus (Apache-2.0)
+
+note: |
+  Expanded cloud infrastructure corpus covering Terraform HCL, Helm chart YAML,
+  ArgoCD K8s manifests, OpenTelemetry collector configs, and Prometheus rules.
+  Complements corpus_cloud_configs (K8s examples, CFn, Terraform modules).
+  Target: ~500MB-2GB uncompressed.

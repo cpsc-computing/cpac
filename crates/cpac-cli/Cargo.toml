@@ -9,6 +9,10 @@ license.workspace = true
 name = "cpac"
 path = "src/main.rs"
 
+[features]
+default = []
+hqc = ["cpac-crypto/hqc", "cpac-streaming/hqc"]
+
 [dependencies]
 cpac-engine = { workspace = true }
 cpac-types = { workspace = true }
@@ -16,10 +20,11 @@ cpac-ssr = { workspace = true }
 cpac-dag = { workspace = true }
 cpac-msn = { workspace = true }
 cpac-crypto = { workspace = true, features = ["pqc"] }
-cpac-streaming = { workspace = true }
+cpac-streaming = { workspace = true, features = ["pqc"] }
 cpac-cas = { workspace = true }
 cpac-archive = { workspace = true }
 cpac-lab = { workspace = true }
+cpac-dict = { workspace = true }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 toml = { workspace = true }

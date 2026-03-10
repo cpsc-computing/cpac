@@ -137,6 +137,229 @@ impl JsonDomain {
         })
     }
 
+    // -----------------------------------------------------------------------
+    // Single-doc key dedup (byte-level, preserves whitespace for zstd)
+    // -----------------------------------------------------------------------
+
+    /// Count how many bytes a key-dedup pass would save.
+    ///
+    /// Returns `(repeated_keys, total_byte_savings)`.  The caller uses this to
+    /// gate `detect()` confidence: only enable MSN when savings are meaningful.
+    fn keydedup_savings(data: &[u8]) -> (usize, usize) {
+        let positions = Self::scan_json_key_positions(data);
+        let mut freq: HashMap<&[u8], usize> = HashMap::new();
+        for &(start, end) in &positions {
+            *freq.entry(&data[start..end]).or_insert(0) += 1;
+        }
+        let mut repeated: Vec<(&[u8], usize)> = freq
+            .into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .collect();
+        repeated.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let mut total_savings: usize = 0;
+        for (i, (key_bytes, count)) in repeated.iter().enumerate() {
+            let orig_len = key_bytes.len(); // includes quotes: "key"
+            let token_len = Self::token_len(i); // length of "$xx" token
+            if orig_len > token_len {
+                total_savings += (orig_len - token_len) * count;
+            }
+        }
+        (repeated.len(), total_savings)
+    }
+
+    /// Byte-level single-doc key dedup extraction.
+    ///
+    /// Scans the raw JSON bytes for repeated key strings (`"key":`), replaces
+    /// them with short index tokens (`"$00":`, `"$01":`, …), and returns the
+    /// modified byte stream as the residual.  All whitespace, indentation,
+    /// and value formatting is preserved so zstd still benefits from those
+    /// repetition patterns.
+    fn extract_single_keydedup(data: &[u8]) -> CpacResult<ExtractionResult> {
+        let positions = Self::scan_json_key_positions(data);
+
+        // Count frequency of each key string (including quotes).
+        let mut freq: HashMap<Vec<u8>, usize> = HashMap::new();
+        for &(start, end) in &positions {
+            *freq.entry(data[start..end].to_vec()).or_insert(0) += 1;
+        }
+
+        // Build dedup map: repeated keys sorted by frequency (descending).
+        let mut repeated: Vec<(Vec<u8>, usize)> = freq
+            .into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .collect();
+        repeated.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Map: original key bytes (with quotes) → index
+        let key_to_idx: HashMap<Vec<u8>, usize> = repeated
+            .iter()
+            .enumerate()
+            .map(|(i, (k, _))| (k.clone(), i))
+            .collect();
+
+        // Extract key names (without quotes) for metadata.
+        let field_names: Vec<String> = repeated
+            .iter()
+            .map(|(k, _)| {
+                // k includes quotes: "keyname" → keyname
+                String::from_utf8_lossy(&k[1..k.len() - 1]).into_owned()
+            })
+            .collect();
+
+        // Build residual: replace key strings with short tokens.
+        // Process positions in reverse order so byte offsets stay valid.
+        let mut residual = data.to_vec();
+        let mut sorted_positions: Vec<(usize, usize)> = positions
+            .iter()
+            .filter(|&&(s, e)| key_to_idx.contains_key(&data[s..e]))
+            .copied()
+            .collect();
+        sorted_positions.sort_by(|a, b| b.0.cmp(&a.0)); // reverse order
+
+        for (start, end) in sorted_positions {
+            let key_bytes = data[start..end].to_vec();
+            if let Some(&idx) = key_to_idx.get(&key_bytes) {
+                let token = Self::make_token(idx);
+                residual.splice(start..end, token.into_iter());
+            }
+        }
+
+        let mut fields = HashMap::new();
+        fields.insert(
+            "field_names".to_string(),
+            Value::Array(field_names.into_iter().map(Value::String).collect()),
+        );
+        fields.insert(
+            "format".to_string(),
+            Value::String("single_keydedup".to_string()),
+        );
+        fields.insert(
+            "original_size".to_string(),
+            Value::Number(data.len().into()),
+        );
+
+        Ok(ExtractionResult {
+            fields,
+            residual,
+            metadata: HashMap::new(),
+            domain_id: "text.json".to_string(),
+        })
+    }
+
+    /// Reconstruct single-doc JSON from key-dedup residual.
+    fn reconstruct_single_keydedup(
+        residual: &[u8],
+        field_names: &[String],
+    ) -> CpacResult<Vec<u8>> {
+        // Scan the residual for token key positions and replace back.
+        let positions = Self::scan_json_key_positions(residual);
+        let mut output = residual.to_vec();
+
+        // Process in reverse order to preserve offsets.
+        let mut restore_positions: Vec<(usize, usize, usize)> = Vec::new(); // (start, end, key_idx)
+        for &(start, end) in &positions {
+            if let Some(idx) = Self::parse_token(&residual[start..end]) {
+                if idx < field_names.len() {
+                    restore_positions.push((start, end, idx));
+                }
+            }
+        }
+        restore_positions.sort_by(|a, b| b.0.cmp(&a.0)); // reverse order
+
+        for (start, end, idx) in restore_positions {
+            let original_key = format!("\"{}\"" , field_names[idx]);
+            output.splice(start..end, original_key.bytes());
+        }
+
+        Ok(output)
+    }
+
+    /// Scan JSON bytes for key string positions.
+    ///
+    /// Returns `(start, end)` byte offsets for each `"key"` string that is
+    /// followed by optional whitespace and a colon.  The range includes the
+    /// enclosing double-quotes.
+    fn scan_json_key_positions(data: &[u8]) -> Vec<(usize, usize)> {
+        let mut positions = Vec::new();
+        let mut i = 0;
+        while i < data.len() {
+            if data[i] == b'"' {
+                let str_start = i;
+                i += 1;
+                // Scan to closing quote, handling escapes.
+                while i < data.len() {
+                    if data[i] == b'\\' {
+                        i += 2; // skip escaped char
+                        continue;
+                    }
+                    if data[i] == b'"' {
+                        let str_end = i + 1; // past closing quote
+                        i += 1;
+                        // Check if followed by optional whitespace + colon.
+                        let mut j = i;
+                        while j < data.len() && data[j].is_ascii_whitespace() {
+                            j += 1;
+                        }
+                        if j < data.len() && data[j] == b':' {
+                            positions.push((str_start, str_end));
+                        }
+                        break;
+                    }
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        }
+        positions
+    }
+
+    /// Length of the token string for key index `idx` (including quotes).
+    fn token_len(idx: usize) -> usize {
+        // Tokens: "$00" through "$ff" = 5 bytes (with quotes)
+        // "$100" through "$fff" = 6 bytes
+        if idx < 256 {
+            5 // "$xx"
+        } else {
+            6 // "$xxx"
+        }
+    }
+
+    /// Build the token bytes for key index `idx` (with quotes).
+    fn make_token(idx: usize) -> Vec<u8> {
+        if idx < 256 {
+            format!("\"${:02x}\"", idx).into_bytes()
+        } else {
+            format!("\"${:03x}\"", idx).into_bytes()
+        }
+    }
+
+    /// Parse a token string back to its key index.
+    /// Input is the quoted string including quotes, e.g. `"$0a"`.
+    /// Returns `None` if not a valid token.
+    fn parse_token(quoted: &[u8]) -> Option<usize> {
+        if quoted.len() < 4 || quoted[0] != b'"' || quoted[quoted.len() - 1] != b'"' {
+            return None;
+        }
+        let inner = &quoted[1..quoted.len() - 1];
+        if inner.first() != Some(&b'$') {
+            return None;
+        }
+        let hex = &inner[1..];
+        if hex.len() < 2 || hex.len() > 3 {
+            return None;
+        }
+        if !hex.iter().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        usize::from_str_radix(
+            std::str::from_utf8(hex).ok()?,
+            16,
+        )
+        .ok()
+    }
+
     /// Build a columnar residual from parsed JSONL rows.
     ///
     /// Wire format:
@@ -420,7 +643,8 @@ impl Domain for JsonDomain {
                 return 0.95;
             }
             // For .json extension: only beneficial if the content is JSONL
-            // (columnar transform helps). Single-doc JSON is handled below.
+            // (columnar transform helps) OR single-doc with enough key repetition
+            // for byte-level key dedup.
             if std::path::Path::new(fname)
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("json"))
@@ -434,8 +658,11 @@ impl Domain for JsonDomain {
                 {
                     return 0.9; // JSONL with .json extension
                 }
-                // Single-doc .json: MSN re-serialization hurts compressibility.
-                // Return below min_confidence so the caller falls through to passthrough.
+                // Single-doc .json: check if key dedup would save enough bytes.
+                let (repeated_keys, byte_savings) = Self::keydedup_savings(data);
+                if repeated_keys >= 3 && byte_savings > data.len() / 20 {
+                    return 0.7; // Enough key repetition for byte-level dedup
+                }
                 return 0.2;
             }
         }
@@ -453,10 +680,12 @@ impl Domain for JsonDomain {
             return 0.0;
         }
 
-        // If the whole file is valid single-doc JSON, MSN's compact re-serialization
-        // removes whitespace that the entropy backend was using, hurting ratio.
-        // Return below min_confidence so the caller falls through to passthrough.
+        // Single-doc JSON: check if byte-level key dedup helps.
         if serde_json::from_slice::<Value>(data).is_ok() {
+            let (repeated_keys, byte_savings) = Self::keydedup_savings(data);
+            if repeated_keys >= 3 && byte_savings > data.len() / 20 {
+                return 0.7;
+            }
             return 0.2;
         }
 
@@ -478,12 +707,12 @@ impl Domain for JsonDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
-        // Only JSONL (newline-delimited JSON objects) benefits from MSN's columnar
-        // transform + delta encoding.  Single-doc JSON re-serialization removes
-        // whitespace that entropy backends already compress well, hurting ratio.
-        // detect() returns confidence < 0.5 for single-doc so we should never
-        // reach here for those files, but guard explicitly just in case.
-        Self::extract_jsonl(data)
+        // Try JSONL first (multi-line, columnar extraction).
+        if let Ok(result) = Self::extract_jsonl(data) {
+            return Ok(result);
+        }
+        // Single-doc: use byte-level key dedup (preserves whitespace).
+        Self::extract_single_keydedup(data)
     }
 
     fn extract_with_fields(
@@ -621,7 +850,17 @@ impl Domain for JsonDomain {
             return Ok(output);
         }
 
-        // Single-document JSON path.
+        // Single-doc key dedup path (byte-level, preserves whitespace).
+        let is_keydedup = result
+            .fields
+            .get("format")
+            .and_then(Value::as_str)
+            == Some("single_keydedup");
+        if is_keydedup {
+            return Self::reconstruct_single_keydedup(&result.residual, &field_names);
+        }
+
+        // Legacy single-document JSON path (re-serialization).
         let compacted: Value = serde_json::from_slice(&result.residual)
             .map_err(|e| CpacError::DecompressFailed(format!("text.json parse error: {e}")))?;
         let expanded = Self::expand_json(&compacted, &field_names);
@@ -820,6 +1059,122 @@ mod tests {
             .map(|l| serde_json::from_slice(l).unwrap())
             .collect();
         assert_eq!(orig, recon);
+    }
+
+    /// Single-doc JSON key dedup: byte-perfect roundtrip.
+    #[test]
+    fn json_single_doc_keydedup_roundtrip() {
+        // CloudFormation-like template with repeated keys.
+        let data = br#"{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "MyVPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16"
+      }
+    },
+    "MySubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {"Ref": "MyVPC"},
+        "CidrBlock": "10.0.1.0/24"
+      }
+    },
+    "MyInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "SubnetId": {"Ref": "MySubnet"},
+        "InstanceType": "t3.micro"
+      }
+    },
+    "MySecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow SSH",
+        "VpcId": {"Ref": "MyVPC"}
+      }
+    },
+    "MyRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{"Effect": "Allow"}]
+        }
+      }
+    }
+  }
+}"#;
+
+        let result = JsonDomain::extract_single_keydedup(data).unwrap();
+        assert_eq!(
+            result.fields.get("format").and_then(|v| v.as_str()),
+            Some("single_keydedup")
+        );
+        // Residual should be smaller than original.
+        assert!(
+            result.residual.len() < data.len(),
+            "residual {} should be < original {}",
+            result.residual.len(),
+            data.len()
+        );
+
+        // Byte-perfect roundtrip.
+        let field_names: Vec<String> = result
+            .fields
+            .get("field_names")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        let reconstructed =
+            JsonDomain::reconstruct_single_keydedup(&result.residual, &field_names).unwrap();
+        assert_eq!(
+            data.as_slice(),
+            reconstructed.as_slice(),
+            "byte-perfect roundtrip failed"
+        );
+    }
+
+    /// Single-doc key dedup detection: enough repetition → high confidence.
+    #[test]
+    fn json_single_doc_keydedup_detection() {
+        let domain = JsonDomain;
+        // Template with 5+ repeated keys should get confidence > 0.5.
+        let data = br#"{
+  "Resources": {
+    "A": {"Type": "X", "Properties": {"CidrBlock": "a"}},
+    "B": {"Type": "Y", "Properties": {"CidrBlock": "b"}},
+    "C": {"Type": "Z", "Properties": {"CidrBlock": "c"}},
+    "D": {"Type": "W", "Properties": {"CidrBlock": "d"}},
+    "E": {"Type": "V", "Properties": {"CidrBlock": "e"}}
+  }
+}"#;
+        let conf = domain.detect(data, Some("template.json"));
+        assert!(conf > 0.5, "expected > 0.5, got {conf}");
+    }
+
+    /// Key dedup scanner correctly identifies key positions.
+    #[test]
+    fn json_keydedup_scan_positions() {
+        let data = br#"{"name": "alice", "age": 30}"#;
+        let positions = JsonDomain::scan_json_key_positions(data);
+        assert_eq!(positions.len(), 2);
+        assert_eq!(&data[positions[0].0..positions[0].1], b"\"name\"");
+        assert_eq!(&data[positions[1].0..positions[1].1], b"\"age\"");
+    }
+
+    /// Token roundtrip: make_token → parse_token.
+    #[test]
+    fn json_keydedup_token_roundtrip() {
+        for idx in [0, 1, 15, 127, 255, 256, 4095] {
+            let token = JsonDomain::make_token(idx);
+            let parsed = JsonDomain::parse_token(&token);
+            assert_eq!(parsed, Some(idx), "token roundtrip failed for idx {idx}");
+        }
     }
 
     /// Trailing-newline flag is respected: data without a trailing '\n' should

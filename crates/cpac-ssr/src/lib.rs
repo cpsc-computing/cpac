@@ -5,7 +5,13 @@
 //! Computes entropy, ASCII ratio, domain hints and determines the
 //! compression track (Track 1 domain-aware vs Track 2 generic).
 
-#![allow(clippy::cast_precision_loss, clippy::naive_bytecount)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::naive_bytecount,
+    clippy::inline_always
+)]
+
+mod simd;
 
 use cpac_types::{DomainHint, Track};
 
@@ -69,8 +75,13 @@ pub fn analyze(data: &[u8]) -> SSRResult {
     let ascii_ratio = compute_ascii_ratio(data);
     let domain_hint = detect_domain(data);
 
-    // Viability: higher for low entropy + high ascii ratio + domain detection
-    let domain_bonus = if domain_hint.is_some() { 0.2 } else { 0.0 };
+    // Viability: higher for low entropy + high ascii ratio + domain detection.
+    // Binary domain hint gets a *penalty* to force Track 2 (BWT/MSN hurt on binary).
+    let domain_bonus = match &domain_hint {
+        Some(DomainHint::Binary) => -0.5,
+        Some(_) => 0.2,
+        None => 0.0,
+    };
     let viability_score = (1.0 - entropy_estimate / 8.0) * 0.4 + ascii_ratio * 0.4 + domain_bonus;
 
     let track = if viability_score >= DEFAULT_VIABILITY_THRESHOLD {
@@ -90,15 +101,14 @@ pub fn analyze(data: &[u8]) -> SSRResult {
 }
 
 /// Compute Shannon entropy in bits per byte.
+///
+/// Uses 4× unrolled byte histogram for ILP on modern CPUs.
 fn shannon_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
 
-    let mut counts = [0u64; 256];
-    for &b in data {
-        counts[b as usize] += 1;
-    }
+    let counts = simd::byte_histogram(data);
 
     let len = data.len() as f64;
     let mut entropy = 0.0;
@@ -114,16 +124,15 @@ fn shannon_entropy(data: &[u8]) -> f64 {
 }
 
 /// Fraction of bytes that are printable ASCII (0x20–0x7E) or common whitespace.
+///
+/// Uses SIMD-accelerated scanning on x86_64 (AVX2/SSE2) and aarch64 (NEON)
+/// with automatic runtime dispatch.
 fn compute_ascii_ratio(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
 
-    let ascii_count = data
-        .iter()
-        .filter(|&&b| b.is_ascii_graphic() || b == b' ' || b == b'\n' || b == b'\r' || b == b'\t')
-        .count();
-
+    let ascii_count = simd::count_ascii_bytes(data);
     ascii_count as f64 / data.len() as f64
 }
 
@@ -143,6 +152,32 @@ fn detect_domain(data: &[u8]) -> Option<DomainHint> {
 
     if trimmed.is_empty() {
         return None;
+    }
+
+    // --- Binary format detection (before text formats) ---
+    // OLE2 Compound Document (XLS, DOC, PPT): magic 0xD0CF11E0A1B11AE1
+    if data.len() >= 8 && data[..8] == [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1] {
+        return Some(DomainHint::Binary);
+    }
+    // CCITT Group 3/4 fax (ITU T.4/T.6): high-entropy binary with specific byte patterns.
+    // Detect by: low ASCII ratio + specific EOL patterns (0x00 0x01 or 0x80 sequences).
+    if data.len() >= 64 {
+        let ascii = compute_ascii_ratio(data);
+        if ascii < 0.15 {
+            // Check for fax-like pattern: high byte diversity with 0x00 sequences
+            let zero_pairs = data.windows(2).take(512).filter(|w| w[0] == 0 && w[1] < 0x04).count();
+            if zero_pairs > 10 {
+                return Some(DomainHint::Binary);
+            }
+        }
+    }
+    // ELF binary
+    if data.len() >= 4 && data[..4] == [0x7F, b'E', b'L', b'F'] {
+        return Some(DomainHint::Binary);
+    }
+    // PE/COFF (Windows executable)
+    if data.len() >= 2 && data[..2] == [b'M', b'Z'] {
+        return Some(DomainHint::Binary);
     }
 
     // JSON detection: must check before log (some logs start with '[')
@@ -235,6 +270,34 @@ fn detect_log(data: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detect_ole2_binary() {
+        // OLE2 magic + padding
+        let mut data = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+        data.extend(vec![0u8; 256]);
+        let r = analyze(&data);
+        assert_eq!(r.domain_hint, Some(DomainHint::Binary));
+        assert_eq!(r.track, Track::Track2, "OLE2 binary should go to Track 2");
+    }
+
+    #[test]
+    fn detect_elf_binary() {
+        let mut data = vec![0x7F, b'E', b'L', b'F'];
+        data.extend(vec![0u8; 256]);
+        let r = analyze(&data);
+        assert_eq!(r.domain_hint, Some(DomainHint::Binary));
+        assert_eq!(r.track, Track::Track2);
+    }
+
+    #[test]
+    fn detect_pe_binary() {
+        let mut data = vec![b'M', b'Z'];
+        data.extend(vec![0u8; 256]);
+        let r = analyze(&data);
+        assert_eq!(r.domain_hint, Some(DomainHint::Binary));
+        assert_eq!(r.track, Track::Track2);
+    }
 
     #[test]
     fn empty_data() {
