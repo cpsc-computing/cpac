@@ -2,6 +2,53 @@
 
 Session-by-session record of significant changes, investigations, and decisions.
 
+## Session 22 — 2026-03-10 (Bug Fix Planning + Session Save)
+
+### Focus
+Document the parallel + smart transforms roundtrip bug for handoff to a clean
+session. Deep-dive into the compress/decompress parallel architecture to
+formulate root cause hypotheses.
+
+### Key Analysis
+
+#### Architecture Trace
+Traced the full parallel compress/decompress pipeline:
+- `compress_parallel()` splits data into blocks, each block independently runs
+  the full CPAC pipeline (SSR → MSN → smart transforms → entropy → frame)
+- Each compressed block is a self-contained CPAC frame with its own DAG descriptor
+- `decompress_parallel()` extracts blocks, decompresses each independently,
+  concatenates results
+- Individual transforms (BWT chain, normalize) roundtrip correctly even at 5MB
+
+#### Root Cause Hypotheses (Ranked)
+1. **H4 (HIGH)**: Normalize transform metadata overflow — on ~2.5MB text blocks,
+   whitespace positions metadata could reach ~2MB, exceeding the per-step `u16`
+   length prefix in DAG descriptor wire format. `smart_preprocess` checks total
+   descriptor size but may not catch per-step overflow.
+2. **H2 (MEDIUM)**: DAG descriptor serialization overflow/truncation at u16 boundary
+3. **H5 (MEDIUM)**: Frame original_size vs post-transform size mismatch
+4. **H1 (LOW)**: Block boundary splitting transform-sensitive patterns
+5. **H3 (RULED OUT for test)**: MSN cached metadata — test uses default
+   `enable_msn: false`
+
+#### Investigation Plan
+1. Capture exact error from failing test (size mismatch vs content mismatch)
+2. Isolate which transform (normalize vs bwt_chain) causes the failure
+3. Check `serialize_dag_descriptor` per-step metadata u16 handling
+4. Check normalize metadata size on ~2.5MB text blocks
+5. Fix root cause
+6. Validate all tests pass + clippy clean
+
+### Plan Created
+Formal plan document created: "Fix Parallel + Smart Transforms Roundtrip Bug"
+with full architecture trace, 5 hypotheses, 6 investigation steps, post-fix
+benchmark plan, and all key file references with line numbers.
+
+### No Code Changes
+This session was analysis and documentation only.
+
+---
+
 ## Session 21 — 2026-03-10 (Transform Roundtrip Investigation)
 
 ### Focus
