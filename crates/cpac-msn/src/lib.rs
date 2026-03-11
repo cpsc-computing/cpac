@@ -21,6 +21,22 @@ pub use registry::{global_registry, DomainRegistry};
 
 use cpac_types::CpacResult;
 
+/// Maximum data size for single-call MSN extraction.
+///
+/// Domain extractors use O(N×K) algorithms (String::replace, char-by-char
+/// parsing, serde parse-and-serialize) that become prohibitively expensive on
+/// large single-block buffers.  Files above this threshold should go through
+/// the parallel path where MSN runs per-block (4–32 MB blocks).
+pub const MSN_MAX_EXTRACT_SIZE: usize = 16 * 1024 * 1024; // 16 MB
+
+/// Recommended per-domain extraction size limit.
+///
+/// Individual domain handlers should reject data above this threshold to
+/// avoid O(N×K) blowup from String::replace or full-file JSON parsing.
+/// Domains with especially expensive algorithms (e.g. XML with 4× replace
+/// per tag) should use a lower limit.
+pub const MAX_DOMAIN_EXTRACT_SIZE: usize = 8 * 1024 * 1024; // 8 MB
+
 /// Result of MSN extraction.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MsnResult {
@@ -77,6 +93,23 @@ impl MsnResult {
         }
     }
 
+    /// Create a zero-copy "not applied" sentinel.
+    ///
+    /// Unlike [`passthrough`](Self::passthrough), this does **not** clone the
+    /// input data.  The caller is expected to use the original data slice
+    /// directly, avoiding the redundant allocation that `passthrough` incurs
+    /// when the engine already holds the source buffer.
+    #[must_use]
+    pub fn not_applied() -> Self {
+        Self {
+            fields: std::collections::HashMap::new(),
+            residual: Vec::new(),
+            applied: false,
+            domain_id: None,
+            confidence: 0.0,
+        }
+    }
+
     /// Extract metadata for frame storage (without residual).
     #[must_use]
     pub fn metadata(&self) -> MsnMetadata {
@@ -120,6 +153,14 @@ impl MsnMetadata {
 /// JSONL-specific detection before content probing). Pass `None` for
 /// content-only detection.
 pub fn extract(data: &[u8], filename: Option<&str>, min_confidence: f64) -> CpacResult<MsnResult> {
+    // Large-file guard: skip extraction for buffers above the threshold.
+    // Domain extractors use O(N×K) string operations that are prohibitively
+    // expensive on large single-block buffers.  The parallel path handles
+    // large files by running MSN per-block (4–32 MB blocks).
+    if data.len() > MSN_MAX_EXTRACT_SIZE {
+        return Ok(MsnResult::not_applied());
+    }
+
     let registry = global_registry();
 
     let detected = registry.auto_detect(data, filename, min_confidence);
@@ -135,14 +176,14 @@ pub fn extract(data: &[u8], filename: Option<&str>, min_confidence: f64) -> Cpac
                     confidence,
                 }),
                 Err(_) => {
-                    // Extraction failed, fall back to passthrough
-                    Ok(MsnResult::passthrough(data))
+                    // Extraction failed — zero-copy fallback (no data clone).
+                    Ok(MsnResult::not_applied())
                 }
             }
         }
         None => {
-            // No domain detected, passthrough
-            Ok(MsnResult::passthrough(data))
+            // No domain detected — zero-copy fallback (no data clone).
+            Ok(MsnResult::not_applied())
         }
     }
 }
@@ -181,8 +222,13 @@ pub fn extract(data: &[u8], filename: Option<&str>, min_confidence: f64) -> Cpac
 pub fn extract_with_metadata(data: &[u8], metadata: &MsnMetadata) -> CpacResult<MsnResult> {
     // `applied` is not stored in frames (skip_serializing); infer from domain_id.
     if metadata.domain_id.is_none() {
-        // Metadata was passthrough — no domain was applied, so passthrough here too.
-        return Ok(MsnResult::passthrough(data));
+        // Metadata was passthrough — no domain was applied.
+        return Ok(MsnResult::not_applied());
+    }
+
+    // Large-file guard (same rationale as extract()).
+    if data.len() > MSN_MAX_EXTRACT_SIZE {
+        return Ok(MsnResult::not_applied());
     }
 
     let domain_id = metadata.domain_id.as_ref().ok_or_else(|| {
@@ -204,13 +250,13 @@ pub fn extract_with_metadata(data: &[u8], metadata: &MsnMetadata) -> CpacResult<
             confidence: metadata.confidence,
         }),
         Err(_) => {
-            // Extraction failed, fall back to passthrough
-            Ok(MsnResult::passthrough(data))
+            // Extraction failed — zero-copy fallback.
+            Ok(MsnResult::not_applied())
         }
     }
 }
 
-/// Encode [`MsnMetadata`] to a compact binary representation.
+/// Encode [`MsnMetadata`]
 ///
 /// Uses `MessagePack` (via `rmp-serde`, named/map format) prefixed with a `0x01`
 /// discriminator byte.  Named format is used so that `#[serde(skip_serializing)]`

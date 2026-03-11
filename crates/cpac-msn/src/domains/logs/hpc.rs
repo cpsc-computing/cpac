@@ -63,6 +63,11 @@ impl Domain for HpcLogDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "HPC log: exceeds extraction size limit".into(),
+            ));
+        }
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("HPC log decode: {e}")))?;
         extract_hpc(text)
@@ -73,6 +78,11 @@ impl Domain for HpcLogDomain {
         data: &[u8],
         fields: &HashMap<String, serde_json::Value>,
     ) -> CpacResult<ExtractionResult> {
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "HPC log: exceeds extraction size limit".into(),
+            ));
+        }
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("HPC log decode: {e}")))?;
 

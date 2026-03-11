@@ -20,20 +20,17 @@ fn msgpack_should_not_detect_plain_text() {
     println!("  Confidence: {}", result.confidence);
     println!("  Residual size: {} bytes", result.residual.len());
 
-    // Plain text should NOT trigger MSN (should passthrough)
+    // Plain text should NOT trigger MSN (should passthrough).
+    // With the zero-copy `not_applied()` sentinel, `residual` is empty and
+    // the caller is expected to use the original data directly.
     assert!(
         !result.applied,
         "Plain text should not be detected as MessagePack"
     );
-    assert_eq!(
-        result.residual.len(),
-        plain_text.len(),
-        "Residual should be unchanged"
+    assert!(
+        result.residual.is_empty(),
+        "not_applied() sentinel should have empty residual"
     );
-
-    // Reconstruct should return original data
-    let reconstructed = reconstruct(&result).unwrap();
-    assert_eq!(reconstructed, plain_text);
 }
 
 #[test]

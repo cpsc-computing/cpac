@@ -809,6 +809,14 @@ impl Domain for JsonDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        // Large-file guard: JSONL columnar and keydedup both do O(N) scanning
+        // plus O(N×keys) splice/replace.  Cap at the shared domain limit.
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "JSON: exceeds extraction size limit".into(),
+            ));
+        }
+
         // Try JSONL first (multi-line, columnar extraction).
         if let Ok(result) = Self::extract_jsonl(data) {
             return Ok(result);

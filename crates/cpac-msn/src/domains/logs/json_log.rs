@@ -54,6 +54,11 @@ impl Domain for JsonLogDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "JSON log: exceeds extraction size limit".into(),
+            ));
+        }
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("JSON log decode: {e}")))?;
 
@@ -125,6 +130,11 @@ impl Domain for JsonLogDomain {
         data: &[u8],
         fields: &HashMap<String, Value>,
     ) -> CpacResult<ExtractionResult> {
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "JSON log: exceeds extraction size limit".into(),
+            ));
+        }
         // Line-aligned streaming extraction.
         //
         // Blocks can split mid-JSON-line; we process only the complete lines

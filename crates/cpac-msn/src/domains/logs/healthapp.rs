@@ -53,6 +53,11 @@ impl Domain for HealthAppDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "HealthApp: exceeds extraction size limit".into(),
+            ));
+        }
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("HealthApp decode: {e}")))?;
         extract_healthapp(text)
@@ -63,6 +68,11 @@ impl Domain for HealthAppDomain {
         data: &[u8],
         fields: &HashMap<String, serde_json::Value>,
     ) -> CpacResult<ExtractionResult> {
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "HealthApp: exceeds extraction size limit".into(),
+            ));
+        }
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("HealthApp decode: {e}")))?;
 

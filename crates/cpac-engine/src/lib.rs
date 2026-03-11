@@ -236,7 +236,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         };
         let msn_result = msn_result.unwrap_or_else(|| {
             let r = cpac_msn::extract(data, msn_filename, config.msn_confidence)
-                .unwrap_or_else(|_| cpac_msn::MsnResult::passthrough(data));
+                .unwrap_or_else(|_| cpac_msn::MsnResult::not_applied());
             cpac_trace!("[TRACE] MSN extract: applied={} domain={:?} confidence={:.3} fields={} residual={}B original={}B",
                 r.applied, r.domain_id, r.confidence, r.fields.len(), r.residual.len(), data.len());
             r

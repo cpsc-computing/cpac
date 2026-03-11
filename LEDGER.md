@@ -2,6 +2,59 @@
 
 Session-by-session record of significant changes, investigations, and decisions.
 
+## Session 23 — 2026-03-11 (MSN Large-File Regression Fix + Ratio Improvement Plan)
+
+### Focus
+Fix the Silesia large-file MSN regression (double-copy on passthrough, XML O(N×K)
+blowup, no size limits on domain extractors). Investigate compression ratio
+improvement opportunities and non-Rust component impact.
+
+### MSN Regression Fix (3 root causes)
+
+1. **Double-copy on passthrough** — `MsnResult::passthrough(data)` cloned all
+   data, then the engine's bypass path cloned again (2× wasted allocation for
+   non-matching files). Fix: added `MsnResult::not_applied()` zero-copy sentinel.
+
+2. **No size limits** — All 19 domain extractors ran `extract()` on arbitrarily
+   large buffers. Fix: added `MSN_MAX_EXTRACT_SIZE` (16 MB) top-level guard,
+   `MAX_DOMAIN_EXTRACT_SIZE` (8 MB) per-domain guard, XML-specific 2 MB guard.
+
+3. **XML extraction O(N×tags)** — 4× `String::replace()` per tag on full string,
+   then savings gate rejected the result (all work wasted). Fix: 2 MB size guard
+   short-circuits before expensive work.
+
+### Files Modified (19 files)
+- `cpac-msn/src/lib.rs` — `not_applied()`, `MSN_MAX_EXTRACT_SIZE`, `MAX_DOMAIN_EXTRACT_SIZE`
+- `cpac-engine/src/lib.rs` — replaced `passthrough(data)` with `not_applied()`
+- `cpac-msn/src/domains/text/{xml,json,csv,yaml}.rs` — per-domain size guards
+- `cpac-msn/src/domains/logs/{syslog,apache,http,java,json_log,bgl,healthapp,proxifier,hpc,w3c,openstack}.rs` — per-domain size guards
+- `cpac-msn/src/domains/binary/avro.rs` — size guard + `CpacError` import fix
+- `cpac-msn/tests/msgpack_plain_text.rs` — updated for `not_applied()` contract
+
+### Ratio Improvement Plan Created
+Formal 6-phase plan: "CPAC Compression Ratio Improvement Plan"
+- Phase 1: Fix parallel smart transform roundtrip (P0, +15–45% on large text)
+- Phase 2: MSN cross-block metadata deduplication (P1, +0.5–2%)
+- Phase 3: Auto-dictionary for parallel blocks (P1, +3–8%)
+- Phase 4: Conditioning + BWT composition (P2, +2–10% hypothesis)
+- Phase 5: Per-block backend selection (P2, +1–5% on heterogeneous)
+- Phase 6: CAS bridge for MSN fields (P3, +5–20% on structured data)
+
+### Non-Rust Component Assessment
+Identified 6 statically linked C/C++ entropy codecs (zstd, lz4, xz, lzham,
+lizard, zlib-ng) + 2 pure Rust codecs (brotli, snappy). None are pipeline
+bottlenecks — FFI overhead is negligible. Python (`cpac.py`) is build-only.
+Actual bottlenecks are in pure Rust (smart_preprocess trials, BWT screening,
+MSN string operations).
+
+### Validation
+- Build: `shell.ps1 build` ✓
+- Tests: `cargo test -p cpac-msn` (95 pass) ✓
+- Tests: `cargo test -p cpac-engine` (77 + all integration suites) ✓
+- Clippy: `shell.ps1 clippy` (0 warnings) ✓
+
+---
+
 ## Session 22 — 2026-03-10 (Bug Fix Planning + Session Save)
 
 ### Focus

@@ -275,6 +275,13 @@ impl Domain for CsvDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        // Large-file guard: columnar extraction is O(N×cols).
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "CSV: exceeds extraction size limit".into(),
+            ));
+        }
+
         // Find the first newline — marks the end of the header line.
         let newline_pos = data.iter().position(|&b| b == b'\n').ok_or_else(|| {
             CpacError::CompressFailed("CSV: no newline found (single-line CSV)".into())

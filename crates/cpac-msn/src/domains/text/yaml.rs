@@ -34,6 +34,13 @@ impl Domain for YamlDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        // Large-file guard: line-by-line key parsing + String::replace.
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "YAML: exceeds extraction size limit".into(),
+            ));
+        }
+
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("YAML decode: {e}")))?;
 
@@ -94,6 +101,13 @@ impl Domain for YamlDomain {
         data: &[u8],
         fields: &HashMap<String, serde_json::Value>,
     ) -> CpacResult<ExtractionResult> {
+        // Large-file guard (same as extract).
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "YAML: exceeds extraction size limit".into(),
+            ));
+        }
+
         // Use detection-phase key list for stable indices across streaming blocks.
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("YAML decode: {e}")))?;

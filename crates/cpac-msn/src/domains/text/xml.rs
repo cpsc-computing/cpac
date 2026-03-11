@@ -79,6 +79,16 @@ impl Domain for XmlDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        // Large-file guard: O(N×tags) String::replace is extremely expensive.
+        // XML tag replacement does 4 replace() calls per tag on the full string,
+        // making it one of the most expensive extractors.
+        const MAX_XML_EXTRACT_SIZE: usize = 2 * 1024 * 1024; // 2 MB
+        if data.len() > MAX_XML_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "XML: exceeds extraction size limit".into(),
+            ));
+        }
+
         // If data isn't valid UTF-8 (e.g. tar of XML files), return passthrough
         // rather than an error so MSN falls back gracefully.
         let text = match std::str::from_utf8(data) {
@@ -199,6 +209,14 @@ impl Domain for XmlDomain {
         data: &[u8],
         fields: &HashMap<String, serde_json::Value>,
     ) -> CpacResult<ExtractionResult> {
+        // Large-file guard (same as extract).
+        const MAX_XML_EXTRACT_SIZE: usize = 2 * 1024 * 1024;
+        if data.len() > MAX_XML_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "XML: exceeds extraction size limit".into(),
+            ));
+        }
+
         // Apply XML tag compaction using the detection-phase tag list so that
         // every streaming block uses the same @T{idx} ↔ tag mapping.
         let text = std::str::from_utf8(data)

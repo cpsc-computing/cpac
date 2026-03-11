@@ -74,6 +74,11 @@ impl Domain for ApacheDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "Apache: exceeds extraction size limit".into(),
+            ));
+        }
         let text = std::str::from_utf8(data)
             .map_err(|e| CpacError::CompressFailed(format!("Apache log decode: {e}")))?;
 

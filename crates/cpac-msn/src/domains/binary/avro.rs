@@ -3,7 +3,7 @@
 //! Avro domain handler (Apache Avro binary format).
 
 use crate::domain::{Domain, DomainInfo, ExtractionResult};
-use cpac_types::CpacResult;
+use cpac_types::{CpacError, CpacResult};
 use std::collections::HashMap;
 
 /// Avro domain handler.
@@ -42,6 +42,11 @@ impl Domain for AvroDomain {
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
+        if data.len() > crate::MAX_DOMAIN_EXTRACT_SIZE {
+            return Err(CpacError::CompressFailed(
+                "Avro: exceeds extraction size limit".into(),
+            ));
+        }
         // TODO: Full Avro schema extraction requires apache-avro crate
         // For now, passthrough (schema-based extraction would need schema parsing)
         Ok(ExtractionResult {
