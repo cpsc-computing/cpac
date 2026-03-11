@@ -14,17 +14,28 @@ void lzham_fail(const char* pExp, const char* pFile, unsigned line);
    #define LZHAM_BREAKPOINT DebuggerBreak();
    #define LZHAM_BUILTIN_EXPECT(c, v) c
 #elif defined(__GNUC__)
-   #define LZHAM_BREAKPOINT asm("int $3");
+   #if defined(__i386__) || defined(__x86_64__)
+      #define LZHAM_BREAKPOINT asm("int $3");
+   #elif defined(__clang__)
+      #define LZHAM_BREAKPOINT __builtin_debugtrap();
+   #else
+      #define LZHAM_BREAKPOINT __builtin_trap();
+   #endif
    #define LZHAM_BUILTIN_EXPECT(c, v) __builtin_expect(c, v)
 #else
    #define LZHAM_BREAKPOINT
    #define LZHAM_BUILTIN_EXPECT(c, v) c
 #endif
 
-#if defined(__GNUC__) && LZHAM_PLATFORM_PC
+#if defined(__GNUC__) && LZHAM_PLATFORM_PC && (defined(__i386__) || defined(__x86_64__))
 extern __inline__ __attribute__((__always_inline__,__gnu_inline__)) void lzham_yield_processor()
 {
    __asm__ __volatile__("pause");
+}
+#elif defined(__GNUC__) && LZHAM_PLATFORM_PC && (defined(__aarch64__) || defined(__arm__))
+extern __inline__ __attribute__((__always_inline__,__gnu_inline__)) void lzham_yield_processor()
+{
+   __asm__ __volatile__("yield");
 }
 #elif LZHAM_PLATFORM_X360
 #define lzham_yield_processor() \
