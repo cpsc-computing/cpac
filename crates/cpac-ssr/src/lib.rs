@@ -35,6 +35,34 @@ pub struct SSRResult {
     pub domain_hint: Option<DomainHint>,
 }
 
+/// P9: Convert from the lightweight `CachedSsr` in cpac-types.
+impl From<cpac_types::CachedSsr> for SSRResult {
+    fn from(c: cpac_types::CachedSsr) -> Self {
+        Self {
+            entropy_estimate: c.entropy_estimate,
+            ascii_ratio: c.ascii_ratio,
+            data_size: c.data_size,
+            viability_score: c.viability_score,
+            track: c.track,
+            domain_hint: c.domain_hint,
+        }
+    }
+}
+
+/// P9: Convert to the lightweight `CachedSsr` in cpac-types.
+impl From<&SSRResult> for cpac_types::CachedSsr {
+    fn from(s: &SSRResult) -> Self {
+        Self {
+            entropy_estimate: s.entropy_estimate,
+            ascii_ratio: s.ascii_ratio,
+            data_size: s.data_size,
+            viability_score: s.viability_score,
+            track: s.track,
+            domain_hint: s.domain_hint.clone(),
+        }
+    }
+}
+
 /// Analyze data and produce an SSR result.
 ///
 /// This function computes the Shannon entropy, ASCII ratio, and domain hints
@@ -165,7 +193,11 @@ fn detect_domain(data: &[u8]) -> Option<DomainHint> {
         let ascii = compute_ascii_ratio(data);
         if ascii < 0.15 {
             // Check for fax-like pattern: high byte diversity with 0x00 sequences
-            let zero_pairs = data.windows(2).take(512).filter(|w| w[0] == 0 && w[1] < 0x04).count();
+            let zero_pairs = data
+                .windows(2)
+                .take(512)
+                .filter(|w| w[0] == 0 && w[1] < 0x04)
+                .count();
             if zero_pairs > 10 {
                 return Some(DomainHint::Binary);
             }

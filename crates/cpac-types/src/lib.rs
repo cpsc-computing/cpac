@@ -133,14 +133,16 @@ impl CpacType {
 /// `Default` preserves the historical CPAC behaviour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CompressionLevel {
-    /// Fast: optimise for throughput (brotli-6 / zstd-1).
+    /// Ultra-fast: maximum throughput, minimal ratio (zstd-1 / brotli-6 / gzip-1).
+    UltraFast,
+    /// Fast: optimise for throughput (zstd-3 / brotli-8 / gzip-3).
     Fast,
-    /// Default: brotli-11 / zstd-3 — matches industry baselines for fair comparison.
+    /// Default: balanced (zstd-6 / brotli-11 / gzip-6).
     #[default]
     Default,
-    /// High: brotli-11 / zstd-12 — batch jobs with strong ratio/speed balance.
+    /// High: batch jobs with strong ratio/speed balance (zstd-12 / brotli-11 / gzip-9).
     High,
-    /// Best: brotli-11 / zstd-19 — cold storage, maximum compression.
+    /// Best: cold storage, maximum compression (zstd-19 / brotli-11 / gzip-9).
     Best,
 }
 
@@ -185,7 +187,7 @@ impl Preset {
     #[must_use]
     pub fn level(self) -> CompressionLevel {
         match self {
-            Self::Turbo => CompressionLevel::Fast,
+            Self::Turbo => CompressionLevel::UltraFast,
             Self::Balanced => CompressionLevel::Default,
             Self::Maximum => CompressionLevel::High,
             Self::Archive | Self::MaxRatio => CompressionLevel::Best,
@@ -327,8 +329,22 @@ pub enum Backend {
     Brotli = 2,
     /// Gzip/Deflate compression (RFC 1952).
     Gzip = 3,
-    /// LZMA compression (7z/xz).
+    /// LZMA compression (raw LZMA stream).
     Lzma = 4,
+    /// XZ container format (LZMA2).
+    Xz = 5,
+    /// LZ4 compression (fast + HC modes).
+    Lz4 = 6,
+    /// Snappy compression (single speed, no level control).
+    Snappy = 7,
+    /// LZHAM compression.
+    Lzham = 8,
+    /// Lizard compression.
+    Lizard = 9,
+    /// zlib-ng compression.
+    ZlibNg = 10,
+    /// OpenZL compression (CPAC datacenter initiative, delegates to Zstd).
+    OpenZl = 11,
 }
 
 impl Backend {
@@ -336,7 +352,7 @@ impl Backend {
     ///
     /// # Errors
     ///
-    /// Returns [`CpacError::UnsupportedBackend`] if the ID is not in the range 0-4.
+    /// Returns [`CpacError::UnsupportedBackend`] if the ID is not in the range 0-11.
     pub fn from_id(id: u8) -> CpacResult<Self> {
         match id {
             0 => Ok(Backend::Raw),
@@ -344,6 +360,13 @@ impl Backend {
             2 => Ok(Backend::Brotli),
             3 => Ok(Backend::Gzip),
             4 => Ok(Backend::Lzma),
+            5 => Ok(Backend::Xz),
+            6 => Ok(Backend::Lz4),
+            7 => Ok(Backend::Snappy),
+            8 => Ok(Backend::Lzham),
+            9 => Ok(Backend::Lizard),
+            10 => Ok(Backend::ZlibNg),
+            11 => Ok(Backend::OpenZl),
             _ => Err(CpacError::UnsupportedBackend(format!(
                 "unknown backend id: {id}"
             ))),
@@ -354,6 +377,49 @@ impl Backend {
     #[must_use]
     pub fn id(self) -> u8 {
         self as u8
+    }
+
+    /// All non-Raw compressor backends.
+    #[must_use]
+    pub fn all_compressors() -> &'static [Backend] {
+        &[
+            Backend::Zstd,
+            Backend::Brotli,
+            Backend::Gzip,
+            Backend::Lzma,
+            Backend::Xz,
+            Backend::Lz4,
+            Backend::Snappy,
+            Backend::Lzham,
+            Backend::Lizard,
+            Backend::ZlibNg,
+            Backend::OpenZl,
+        ]
+    }
+
+    /// Whether this backend supports the given compression level.
+    #[must_use]
+    pub fn supports_level(self, level: CompressionLevel) -> bool {
+        !(self == Backend::Lzham && level == CompressionLevel::UltraFast)
+    }
+}
+
+impl std::fmt::Display for Backend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Backend::Raw => write!(f, "raw"),
+            Backend::Zstd => write!(f, "zstd"),
+            Backend::Brotli => write!(f, "brotli"),
+            Backend::Gzip => write!(f, "gzip"),
+            Backend::Lzma => write!(f, "lzma"),
+            Backend::Xz => write!(f, "xz"),
+            Backend::Lz4 => write!(f, "lz4"),
+            Backend::Snappy => write!(f, "snappy"),
+            Backend::Lzham => write!(f, "lzham"),
+            Backend::Lizard => write!(f, "lizard"),
+            Backend::ZlibNg => write!(f, "zlib-ng"),
+            Backend::OpenZl => write!(f, "openzl"),
+        }
     }
 }
 
@@ -384,6 +450,23 @@ pub enum DomainHint {
     Log,
     Binary,
     Unknown,
+}
+
+// ---------------------------------------------------------------------------
+// Cached SSR (P9: avoids circular cpac-types <-> cpac-ssr dependency)
+// ---------------------------------------------------------------------------
+
+/// Lightweight copy of `cpac_ssr::SSRResult` that lives in cpac-types to
+/// avoid a circular crate dependency.  Used to cache SSR results from the
+/// parallel block probe so per-block `compress()` calls skip re-analysis.
+#[derive(Clone, Debug)]
+pub struct CachedSsr {
+    pub entropy_estimate: f64,
+    pub ascii_ratio: f64,
+    pub data_size: usize,
+    pub viability_score: f64,
+    pub track: Track,
+    pub domain_hint: Option<DomainHint>,
 }
 
 // ---------------------------------------------------------------------------
@@ -553,6 +636,26 @@ pub struct CompressConfig {
     /// Default: None.
     pub cached_msn_metadata: Option<Vec<u8>>,
 
+    // --- Pipeline optimization: parallel sub-block hints ---
+    /// When set, `smart_preprocess` skips expensive transforms (e.g. BWT)
+    /// that have poor ROI on small parallel sub-blocks.  Set automatically
+    /// by `compress_parallel` on sub-block configs.
+    /// Default: false.
+    pub skip_expensive_transforms: bool,
+    /// Cached transform recommendation names from the first parallel block.
+    /// When set, `smart_preprocess` reuses these instead of re-running
+    /// `analyze_structure` on every block.
+    /// Default: None.
+    pub cached_transform_recs: Option<Vec<String>>,
+
+    /// P9: Cached SSR result from parallel block probing.
+    /// When set, `compress()` skips `cpac_ssr::analyze()` and uses this
+    /// directly.  All blocks in a homogeneous file have near-identical SSR
+    /// characteristics, so re-computing is wasted work.
+    /// Uses `CachedSsr` (cpac-types native) to avoid circular dependency.
+    /// Default: None.
+    pub cached_ssr: Option<CachedSsr>,
+
     // --- Phase 7: integrated encryption ---
     /// Encryption config for compress-then-encrypt (CPCE format).
     /// Default: no encryption.
@@ -578,6 +681,9 @@ impl Default for CompressConfig {
             block_size: 0,
             accelerator: None,
             cached_msn_metadata: None,
+            skip_expensive_transforms: false,
+            cached_transform_recs: None,
+            cached_ssr: None,
             encryption: EncryptionConfig::default(),
         }
     }

@@ -224,7 +224,13 @@ fn sa_is_int(text: &[usize], n: usize, alpha_size: usize) -> Vec<usize> {
 /// Build suffix array for a byte string using SA-IS.
 ///
 /// Returns a `Vec<usize>` of length `data.len()` where `sa[i]` is the
-/// starting position of the i-th lexicographically smallest suffix.
+/// starting position of the i-th lexicographically smallest **cyclic rotation**.
+///
+/// We double the input (`data ++ data ++ sentinel`) so that suffixes starting
+/// in `[0, n)` compare identically to the corresponding cyclic rotations.
+/// A plain suffix SA (single copy + sentinel) would mis-order positions whose
+/// suffixes are identical up to the end-of-data boundary; for highly periodic
+/// data this corrupts the BWT.
 fn sa_is(data: &[u8]) -> Vec<usize> {
     let n = data.len();
     if n == 0 {
@@ -233,12 +239,18 @@ fn sa_is(data: &[u8]) -> Vec<usize> {
     if n == 1 {
         return vec![0];
     }
-    // Map bytes to alphabet [1, 257) and append sentinel 0.
-    // Sentinel is smaller than all data characters, which SA-IS requires.
-    let mut text: Vec<usize> = data.iter().map(|&b| b as usize + 1).collect();
+    // Double the data and append sentinel.
+    // Suffix of `data++data++sentinel` starting at position i (< n) has
+    // length 2n+1-i ≥ n+1, so the first n characters match the cyclic
+    // rotation of `data` starting at i.  Ties are broken by the second
+    // copy + sentinel, giving a total order consistent with cyclic BWT.
+    let mut text: Vec<usize> = Vec::with_capacity(2 * n + 1);
+    for &b in data.iter().chain(data.iter()) {
+        text.push(b as usize + 1);
+    }
     text.push(0); // sentinel
-    let full_sa = sa_is_int(&text, n + 1, 258);
-    // Remove the sentinel entry (always at sa[0]) and return original indices.
+    let full_sa = sa_is_int(&text, 2 * n + 1, 258);
+    // Keep only positions in [0, n) — one per cyclic rotation.
     full_sa.into_iter().filter(|&i| i < n).collect()
 }
 
@@ -323,6 +335,64 @@ mod tests {
         let (encoded, idx) = bwt_encode(data).unwrap();
         let decoded = bwt_decode(&encoded, idx).unwrap();
         assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn bwt_roundtrip_4mb_text() {
+        let sentence = b"The quick brown fox jumps over the lazy dog. ";
+        let data: Vec<u8> = sentence.iter().copied().cycle().take(4 << 20).collect();
+        let (encoded, idx) = bwt_encode(&data).unwrap();
+        assert_eq!(encoded.len(), data.len());
+        let decoded = bwt_decode(&encoded, idx).unwrap();
+        assert_eq!(decoded.len(), data.len());
+        if decoded != data {
+            let pos = decoded
+                .iter()
+                .zip(data.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(0);
+            panic!(
+                "BWT roundtrip 4MB mismatch at byte {}: got {} expected {} (idx={})",
+                pos, decoded[pos], data[pos], idx
+            );
+        }
+    }
+
+    #[test]
+    fn bwt_sa_cyclic_validity_4mb() {
+        // Verify the cyclic-rotation SA is correct at 4 MiB by
+        // spot-checking adjacent SA entries.
+        let sentence = b"The quick brown fox jumps over the lazy dog. ";
+        let data: Vec<u8> = sentence.iter().copied().cycle().take(4 << 20).collect();
+        let sa = sa_is(&data);
+        let n = data.len();
+        assert_eq!(sa.len(), n);
+
+        // Helper: compare cyclic rotations
+        let rot_lt = |a: usize, b: usize| -> bool {
+            for k in 0..n {
+                let ca = data[(a + k) % n];
+                let cb = data[(b + k) % n];
+                if ca < cb {
+                    return true;
+                }
+                if ca > cb {
+                    return false;
+                }
+            }
+            false // equal
+        };
+
+        // Check first 200 adjacent pairs
+        for i in 0..199.min(n - 1) {
+            assert!(
+                rot_lt(sa[i], sa[i + 1]),
+                "cyclic SA invalid at {i},{}: rot({}) >= rot({})",
+                i + 1,
+                sa[i],
+                sa[i + 1]
+            );
+        }
     }
 
     #[test]

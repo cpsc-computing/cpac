@@ -27,12 +27,14 @@ pub mod pool;
 pub mod profiler;
 pub mod wal;
 
-pub use analyzer::{analyze_structure, format_profile, ColumnProfile, StructureProfile};
-pub use profiler::{format_profile_result, profile_file, GapEntry, ProfileResult, Recommendation, TrialResult};
+pub use analyzer::{
+    analyze_structure, analyze_structure_fast, format_profile, ColumnProfile, StructureProfile,
+};
 pub use bench::{check_regressions, load_baseline, save_baseline};
 pub use bench::{
-    BaselineEngine, BaselineEntry, BenchProfile, BenchResult, BenchmarkRunner, CorpusSummary,
-    RegressionKind, RegressionViolation,
+    matched_baselines, parse_compression_level, standalone_raw_level, BaselineEntry, BenchProfile,
+    BenchResult, BenchmarkRunner, CorpusSummary, RegressionKind, RegressionViolation,
+    StandaloneCodec,
 };
 pub use cpac_dag::{ProfileCache, TransformDAG, TransformRegistry};
 pub use cpac_types::{
@@ -45,6 +47,9 @@ pub use parallel::{
     BLOCK_SIZE_MEDIUM, BLOCK_SIZE_SMALL, CPBL_MAGIC, DEFAULT_BLOCK_SIZE, PARALLEL_THRESHOLD,
 };
 pub use pool::{get_or_init_thread_pool, global_thread_pool};
+pub use profiler::{
+    format_profile_result, profile_file, GapEntry, ProfileResult, Recommendation, TrialResult,
+};
 
 /// Engine version string.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -101,8 +106,12 @@ const PREPROCESS_THRESHOLD: usize = 4096;
 pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResult> {
     let original_size = data.len();
 
-    // 1. SSR analysis
-    let ssr = cpac_ssr::analyze(data);
+    // 1. SSR analysis (P9: skip when cached from parallel probe)
+    let ssr: cpac_ssr::SSRResult = if let Some(ref cached) = config.cached_ssr {
+        cached.clone().into()
+    } else {
+        cpac_ssr::analyze(data)
+    };
 
     // 2. Select backend with size awareness
     let backend = config.backend.unwrap_or_else(|| {
@@ -119,7 +128,13 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     } else {
         parallel::adaptive_block_size(ssr.entropy_estimate, original_size)
     };
-    let adaptive_threshold = effective_block_size.max(parallel::PARALLEL_THRESHOLD);
+    // P3: use higher threshold for text-heavy data (ascii_ratio > 0.85)
+    let base_threshold = if ssr.ascii_ratio > 0.85 {
+        parallel::PARALLEL_THRESHOLD_TEXT
+    } else {
+        parallel::PARALLEL_THRESHOLD
+    };
+    let adaptive_threshold = effective_block_size.max(base_threshold);
     if !config.disable_parallel && original_size >= adaptive_threshold && backend != Backend::Raw {
         let num_threads = rayon::current_num_threads();
         return compress_parallel(data, config, effective_block_size, num_threads);
@@ -254,8 +269,6 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         (data.to_vec(), Vec::new())
     };
 
-    let data_to_compress = &msn_data;
-
     // 5. Adaptive preprocessing
     // Skip preprocessing for:
     // - Raw backend (passthrough mode)
@@ -269,6 +282,9 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // Track DAG descriptor for the frame header (non-empty when smart transforms used).
     let mut dag_descriptor: Vec<u8> = Vec::new();
 
+    // P8: use `msn_data` by reference for analysis/transforms, then MOVE
+    // (not clone) into `preprocessed` on the no-transform fallback paths.
+    // This eliminates a full-size allocation on the common path.
     let preprocessed = if should_preprocess {
         // Re-analyze entropy from the actual data being preprocessed.  When MSN
         // extraction was applied the residual can have meaningfully different
@@ -276,7 +292,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         // text entropy), so we let SSR re-measure rather than re-using the
         // original estimate for transform selection.
         let residual_ssr = if !msn_metadata.is_empty() {
-            cpac_ssr::analyze(data_to_compress)
+            cpac_ssr::analyze(&msn_data)
         } else {
             ssr
         };
@@ -287,8 +303,10 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         };
 
         // Try smart transform path first (data-driven, DAG-based).
+        // Pass the full config so smart_preprocess can use cached_transform_recs,
+        // skip_expensive_transforms flag, and the fast analyzer path (P0).
         let smart_result = if config.enable_smart_transforms {
-            smart_preprocess(data_to_compress, config.filename.as_deref())
+            smart_preprocess(&msn_data, config, &residual_ssr)
         } else {
             None
         };
@@ -305,15 +323,15 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
             // For BINARY data (ascii_ratio <= 0.50), fall through to legacy TP
             // because transpose/float_split/field_lz can genuinely help
             // (e.g. transpose on x-ray image blocks).
-            data_to_compress.clone()
+            msn_data // P8: move instead of clone
         } else {
             // Smart mode disabled: use legacy SSR-guided TP preprocess.
             let (preprocessed, _transform_meta) =
-                cpac_transforms::preprocess(data_to_compress, &transform_ctx);
+                cpac_transforms::preprocess(&msn_data, &transform_ctx);
             preprocessed
         }
     } else {
-        data_to_compress.clone()
+        msn_data // P8: move instead of clone
     };
 
     // 6. Entropy coding (level-aware, with optional dictionary for Zstd).
@@ -382,15 +400,88 @@ const SMART_MIN_CONFIDENCE: f64 = 0.50;
 /// Maximum number of individual transforms to trial in adaptive mode.
 const MAX_ADAPTIVE_TRIALS: usize = 3;
 
-/// Quick zstd-3 compressed size for comparing transform effectiveness.
-/// Uses level 3 (matching the default zstd backend) to accurately reflect
-/// whether a transform helps at the actual compression level used.
-/// Level 1 was too conservative and rejected transforms that genuinely
-/// reduce compressed size at level 3 (e.g. predict on medical images).
+/// Quick zstd compressed-size estimate for comparing transform effectiveness.
+///
+/// For inputs ≤ 128 KB, compresses the full buffer at zstd-1 (cheap but
+/// representative enough for A/B comparisons).
+/// For larger inputs, compresses a 64 KB head + 64 KB tail sample at zstd-1
+/// and extrapolates.  This turns a ~15 ms full-file zstd-3 call into a
+/// ~0.5 ms sample-based estimate, eliminating the single largest pipeline
+/// overhead identified in benchmarks.
 fn quick_zstd_size(data: &[u8]) -> usize {
-    zstd::bulk::compress(data, 3)
-        .map(|z| z.len())
-        .unwrap_or(data.len())
+    const SAMPLE_LIMIT: usize = 128 * 1024; // 128 KB
+    const HALF_SAMPLE: usize = 64 * 1024;   // 64 KB per head/tail
+    if data.len() <= SAMPLE_LIMIT {
+        zstd::bulk::compress(data, 1)
+            .map(|z| z.len())
+            .unwrap_or(data.len())
+    } else {
+        // Sample head + tail (disjoint slices), compress, then scale.
+        let head = &data[..HALF_SAMPLE];
+        let tail = &data[data.len() - HALF_SAMPLE..];
+        let mut sample = Vec::with_capacity(HALF_SAMPLE * 2);
+        sample.extend_from_slice(head);
+        sample.extend_from_slice(tail);
+        let sample_compressed = zstd::bulk::compress(&sample, 1)
+            .map(|z| z.len())
+            .unwrap_or(sample.len());
+        // Linearly scale: (compressed_sample / sample_len) * full_len
+        (sample_compressed as f64 / sample.len() as f64 * data.len() as f64) as usize
+    }
+}
+
+/// P7: Sample-based BWT pre-screening.
+///
+/// Runs BWT → MTF → RLE on a 256 KB sample and then checks whether the
+/// *compressed* (zstd-1) size of the BWT output is meaningfully smaller
+/// than the compressed size of the original sample.  This is critical
+/// because BWT always reduces raw size on text, but zstd may already
+/// capture the same redundancy — so the raw savings overstate actual
+/// benefit.  A compressed-size check catches this.
+///
+/// Returns `true` if BWT appears to help compress this data.
+fn bwt_sample_helps(data: &[u8]) -> bool {
+    const SAMPLE_SIZE: usize = 1024 * 1024; // 1 MB — large enough for zstd's LZ77
+    const MIN_SAVINGS_PCT: f64 = 0.05;      // 5% compressed-size improvement
+
+    if data.len() <= SAMPLE_SIZE {
+        return true; // Small enough — just run full BWT, sample overhead not worth it
+    }
+
+    let sample = &data[..SAMPLE_SIZE];
+    let ctx = cpac_transforms::TransformContext {
+        entropy_estimate: 4.0, // placeholder — only used for estimate_gain, not encode
+        ascii_ratio: 1.0,
+        data_size: sample.len(),
+    };
+    use cpac_transforms::TransformNode;
+    let bwt = cpac_transforms::BwtChainTransform;
+    match bwt.encode(cpac_types::CpacType::Serial(sample.to_vec()), &ctx) {
+        Ok((cpac_types::CpacType::Serial(encoded), meta)) if !meta.is_empty() => {
+            // BWT was applied — now check if it actually helps *after* entropy coding.
+            // Use zstd-6 (matching the Default compression level) so the LZ77
+            // window size and match-finding intensity realistically represent the
+            // actual compression pass.  Lower levels (zstd-1/3) have smaller
+            // windows that overestimate BWT's value on text because they can't
+            // exploit the long-range redundancy that zstd-6 already captures.
+            let baseline_z = zstd::bulk::compress(sample, 6)
+                .map(|z| z.len())
+                .unwrap_or(sample.len());
+            let bwt_z = zstd::bulk::compress(&encoded, 6)
+                .map(|z| z.len())
+                .unwrap_or(encoded.len());
+            let savings = 1.0 - bwt_z as f64 / baseline_z as f64;
+            savings >= MIN_SAVINGS_PCT
+        }
+        _ => false, // BWT passthrough or error — doesn't help
+    }
+}
+
+/// Lazily cached transform registry (avoids re-building on every call).
+fn cached_transform_registry() -> &'static TransformRegistry {
+    use std::sync::LazyLock;
+    static REGISTRY: LazyLock<TransformRegistry> = LazyLock::new(TransformRegistry::with_builtins);
+    &REGISTRY
 }
 
 /// Attempt data-driven preprocessing using the structure analyzer.
@@ -403,32 +494,70 @@ fn quick_zstd_size(data: &[u8]) -> usize {
 /// Effectiveness is measured by **compressed size** (quick zstd-1 trial),
 /// not raw size, because transforms can alter entropy characteristics.
 ///
+/// `ssr` is the pre-computed SSR result from the caller to avoid redundant
+/// full-data scans.
+///
 /// Returns `Some((transformed_bytes, dag_descriptor))` if any approach
 /// compresses strictly smaller than the original; `None` otherwise.
-fn smart_preprocess(data: &[u8], filename: Option<&str>) -> Option<(Vec<u8>, Vec<u8>)> {
-    let profile = analyzer::analyze_structure(data, filename);
+fn smart_preprocess(
+    data: &[u8],
+    config: &CompressConfig,
+    ssr: &cpac_ssr::SSRResult,
+) -> Option<(Vec<u8>, Vec<u8>)> {
+    let registry = cached_transform_registry();
 
-    // Filter to transforms that accept Serial input and have sufficient confidence.
-    let registry = TransformRegistry::with_builtins();
-    let candidates: Vec<&str> = profile
-        .recommended_chain
-        .iter()
-        .filter(|r| r.confidence >= SMART_MIN_CONFIDENCE)
-        .filter(|r| {
-            // Only include transforms that accept Serial (raw bytes).
-            registry
-                .get_by_name(&r.name)
-                .map(|n| n.accepts().contains(&cpac_types::TypeTag::Serial))
-                .unwrap_or(false)
-        })
-        .map(|r| r.name.as_str())
-        .collect();
+    // Collect candidate names as owned Strings (avoids lifetime issues with
+    // the profile that may be created inside the else branch).
+    let mut candidate_names: Vec<String> = if let Some(ref cached) = config.cached_transform_recs {
+        // P2: reuse cached recommendations from parallel probe.
+        cached
+            .iter()
+            .filter(|name| {
+                registry
+                    .get_by_name(name)
+                    .map(|n| n.accepts().contains(&cpac_types::TypeTag::Serial))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect()
+    } else {
+        // P0: use fast analyzer (skips MSN extraction — already done in compress())
+        let profile = analyzer::analyze_structure_fast(
+            ssr,
+            config.filename.as_deref(),
+            config.skip_expensive_transforms,
+        );
 
-    if candidates.is_empty() {
+        profile
+            .recommended_chain
+            .into_iter()
+            .filter(|r| r.confidence >= SMART_MIN_CONFIDENCE)
+            .filter(|r| {
+                registry
+                    .get_by_name(&r.name)
+                    .map(|n| n.accepts().contains(&cpac_types::TypeTag::Serial))
+                    .unwrap_or(false)
+            })
+            .map(|r| r.name)
+            .collect()
+    };
+
+    if candidate_names.is_empty() {
         return None;
     }
 
-    let ssr = cpac_ssr::analyze(data);
+    // P7: Sample-based BWT pre-screening — if bwt_chain is a candidate but
+    // a 256 KB sample shows no BWT benefit, remove it from the list.
+    // This avoids a full O(n) BWT on multi-MB text that won't benefit.
+    if candidate_names.iter().any(|n| n == "bwt_chain") && !bwt_sample_helps(data) {
+        candidate_names.retain(|n| n != "bwt_chain");
+        if candidate_names.is_empty() {
+            return None;
+        }
+    }
+
+    let candidates: Vec<&str> = candidate_names.iter().map(String::as_str).collect();
+
     let ctx = cpac_transforms::TransformContext {
         entropy_estimate: ssr.entropy_estimate,
         ascii_ratio: ssr.ascii_ratio,
@@ -436,21 +565,27 @@ fn smart_preprocess(data: &[u8], filename: Option<&str>) -> Option<(Vec<u8>, Vec
     };
 
     // Baseline: compressed size of the untransformed input.
-    // The total frame cost is approximately: compressed_payload + dag_descriptor.
-    // We compare against this total cost, not just the compressed payload alone.
     let baseline_z = quick_zstd_size(data);
 
     // Track the best result across all trials.
     let mut best: Option<(Vec<u8>, Vec<u8>)> = None;
-    let mut best_cost = baseline_z; // baseline has no descriptor overhead
+    let mut best_cost = baseline_z;
 
-    // Maximum DAG descriptor size: u16 in the frame header (65535 bytes).
-    // Per-step metadata also uses u16.  Reject any trial that would overflow.
     const MAX_DESC_SIZE: usize = u16::MAX as usize;
 
+    // Track which transforms were included in the full chain so Strategy 2
+    // can skip expensive redundant individual trials (P6).
+    let ran_full_chain = candidates.len() > 1;
+
+    // Set of expensive transforms that should not be individually re-trialed
+    // when they were already covered by the full chain.  Cheap transforms
+    // (normalize) are still worth testing individually because they may
+    // outperform the combined chain.
+    const EXPENSIVE_TRANSFORMS: &[&str] = &["bwt_chain", "byte_plane", "predict"];
+
     // --- Strategy 1: full chain ---
-    if candidates.len() > 1 {
-        if let Ok(dag) = TransformDAG::compile(&registry, &candidates) {
+    if ran_full_chain {
+        if let Ok(dag) = TransformDAG::compile(registry, &candidates) {
             let input = cpac_types::CpacType::Serial(data.to_vec());
             if let Ok((cpac_types::CpacType::Serial(bytes), meta_chain)) =
                 dag.execute_forward(input, &ctx)
@@ -468,8 +603,15 @@ fn smart_preprocess(data: &[u8], filename: Option<&str>) -> Option<(Vec<u8>, Vec
     }
 
     // --- Strategy 2: adaptive trials (each candidate individually) ---
+    // P6: When the full chain already ran, skip individual trials for
+    // expensive transforms (bwt_chain, byte_plane, predict) since they
+    // were already evaluated in combination.  Cheap transforms (normalize)
+    // are still tested individually because they may beat the chain alone.
     for &name in candidates.iter().take(MAX_ADAPTIVE_TRIALS) {
-        if let Ok(dag) = TransformDAG::compile(&registry, &[name]) {
+        if ran_full_chain && EXPENSIVE_TRANSFORMS.contains(&name) {
+            continue; // P6: already tested in full chain
+        }
+        if let Ok(dag) = TransformDAG::compile(registry, &[name]) {
             let input = cpac_types::CpacType::Serial(data.to_vec());
             if let Ok((cpac_types::CpacType::Serial(bytes), meta_chain)) =
                 dag.execute_forward(input, &ctx)
@@ -566,8 +708,8 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
     } else {
         // DAG-based decompression: deserialize descriptor and execute backward
         let (ids, metas, _consumed) = cpac_dag::deserialize_dag_descriptor(&header.dag_descriptor)?;
-        let registry = TransformRegistry::with_builtins();
-        let dag = TransformDAG::compile_from_ids(&registry, &ids)?;
+        let registry = cached_transform_registry();
+        let dag = TransformDAG::compile_from_ids(registry, &ids)?;
         let meta_chain: Vec<(u8, Vec<u8>)> = ids.into_iter().zip(metas).collect();
         let output = dag.execute_backward(
             cpac_types::CpacType::Serial(data_to_unpreprocess),
@@ -680,15 +822,16 @@ mod tests {
 
     #[test]
     fn roundtrip_msn_xml_large_parallel() {
-        // > PARALLEL_THRESHOLD (4 MiB) triggers CPBL parallel path; XML content should activate MSN
+        // > PARALLEL_THRESHOLD_TEXT (16 MiB) triggers CPBL parallel path for
+        // text data; XML content should activate MSN.
         let record = b"<?xml version=\"1.0\"?><record><id>1</id><name>Alice</name><age>30</age><city>New York</city></record>\n";
         let data: Vec<u8> = record
             .iter()
             .copied()
             .cycle()
-            .take(parallel::PARALLEL_THRESHOLD + 1024)
+            .take(parallel::PARALLEL_THRESHOLD_TEXT + 1024)
             .collect();
-        assert!(data.len() >= parallel::PARALLEL_THRESHOLD);
+        assert!(data.len() >= parallel::PARALLEL_THRESHOLD_TEXT);
 
         let config = CompressConfig {
             enable_msn: true,
@@ -761,7 +904,8 @@ mod tests {
         let compressed = compress(&data, &config).unwrap();
         let decompressed = decompress(&compressed.data).unwrap();
         assert_eq!(
-            decompressed.data, data,
+            decompressed.data,
+            data,
             "smart transforms large text roundtrip failed (len={})",
             data.len()
         );
@@ -820,12 +964,117 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_smart_transforms_parallel_text() {
-        // >4MB text triggers parallel compression with smart transforms.
-        // This is the exact path that fails in bench_file on silesia files.
+    fn roundtrip_smart_transforms_single_block_4mb() {
+        // Diagnostic: same 4MB text as parallel path, but disable_parallel.
+        // If this fails, the bug is in single-block smart transforms at 4MB.
+        // If this passes, the bug is in CPBL assembly/disassembly.
         let sentence = b"The quick brown fox jumps over the lazy dog. ";
-        let data: Vec<u8> = sentence.iter().copied().cycle()
-            .take(parallel::PARALLEL_THRESHOLD + 1_000_000).collect();
+        let data: Vec<u8> = sentence
+            .iter()
+            .copied()
+            .cycle()
+            .take(parallel::DEFAULT_BLOCK_SIZE)
+            .collect();
+
+        let config = CompressConfig {
+            backend: Some(Backend::Zstd),
+            enable_smart_transforms: true,
+            disable_parallel: true,
+            ..Default::default()
+        };
+        let compressed = compress(&data, &config).unwrap();
+        let decompressed = decompress(&compressed.data).unwrap();
+        // Use size-only check first to avoid output flood
+        assert_eq!(
+            decompressed.data.len(),
+            data.len(),
+            "single 4MB block size mismatch: got {} expected {}",
+            decompressed.data.len(),
+            data.len()
+        );
+        // Check first and last 100 bytes to isolate content mismatch
+        // without printing entire 4MB arrays
+        let n = data.len();
+        assert_eq!(
+            &decompressed.data[..100],
+            &data[..100],
+            "single 4MB block: first 100 bytes differ"
+        );
+        assert_eq!(
+            &decompressed.data[n - 100..],
+            &data[n - 100..],
+            "single 4MB block: last 100 bytes differ"
+        );
+        // Full content check with truncated error
+        if decompressed.data != data {
+            // Find first mismatch position
+            let pos = decompressed
+                .data
+                .iter()
+                .zip(data.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(0);
+            panic!(
+                "single 4MB block content mismatch at byte {}/{}: got {} expected {}",
+                pos, n, decompressed.data[pos], data[pos]
+            );
+        }
+    }
+
+    #[test]
+    fn roundtrip_bwt_chain_direct_default_block_size() {
+        // Direct BWT chain at exactly DEFAULT_BLOCK_SIZE (4 MiB) — isolates
+        // whether the decode bug is in bwt_chain itself or the pipeline.
+        use cpac_transforms::BwtChainTransform;
+        use cpac_transforms::TransformNode;
+
+        let sentence = b"The quick brown fox jumps over the lazy dog. ";
+        let data: Vec<u8> = sentence
+            .iter()
+            .copied()
+            .cycle()
+            .take(parallel::DEFAULT_BLOCK_SIZE)
+            .collect();
+        let ctx = cpac_transforms::TransformContext {
+            entropy_estimate: 4.0,
+            ascii_ratio: 1.0,
+            data_size: data.len(),
+        };
+        let t = BwtChainTransform;
+        let input = cpac_types::CpacType::Serial(data.clone());
+        let (encoded, meta) = t.encode(input, &ctx).unwrap();
+        assert!(!meta.is_empty(), "BWT chain should not passthrough");
+        let decoded = t.decode(encoded, &meta).unwrap();
+        match decoded {
+            cpac_types::CpacType::Serial(d) => {
+                assert_eq!(d.len(), data.len(), "BWT chain 4MB size mismatch");
+                if d != data {
+                    let pos = d
+                        .iter()
+                        .zip(data.iter())
+                        .position(|(a, b)| a != b)
+                        .unwrap_or(0);
+                    panic!(
+                        "BWT chain 4MB content mismatch at byte {}: got {} expected {}",
+                        pos, d[pos], data[pos]
+                    );
+                }
+            }
+            _ => panic!("expected Serial"),
+        }
+    }
+
+    #[test]
+    fn roundtrip_smart_transforms_parallel_text() {
+        // >16MB text triggers parallel compression with smart transforms
+        // (P3 raised threshold for text from 4MB to 16MB).
+        let sentence = b"The quick brown fox jumps over the lazy dog. ";
+        let data: Vec<u8> = sentence
+            .iter()
+            .copied()
+            .cycle()
+            .take(parallel::PARALLEL_THRESHOLD_TEXT + 1_000_000)
+            .collect();
 
         let config = CompressConfig {
             backend: Some(Backend::Zstd),
@@ -837,14 +1086,28 @@ mod tests {
         assert!(is_cpbl(&compressed.data), "expected CPBL parallel frame");
         let decompressed = decompress(&compressed.data).unwrap();
         assert_eq!(
-            decompressed.data.len(), data.len(),
+            decompressed.data.len(),
+            data.len(),
             "parallel smart transforms size mismatch"
         );
-        assert_eq!(
-            decompressed.data, data,
-            "parallel smart transforms roundtrip failed (len={})",
-            data.len()
-        );
+        // Avoid output flood: find first mismatch position instead of
+        // printing entire multi-MB arrays.
+        if decompressed.data != data {
+            let pos = decompressed
+                .data
+                .iter()
+                .zip(data.iter())
+                .position(|(a, b)| a != b)
+                .unwrap_or(0);
+            panic!(
+                "parallel smart transforms roundtrip failed (len={}): \
+                 first mismatch at byte {}: got {} expected {}",
+                data.len(),
+                pos,
+                decompressed.data[pos],
+                data[pos]
+            );
+        }
     }
 
     #[test]
@@ -854,7 +1117,11 @@ mod tests {
         use cpac_transforms::TransformNode;
 
         let data: Vec<u8> = b"{\n  \"name\": \"Alice\",\n  \"age\": 30\n}\n"
-            .iter().copied().cycle().take(100_000).collect();
+            .iter()
+            .copied()
+            .cycle()
+            .take(100_000)
+            .collect();
         let ctx = cpac_transforms::TransformContext {
             entropy_estimate: 4.0,
             ascii_ratio: 1.0,

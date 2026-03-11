@@ -36,6 +36,12 @@ pub const DEFAULT_BLOCK_SIZE: usize = 4 << 20;
 /// overhead dominated for files under ~10 MB.
 pub const PARALLEL_THRESHOLD: usize = 4 * 1024 * 1024;
 
+/// P3: Higher threshold for text-heavy data.  Structured text (JSON, logs,
+/// YAML, config) benefits far more from full-file LZ77 context than from
+/// parallelism.  Files below 16 MiB that are mostly ASCII stay on the
+/// single-stream path for better ratios and lower preprocessing overhead.
+pub const PARALLEL_THRESHOLD_TEXT: usize = 16 * 1024 * 1024;
+
 /// Small block size: 4 MiB.  Used for high-entropy or small files.
 pub const BLOCK_SIZE_SMALL: usize = 4 << 20;
 /// Medium block size: 16 MiB.  Used for medium-entropy data.
@@ -108,18 +114,55 @@ pub fn compress_parallel(
     let mut block_config = config.clone();
     block_config.disable_parallel = true;
 
+    // P1: skip expensive transforms (BWT) on parallel sub-blocks — BWT on
+    // multi-MB blocks is expensive and block-parallel framing already
+    // destroys cross-block context that BWT relies on.
+    block_config.skip_expensive_transforms = true;
+
     // Phase 4A: MSN field-map caching — probe the first block to discover
     // the domain and build the field map, then reuse it across all blocks.
     // This avoids O(N_blocks × N_domains) detection overhead for large
     // homogeneous files (e.g. 100 MB YAML split into 25 × 4 MB blocks).
     if config.enable_msn && block_config.cached_msn_metadata.is_none() && !blocks.is_empty() {
         let probe_filename = config.filename.as_deref();
-        if let Ok(probe_result) = cpac_msn::extract(blocks[0], probe_filename, config.msn_confidence) {
+        if let Ok(probe_result) =
+            cpac_msn::extract(blocks[0], probe_filename, config.msn_confidence)
+        {
             if probe_result.applied {
                 if let Ok(encoded) = cpac_msn::encode_metadata_compact(&probe_result.metadata()) {
                     block_config.cached_msn_metadata = Some(encoded);
                 }
             }
+        }
+    }
+
+    // P2+P9+P10: Cache transform recommendations AND SSR from the first block
+    // and reuse across all blocks.  For homogeneous files (JSON, logs), every
+    // block has the same structure, so re-running analyze_structure/SSR is waste.
+    if block_config.cached_transform_recs.is_none() && !blocks.is_empty() {
+        let probe_ssr = cpac_ssr::analyze(blocks[0]);
+
+        // P9: cache SSR so per-block compress() calls skip cpac_ssr::analyze().
+        block_config.cached_ssr =
+            Some(cpac_types::CachedSsr::from(&probe_ssr));
+
+        let probe_profile = crate::analyzer::analyze_structure_fast(
+            &probe_ssr,
+            config.filename.as_deref(),
+            block_config.skip_expensive_transforms,
+        );
+        let rec_names: Vec<String> = probe_profile
+            .recommended_chain
+            .iter()
+            .filter(|r| r.confidence >= crate::SMART_MIN_CONFIDENCE)
+            .map(|r| r.name.clone())
+            .collect();
+        if !rec_names.is_empty() {
+            block_config.cached_transform_recs = Some(rec_names);
+        } else {
+            // P10: no transforms recommended — disable smart_preprocess for
+            // all blocks to avoid the per-block trial overhead entirely.
+            block_config.enable_smart_transforms = false;
         }
     }
 
