@@ -307,7 +307,8 @@ impl TransformNode for NormalizeTransform {
                 // each diff = 4B offset + 2B len + removed bytes.
                 // Gate: if estimated descriptor > 50% of raw savings,
                 // the transform is net-negative after entropy coding.
-                let estimated_meta: usize = 9 + diffs.iter().map(|d| 6 + d.removed.len()).sum::<usize>();
+                let estimated_meta: usize =
+                    9 + diffs.iter().map(|d| 6 + d.removed.len()).sum::<usize>();
                 if estimated_meta > raw_savings / 2 {
                     return Ok((CpacType::Serial(data), Vec::new()));
                 }

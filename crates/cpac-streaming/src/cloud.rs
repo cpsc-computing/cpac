@@ -363,6 +363,7 @@ pub mod gcs {
     pub const DEFAULT_PART_SIZE: usize = 8 * 1024 * 1024;
 
     /// GCS streaming upload target (stub — depends on `google-cloud-storage`).
+    #[allow(dead_code)]
     pub struct GcsTarget {
         bucket: String,
         key: String,
@@ -432,6 +433,7 @@ pub mod azure {
     pub const DEFAULT_BLOCK_SIZE: usize = 4 * 1024 * 1024;
 
     /// Azure Blob streaming upload target (stub — depends on `azure_storage_blobs`).
+    #[allow(dead_code)]
     pub struct AzureTarget {
         container: String,
         blob: String,

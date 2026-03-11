@@ -617,10 +617,7 @@ impl JsonDomain {
     }
 
     /// Reconstruct a JSON array from columnar residual.
-    fn reconstruct_single_array(
-        residual: &[u8],
-        field_names: &[String],
-    ) -> CpacResult<Vec<u8>> {
+    fn reconstruct_single_array(residual: &[u8], field_names: &[String]) -> CpacResult<Vec<u8>> {
         // Reuse the columnar reconstruction to get JSONL rows, then wrap in array.
         let jsonl_bytes =
             Self::reconstruct_columnar(residual, field_names, /* trailing_newline */ false)?;

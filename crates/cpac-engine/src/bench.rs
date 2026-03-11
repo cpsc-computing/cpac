@@ -574,8 +574,7 @@ impl BenchmarkRunner {
         let raw_lvl = standalone_raw_level(selected_backend, level)
             .map(|l| format!("@{l}"))
             .unwrap_or_default();
-        let engine_label =
-            format!("{track_str}({mode_str}/{selected_backend:?}{raw_lvl})");
+        let engine_label = format!("{track_str}({mode_str}/{selected_backend:?}{raw_lvl})");
 
         Ok(BenchResult {
             file: path.to_path_buf(),

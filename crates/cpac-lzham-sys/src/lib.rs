@@ -144,8 +144,7 @@ mod tests {
         let data = b"hello from vendored LZHAM roundtrip test data padding";
 
         // Compress
-        let mut comp_params = lzham_compress_params::default();
-        comp_params.m_level = LZHAM_COMP_LEVEL_DEFAULT;
+        let comp_params = lzham_compress_params::default();
 
         let mut comp_buf = vec![0u8; data.len() * 2 + 1024];
         let mut comp_len = comp_buf.len();

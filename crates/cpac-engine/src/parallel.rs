@@ -110,8 +110,13 @@ pub fn compress_parallel(
     // Split into blocks
     let blocks: Vec<&[u8]> = data.chunks(bs).collect();
     let block_count = blocks.len();
-    cpac_trace!("[TRACE] compress_parallel: size={}B block_size={}B blocks={} threads={}",
-        original_size, bs, block_count, num_threads);
+    cpac_trace!(
+        "[TRACE] compress_parallel: size={}B block_size={}B blocks={} threads={}",
+        original_size,
+        bs,
+        block_count,
+        num_threads
+    );
 
     // Use shared global thread pool (Phase 4B) instead of creating a new one per call.
     let pool = crate::pool::get_or_init_thread_pool(num_threads);
@@ -134,11 +139,19 @@ pub fn compress_parallel(
         if let Ok(probe_result) =
             cpac_msn::extract(blocks[0], probe_filename, config.msn_confidence)
         {
-            cpac_trace!("[TRACE] parallel MSN probe: applied={} domain={:?} conf={:.3} fields={}",
-                probe_result.applied, probe_result.domain_id, probe_result.confidence, probe_result.fields.len());
+            cpac_trace!(
+                "[TRACE] parallel MSN probe: applied={} domain={:?} conf={:.3} fields={}",
+                probe_result.applied,
+                probe_result.domain_id,
+                probe_result.confidence,
+                probe_result.fields.len()
+            );
             if probe_result.applied {
                 if let Ok(encoded) = cpac_msn::encode_metadata_compact(&probe_result.metadata()) {
-                    cpac_trace!("[TRACE] parallel MSN probe: cached metadata={}B", encoded.len());
+                    cpac_trace!(
+                        "[TRACE] parallel MSN probe: cached metadata={}B",
+                        encoded.len()
+                    );
                     block_config.cached_msn_metadata = Some(encoded);
                 }
             }
@@ -154,8 +167,7 @@ pub fn compress_parallel(
         let probe_ssr = cpac_ssr::analyze(blocks[0]);
 
         // P9: cache SSR so per-block compress() calls skip cpac_ssr::analyze().
-        block_config.cached_ssr =
-            Some(cpac_types::CachedSsr::from(&probe_ssr));
+        block_config.cached_ssr = Some(cpac_types::CachedSsr::from(&probe_ssr));
 
         let probe_profile = crate::analyzer::analyze_structure_fast(
             &probe_ssr,
@@ -168,10 +180,21 @@ pub fn compress_parallel(
             .filter(|r| r.confidence >= crate::SMART_MIN_CONFIDENCE)
             .map(|r| r.name.clone())
             .collect();
-        cpac_trace!("[TRACE] parallel probe SSR: entropy={:.3} ascii={:.3} track={:?}",
-            probe_ssr.entropy_estimate, probe_ssr.ascii_ratio, probe_ssr.track);
-        cpac_trace!("[TRACE] parallel probe transforms: {:?} (all: {:?})",
-            rec_names, probe_profile.recommended_chain.iter().map(|r| format!("{}:{:.2}", r.name, r.confidence)).collect::<Vec<_>>());
+        cpac_trace!(
+            "[TRACE] parallel probe SSR: entropy={:.3} ascii={:.3} track={:?}",
+            probe_ssr.entropy_estimate,
+            probe_ssr.ascii_ratio,
+            probe_ssr.track
+        );
+        cpac_trace!(
+            "[TRACE] parallel probe transforms: {:?} (all: {:?})",
+            rec_names,
+            probe_profile
+                .recommended_chain
+                .iter()
+                .map(|r| format!("{}:{:.2}", r.name, r.confidence))
+                .collect::<Vec<_>>()
+        );
         if !rec_names.is_empty() {
             block_config.cached_transform_recs = Some(rec_names);
         } else {
