@@ -15,6 +15,28 @@
     clippy::missing_panics_doc
 )]
 
+// ---------------------------------------------------------------------------
+// CPAC_TRACE: pipeline instrumentation (set CPAC_TRACE=1 to enable)
+// Must be before module declarations so submodules can use crate::cpac_trace!
+// ---------------------------------------------------------------------------
+
+/// Check whether `CPAC_TRACE=1` is set (cached after first call).
+pub(crate) fn trace_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("CPAC_TRACE").is_ok_and(|v| v == "1" || v == "true")
+    })
+}
+
+macro_rules! cpac_trace {
+    ($($arg:tt)*) => {
+        if $crate::trace_enabled() {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
 pub mod accel;
 pub mod analyzer;
 pub mod bandwidth;
@@ -106,16 +128,27 @@ const PREPROCESS_THRESHOLD: usize = 4096;
 pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResult> {
     let original_size = data.len();
 
+    cpac_trace!("[TRACE] ===== compress() called: size={}B ({:.2} MB) =====",
+        original_size, original_size as f64 / 1_048_576.0);
+    cpac_trace!("[TRACE] config: backend={:?} enable_msn={} enable_smart_transforms={} force_track={:?} disable_parallel={}",
+        config.backend, config.enable_msn, config.enable_smart_transforms, config.force_track, config.disable_parallel);
+
     // 1. SSR analysis (P9: skip when cached from parallel probe)
     let ssr: cpac_ssr::SSRResult = if let Some(ref cached) = config.cached_ssr {
+        cpac_trace!("[TRACE] SSR: using cached result");
         cached.clone().into()
     } else {
-        cpac_ssr::analyze(data)
+        let r = cpac_ssr::analyze(data);
+        cpac_trace!("[TRACE] SSR: entropy={:.3} ascii_ratio={:.3} track={:?} domain_hint={:?} data_size={}",
+            r.entropy_estimate, r.ascii_ratio, r.track, r.domain_hint, r.data_size);
+        r
     };
 
     // 2. Select backend with size awareness
     let backend = config.backend.unwrap_or_else(|| {
-        cpac_entropy::auto_select_backend_with_size(ssr.entropy_estimate, original_size)
+        let b = cpac_entropy::auto_select_backend_with_size(ssr.entropy_estimate, original_size);
+        cpac_trace!("[TRACE] backend auto-selected: {:?} (entropy={:.3})", b, ssr.entropy_estimate);
+        b
     });
 
     // 3. Check if we should use parallel compression for large files.
@@ -135,8 +168,12 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         parallel::PARALLEL_THRESHOLD
     };
     let adaptive_threshold = effective_block_size.max(base_threshold);
+    cpac_trace!("[TRACE] parallel check: size={} threshold={} (base={} block={}) ascii_ratio={:.3} → {}",
+        original_size, adaptive_threshold, base_threshold, effective_block_size, ssr.ascii_ratio,
+        if !config.disable_parallel && original_size >= adaptive_threshold && backend != Backend::Raw { "PARALLEL" } else { "SINGLE-BLOCK" });
     if !config.disable_parallel && original_size >= adaptive_threshold && backend != Backend::Raw {
         let num_threads = rayon::current_num_threads();
+        cpac_trace!("[TRACE] → dispatching to compress_parallel(block_size={}, threads={})", effective_block_size, num_threads);
         return compress_parallel(data, config, effective_block_size, num_threads);
     }
 
@@ -151,6 +188,8 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // When Some(Track::Track1), MSN runs on every block regardless of entropy estimate.
     // When Some(Track::Track2), MSN is always bypassed.
     let effective_track = config.force_track.unwrap_or(ssr.track);
+    cpac_trace!("[TRACE] MSN: enable_msn={} effective_track={:?} (ssr.track={:?} force_track={:?})",
+        config.enable_msn, effective_track, ssr.track, config.force_track);
     let (msn_data, msn_metadata) = if config.enable_msn && effective_track == Track::Track1 {
         // Phase 4A: if a cached MSN metadata was provided (from parallel block
         // probing), use extract_with_metadata for consistent field indices and
@@ -163,8 +202,11 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
             None
         };
         let msn_result = msn_result.unwrap_or_else(|| {
-            cpac_msn::extract(data, msn_filename, config.msn_confidence)
-                .unwrap_or_else(|_| cpac_msn::MsnResult::passthrough(data))
+            let r = cpac_msn::extract(data, msn_filename, config.msn_confidence)
+                .unwrap_or_else(|_| cpac_msn::MsnResult::passthrough(data));
+            cpac_trace!("[TRACE] MSN extract: applied={} domain={:?} confidence={:.3} fields={} residual={}B original={}B",
+                r.applied, r.domain_id, r.confidence, r.fields.len(), r.residual.len(), data.len());
+            r
         });
         match msn_result {
             result if result.applied => {
@@ -189,6 +231,9 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                     // with placeholder tokens, inflating the reconstructed output).
                     match cpac_msn::reconstruct(&result) {
                         Ok(ref reconstructed) if reconstructed.as_slice() == data => {
+                            cpac_trace!("[TRACE] MSN → APPLIED: domain={:?} conf={:.3} residual={}B meta={}B original={}B savings={:.1}%",
+                                result.domain_id, result.confidence, result.residual.len(), metadata.len(), data.len(),
+                                (1.0 - result.residual.len() as f64 / data.len() as f64) * 100.0);
                             if msn_verbose {
                                 let savings_pct = (1.0
                                     - result.residual.len() as f64 / data.len() as f64)
@@ -207,6 +252,8 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                             (result.residual, metadata)
                         }
                         Ok(ref reconstructed) => {
+                            cpac_trace!("[TRACE] MSN → BYPASSED: roundtrip mismatch expected={}B got={}B",
+                                data.len(), reconstructed.len());
                             if msn_verbose {
                                 eprintln!(
                                     "[MSN] domain={} conf={:.2} → BYPASSED \
@@ -232,6 +279,8 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                         }
                     }
                 } else {
+                    cpac_trace!("[TRACE] MSN → BYPASSED: no size savings residual+meta={}B vs original={}B (need 5% margin={}B)",
+                        result.residual.len() + metadata.len(), data.len(), msn_savings_margin);
                     if msn_verbose {
                         eprintln!(
                             "[MSN] domain={} conf={:.2} → BYPASSED \
@@ -247,6 +296,8 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
             }
             _ => {
                 // Domain detected but applied=false — confidence below threshold.
+                cpac_trace!("[TRACE] MSN → BYPASSED: no domain above confidence threshold {:.2}",
+                    config.msn_confidence);
                 if msn_verbose {
                     eprintln!(
                         "[MSN] → BYPASSED (no domain above conf threshold {:.2})",
@@ -278,6 +329,8 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     let is_binary_domain = ssr.domain_hint == Some(cpac_types::DomainHint::Binary);
     let should_preprocess =
         backend != Backend::Raw && original_size >= PREPROCESS_THRESHOLD && !is_binary_domain;
+    cpac_trace!("[TRACE] preprocess: should={} (backend={:?} size={} binary_domain={} msn_applied={})",
+        should_preprocess, backend, original_size, is_binary_domain, !msn_metadata.is_empty());
 
     // Track DAG descriptor for the frame header (non-empty when smart transforms used).
     let mut dag_descriptor: Vec<u8> = Vec::new();
@@ -308,14 +361,19 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         let smart_result = if config.enable_smart_transforms {
             smart_preprocess(&msn_data, config, &residual_ssr)
         } else {
+            cpac_trace!("[TRACE] smart_preprocess: DISABLED by config");
             None
         };
 
         if let Some((smart_data, smart_dag_desc)) = smart_result {
             // Smart path produced a smaller output — use it.
+            cpac_trace!("[TRACE] smart_preprocess → APPLIED: output={}B dag_desc={}B (original={}B, savings={:.1}%)",
+                smart_data.len(), smart_dag_desc.len(), msn_data.len(),
+                (1.0 - smart_data.len() as f64 / msn_data.len() as f64) * 100.0);
             dag_descriptor = smart_dag_desc;
             smart_data
         } else if config.enable_smart_transforms && residual_ssr.ascii_ratio > 0.50 {
+            cpac_trace!("[TRACE] smart_preprocess → NONE (text data, skip legacy TP)");
             // Smart transforms evaluated candidates and found nothing that
             // beats the zstd-3 baseline on TEXT data.  Skip legacy TP fallback
             // for text because ROLZ uses raw-size thresholds and hurts
@@ -504,12 +562,16 @@ fn smart_preprocess(
     config: &CompressConfig,
     ssr: &cpac_ssr::SSRResult,
 ) -> Option<(Vec<u8>, Vec<u8>)> {
+    cpac_trace!("[TRACE] smart_preprocess: input={}B entropy={:.3} ascii_ratio={:.3}",
+        data.len(), ssr.entropy_estimate, ssr.ascii_ratio);
+
     let registry = cached_transform_registry();
 
     // Collect candidate names as owned Strings (avoids lifetime issues with
     // the profile that may be created inside the else branch).
     let mut candidate_names: Vec<String> = if let Some(ref cached) = config.cached_transform_recs {
         // P2: reuse cached recommendations from parallel probe.
+        cpac_trace!("[TRACE] smart_preprocess: using cached transform recs: {:?}", cached);
         cached
             .iter()
             .filter(|name| {
@@ -527,32 +589,51 @@ fn smart_preprocess(
             config.filename.as_deref(),
             config.skip_expensive_transforms,
         );
+        cpac_trace!("[TRACE] smart_preprocess: analyzer recommended {} transforms:",
+            profile.recommended_chain.len());
+        for r in &profile.recommended_chain {
+            cpac_trace!("[TRACE]   - {} (confidence={:.3}, priority={}){}",
+                r.name, r.confidence, r.priority,
+                if r.confidence < SMART_MIN_CONFIDENCE { " [BELOW THRESHOLD]" } else { "" });
+        }
 
         profile
             .recommended_chain
             .into_iter()
             .filter(|r| r.confidence >= SMART_MIN_CONFIDENCE)
             .filter(|r| {
-                registry
+                let accepted = registry
                     .get_by_name(&r.name)
                     .map(|n| n.accepts().contains(&cpac_types::TypeTag::Serial))
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                if !accepted {
+                    cpac_trace!("[TRACE]   - {} filtered: not in registry or no Serial support", r.name);
+                }
+                accepted
             })
             .map(|r| r.name)
             .collect()
     };
 
     if candidate_names.is_empty() {
+        cpac_trace!("[TRACE] smart_preprocess → no candidates after filtering");
         return None;
     }
+
+    cpac_trace!("[TRACE] smart_preprocess: candidates after filtering: {:?}", candidate_names);
 
     // P7: Sample-based BWT pre-screening — if bwt_chain is a candidate but
     // a 256 KB sample shows no BWT benefit, remove it from the list.
     // This avoids a full O(n) BWT on multi-MB text that won't benefit.
-    if candidate_names.iter().any(|n| n == "bwt_chain") && !bwt_sample_helps(data) {
-        candidate_names.retain(|n| n != "bwt_chain");
-        if candidate_names.is_empty() {
-            return None;
+    if candidate_names.iter().any(|n| n == "bwt_chain") {
+        let bwt_helps = bwt_sample_helps(data);
+        cpac_trace!("[TRACE] BWT pre-screen: helps={}", bwt_helps);
+        if !bwt_helps {
+            candidate_names.retain(|n| n != "bwt_chain");
+            if candidate_names.is_empty() {
+                cpac_trace!("[TRACE] smart_preprocess → no candidates after BWT pre-screen");
+                return None;
+            }
         }
     }
 
@@ -566,6 +647,8 @@ fn smart_preprocess(
 
     // Baseline: compressed size of the untransformed input.
     let baseline_z = quick_zstd_size(data);
+    cpac_trace!("[TRACE] smart_preprocess: baseline_z={}B (quick_zstd_size of {}B input)",
+        baseline_z, data.len());
 
     // Track the best result across all trials.
     let mut best: Option<(Vec<u8>, Vec<u8>)> = None;
@@ -585,6 +668,7 @@ fn smart_preprocess(
 
     // --- Strategy 1: full chain ---
     if ran_full_chain {
+        cpac_trace!("[TRACE] Strategy 1 (full chain): {:?}", candidates);
         if let Ok(dag) = TransformDAG::compile(registry, &candidates) {
             let input = cpac_types::CpacType::Serial(data.to_vec());
             if let Ok((cpac_types::CpacType::Serial(bytes), meta_chain)) =
@@ -592,13 +676,23 @@ fn smart_preprocess(
             {
                 let desc = cpac_dag::serialize_dag_descriptor(&meta_chain);
                 if desc.len() <= MAX_DESC_SIZE {
-                    let total_cost = quick_zstd_size(&bytes) + desc.len();
+                    let chain_z = quick_zstd_size(&bytes);
+                    let total_cost = chain_z + desc.len();
+                    cpac_trace!("[TRACE]   full chain: raw={}B zstd={}B desc={}B total={}B vs baseline={}B → {}",
+                        bytes.len(), chain_z, desc.len(), total_cost, best_cost,
+                        if total_cost < best_cost { "BETTER" } else { "no improvement" });
                     if total_cost < best_cost {
                         best_cost = total_cost;
                         best = Some((bytes, desc));
                     }
+                } else {
+                    cpac_trace!("[TRACE]   full chain: desc too large ({}B > {}B)", desc.len(), MAX_DESC_SIZE);
                 }
+            } else {
+                cpac_trace!("[TRACE]   full chain: execute_forward failed or non-Serial output");
             }
+        } else {
+            cpac_trace!("[TRACE]   full chain: compile failed");
         }
     }
 
@@ -609,6 +703,7 @@ fn smart_preprocess(
     // are still tested individually because they may beat the chain alone.
     for &name in candidates.iter().take(MAX_ADAPTIVE_TRIALS) {
         if ran_full_chain && EXPENSIVE_TRANSFORMS.contains(&name) {
+            cpac_trace!("[TRACE]   trial '{}': SKIPPED (P6: expensive, already in chain)", name);
             continue; // P6: already tested in full chain
         }
         if let Ok(dag) = TransformDAG::compile(registry, &[name]) {
@@ -618,16 +713,27 @@ fn smart_preprocess(
             {
                 let desc = cpac_dag::serialize_dag_descriptor(&meta_chain);
                 if desc.len() <= MAX_DESC_SIZE {
-                    let total_cost = quick_zstd_size(&bytes) + desc.len();
+                    let trial_z = quick_zstd_size(&bytes);
+                    let total_cost = trial_z + desc.len();
+                    cpac_trace!("[TRACE]   trial '{}': raw={}B zstd={}B desc={}B total={}B vs best={}B → {}",
+                        name, bytes.len(), trial_z, desc.len(), total_cost, best_cost,
+                        if total_cost < best_cost { "NEW BEST" } else { "no improvement" });
                     if total_cost < best_cost {
                         best_cost = total_cost;
                         best = Some((bytes, desc));
                     }
+                } else {
+                    cpac_trace!("[TRACE]   trial '{}': desc too large ({}B)", name, desc.len());
                 }
+            } else {
+                cpac_trace!("[TRACE]   trial '{}': execute_forward failed or non-Serial output", name);
             }
+        } else {
+            cpac_trace!("[TRACE]   trial '{}': compile failed", name);
         }
     }
 
+    cpac_trace!("[TRACE] smart_preprocess → {}", if best.is_some() { "found improvement" } else { "no improvement found" });
     best
 }
 
