@@ -1387,6 +1387,34 @@ fn cmd_benchmark(
         }
     }
 
+    // MSN per-backend: test each backend with MSN preprocessing enabled.
+    // Skip Raw backend (MSN irrelevant) and keep only compressing backends.
+    {
+        println!();
+        println!("  --- MSN per-backend (level: {auto_level:?}) ---");
+        for &backend in &runner.backends {
+            if backend == cpac_engine::Backend::Raw {
+                continue;
+            }
+            match runner.bench_file_msn(&input, backend, auto_level) {
+                Ok(result) => {
+                    let ram_mb = result.peak_memory_bytes as f64 / 1_048_576.0;
+                    println!(
+                        "  {:24}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  RAM: {:5.1} MB  verified: {}",
+                        result.engine_label,
+                        result.ratio,
+                        result.compress_throughput_mbs,
+                        result.decompress_throughput_mbs,
+                        ram_mb,
+                        if result.lossless_verified { "YES" } else { "NO" }
+                    );
+                    all_results.push(result);
+                }
+                Err(e) => eprintln!("  MSN/{:?}  ERROR: {}", backend, e),
+            }
+        }
+    }
+
     // Discovery: forced-T1 (MSN on every block) vs forced-T2 (MSN on no block).
     if discovery {
         use cpac_engine::Track;

@@ -497,6 +497,96 @@ impl BenchmarkRunner {
         })
     }
 
+    /// Benchmark a single file with a specific CPAC backend **and MSN enabled**.
+    ///
+    /// Like [`bench_file_with_level`](Self::bench_file_with_level) but forces
+    /// `enable_msn = true` so MSN domain preprocessing is applied before the
+    /// chosen backend compresses the data.  Used to measure the ratio uplift
+    /// MSN gives each backend independently.
+    pub fn bench_file_msn(
+        &self,
+        path: &Path,
+        backend: Backend,
+        level: CompressionLevel,
+    ) -> CpacResult<BenchResult> {
+        let data = std::fs::read(path)
+            .map_err(|e| CpacError::IoError(format!("{}: {e}", path.display())))?;
+        let original_size = data.len();
+        let iterations = self.profile.iterations();
+        let config = CompressConfig {
+            backend: Some(backend),
+            enable_msn: true,
+            msn_confidence: 0.5,
+            level,
+            filename: Some(path.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+
+        let rss_before = measure_rss_bytes();
+
+        // Warmup
+        let _ = crate::compress(&data, &config)?;
+
+        let mut total_compress = Duration::ZERO;
+        let mut compressed_data = Vec::new();
+        let mut selected_track = Track::Track2;
+        for _ in 0..iterations {
+            let start = Instant::now();
+            let result = crate::compress(&data, &config)?;
+            total_compress += start.elapsed();
+            selected_track = result.track;
+            compressed_data = result.data;
+        }
+        let avg_compress = total_compress / iterations as u32;
+        let compressed_size = compressed_data.len();
+
+        // Lossless verification
+        let decompressed = crate::decompress(&compressed_data)?;
+        let lossless_verified = decompressed.data == data;
+
+        // Warmup decompress
+        let _ = crate::decompress(&compressed_data)?;
+
+        let mut total_decompress = Duration::ZERO;
+        for _ in 0..iterations {
+            let start = Instant::now();
+            let _r = crate::decompress(&compressed_data)?;
+            total_decompress += start.elapsed();
+        }
+        let avg_decompress = total_decompress / iterations as u32;
+
+        let ratio = calc_ratio(original_size, compressed_size);
+        let raw_lvl = standalone_raw_level(backend, level)
+            .map(|l| format!("@{l}"))
+            .unwrap_or_default();
+        let track_str = match selected_track {
+            Track::Track1 => "T1",
+            Track::Track2 => "T2",
+        };
+        let engine_label = format!("{track_str}(MSN/{backend:?}{raw_lvl})");
+
+        Ok(BenchResult {
+            file: path.to_path_buf(),
+            engine_label,
+            original_size,
+            compressed_size,
+            ratio,
+            compress_time: avg_compress,
+            decompress_time: avg_decompress,
+            compress_throughput_mbs: calc_throughput(original_size, &avg_compress),
+            decompress_throughput_mbs: calc_throughput(original_size, &avg_decompress),
+            peak_memory_bytes: peak_memory_or_fallback(
+                rss_before,
+                original_size + compressed_size + original_size,
+            ),
+            lossless_verified,
+            ssr_time: None,
+            msn_time: None,
+            track: Some(selected_track),
+            compression_level: level,
+        })
+    }
+
     /// Benchmark a file using SSR auto-routing, optionally with MSN (Track 1).
     ///
     /// Unlike [`bench_file`](Self::bench_file) which forces a specific backend,
