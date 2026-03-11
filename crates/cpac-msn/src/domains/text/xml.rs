@@ -23,19 +23,75 @@ impl Domain for XmlDomain {
         }
     }
 
-    fn detect(&self, _data: &[u8], _filename: Option<&str>) -> f64 {
-        // Disabled: tag-name token substitution is net-negative against zstd on
-        // real XML/HTML corpora (-117KB aggregate on the benchmark set).  zstd's
-        // LZ77 back-references already exploit tag repetition at 6-8x compression;
-        // our replacement disrupts those back-references and adds metadata overhead.
-        // Re-enable once a structure-aware transform that preserves backend
-        // compressibility is implemented (Phase 4 redesign).
+    fn detect(&self, data: &[u8], filename: Option<&str>) -> f64 {
+        // Extension-based detection.
+        if let Some(fname) = filename {
+            let ext = std::path::Path::new(fname)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            if ["xml", "html", "svg", "xhtml"]
+                .iter()
+                .any(|e| ext.eq_ignore_ascii_case(e))
+            {
+                return 0.85;
+            }
+        }
+
+        // Content-based detection: look for XML declaration or high tag density.
+        // Check first 4KB for XML patterns.
+        let sample = &data[..data.len().min(4096)];
+
+        // Strong signal: XML declaration at start
+        let trimmed_start = sample
+            .iter()
+            .position(|b| !b.is_ascii_whitespace())
+            .unwrap_or(sample.len());
+        if trimmed_start < sample.len() && sample[trimmed_start..].starts_with(b"<?xml") {
+            return 0.85;
+        }
+
+        // Moderate signal: high density of angle-bracket tags.
+        // Count opening tags (<word) vs commas to distinguish from CSV.
+        let mut tag_opens = 0usize;
+        let mut commas = 0usize;
+        let mut i = 0;
+        while i < sample.len() {
+            match sample[i] {
+                b'<' if i + 1 < sample.len() && sample[i + 1].is_ascii_alphabetic() => {
+                    tag_opens += 1;
+                    i += 2;
+                }
+                b',' => {
+                    commas += 1;
+                    i += 1;
+                }
+                _ => i += 1,
+            }
+        }
+        // XML has many tags; CSV has many commas.
+        // Require at least 10 tags and more tags than commas to claim XML.
+        if tag_opens >= 10 && tag_opens > commas {
+            return 0.80;
+        }
+
         0.0
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
-        let text = std::str::from_utf8(data)
-            .map_err(|e| CpacError::CompressFailed(format!("XML decode: {e}")))?;
+        // If data isn't valid UTF-8 (e.g. tar of XML files), return passthrough
+        // rather than an error so MSN falls back gracefully.
+        let text = match std::str::from_utf8(data) {
+            Ok(t) => t,
+            Err(_) => {
+                return Ok(ExtractionResult {
+                    fields: HashMap::new(),
+                    residual: data.to_vec(),
+                    metadata: HashMap::new(),
+                    domain_id: "text.xml".to_string(),
+                });
+            }
+        };
 
         // Extract all tag names (simple parser)
         let mut tag_freq: HashMap<String, usize> = HashMap::new();
@@ -225,11 +281,13 @@ mod tests {
 
     #[test]
     fn xml_domain_detection() {
-        // Detection is disabled (returns 0.0 for all inputs) pending redesign.
         let domain = XmlDomain;
-        assert_eq!(domain.detect(b"<?xml version=\"1.0\"?>", None), 0.0);
+        // XML declaration -> strong XML signal
+        assert_eq!(domain.detect(b"<?xml version=\"1.0\"?>", None), 0.85);
+        // Too few tags for content-based XML detection
         assert_eq!(domain.detect(b"<html><body></body></html>", None), 0.0);
-        assert_eq!(domain.detect(b"", Some("test.xml")), 0.0);
+        // Extension-based detection
+        assert_eq!(domain.detect(b"", Some("test.xml")), 0.85);
     }
 
     #[test]

@@ -244,24 +244,40 @@ const DOMAIN_HINTS: &[(&[&str], &[&str])] = &[
     // --- Logs ---
     (&["log", "syslog"], &["log", "2k", "loghub", "syslog"]),
     // --- Terraform / IaC ---
-    (&["tf", "tfvars", "tfstate"], &["terraform", "cloud", "config", "iac"]),
+    (
+        &["tf", "tfvars", "tfstate"],
+        &["terraform", "cloud", "config", "iac"],
+    ),
     // --- Kubernetes manifests ---
-    (&["yaml", "yml"], &["kubernetes", "k8s", "ansible", "cloud", "config", "text"]),
+    (
+        &["yaml", "yml"],
+        &["kubernetes", "k8s", "ansible", "cloud", "config", "text"],
+    ),
     // --- Ansible ---
     (&["j2", "jinja2"], &["ansible", "cloud", "config", "text"]),
     // --- General structured data ---
-    (&["json", "toml", "xml", "ini", "conf", "cfg"], &["config", "cloud", "text"]),
+    (
+        &["json", "toml", "xml", "ini", "conf", "cfg"],
+        &["config", "cloud", "text"],
+    ),
     // --- Prometheus / metrics ---
     (&["prom", "metrics"], &["prometheus", "metrics", "log"]),
     // --- Database / analytics ---
-    (&["sql", "parquet", "arrow", "avro", "orc"], &["database", "analytics", "binary"]),
+    (
+        &["sql", "parquet", "arrow", "avro", "orc"],
+        &["database", "analytics", "binary"],
+    ),
     // --- Container / image layers ---
     (&["tar", "layer"], &["docker", "container", "binary"]),
     // --- Plain text / docs ---
     (&["txt", "md", "rst", "csv", "tsv"], &["text", "canterbury"]),
     // --- Source code ---
-    (&["c", "h", "rs", "py", "go", "js", "ts", "java", "rb", "cpp", "hpp"],
-        &["source", "code", "text"]),
+    (
+        &[
+            "c", "h", "rs", "py", "go", "js", "ts", "java", "rb", "cpp", "hpp",
+        ],
+        &["source", "code", "text"],
+    ),
 ];
 
 /// Auto-select the best dictionary for a file based on its name/extension.

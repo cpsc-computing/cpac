@@ -93,6 +93,20 @@ pub enum CpacBackend {
     Gzip = 3,
     /// LZMA compression.
     Lzma = 4,
+    /// XZ container format.
+    Xz = 5,
+    /// LZ4 compression.
+    Lz4 = 6,
+    /// Snappy compression.
+    Snappy = 7,
+    /// LZHAM compression.
+    Lzham = 8,
+    /// Lizard compression.
+    Lizard = 9,
+    /// zlib-ng compression.
+    ZlibNg = 10,
+    /// OpenZL compression.
+    OpenZl = 11,
 }
 
 impl From<CpacBackend> for Backend {
@@ -103,6 +117,13 @@ impl From<CpacBackend> for Backend {
             CpacBackend::Brotli => Backend::Brotli,
             CpacBackend::Gzip => Backend::Gzip,
             CpacBackend::Lzma => Backend::Lzma,
+            CpacBackend::Xz => Backend::Xz,
+            CpacBackend::Lz4 => Backend::Lz4,
+            CpacBackend::Snappy => Backend::Snappy,
+            CpacBackend::Lzham => Backend::Lzham,
+            CpacBackend::Lizard => Backend::Lizard,
+            CpacBackend::ZlibNg => Backend::ZlibNg,
+            CpacBackend::OpenZl => Backend::OpenZl,
         }
     }
 }
@@ -115,6 +136,13 @@ impl From<Backend> for CpacBackend {
             Backend::Brotli => CpacBackend::Brotli,
             Backend::Gzip => CpacBackend::Gzip,
             Backend::Lzma => CpacBackend::Lzma,
+            Backend::Xz => CpacBackend::Xz,
+            Backend::Lz4 => CpacBackend::Lz4,
+            Backend::Snappy => CpacBackend::Snappy,
+            Backend::Lzham => CpacBackend::Lzham,
+            Backend::Lizard => CpacBackend::Lizard,
+            Backend::ZlibNg => CpacBackend::ZlibNg,
+            Backend::OpenZl => CpacBackend::OpenZl,
         }
     }
 }

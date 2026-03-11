@@ -207,6 +207,22 @@ enum Commands {
         /// Use with --skip-baselines to reduce runtime.
         #[arg(long)]
         discovery: bool,
+        /// CPAC entropy backends to benchmark (comma-separated).
+        /// Default: zstd,brotli,gzip,lzma,raw.
+        #[arg(long, value_delimiter = ',')]
+        backends: Option<Vec<String>>,
+        /// CPAC compression levels to benchmark (comma-separated).
+        /// Each level runs CPAC backends at that level, then the matched
+        /// baselines at the same effective effort.
+        /// Available: fast, default, high, best.
+        /// Default: just "default" for a single-level run.
+        #[arg(long, value_delimiter = ',')]
+        levels: Option<Vec<String>>,
+        /// Override auto-matched baselines with an explicit list (comma-separated).
+        /// Available: gzip-9, zstd-1, zstd-3, zstd-12, zstd-19, brotli-6, brotli-11, lzma-6.
+        /// When provided, the same baselines run for every level (no auto-matching).
+        #[arg(long, value_delimiter = ',')]
+        baselines: Option<Vec<String>>,
     },
     /// Analyze file structure and recommend optimal compression strategy.
     #[command(alias = "a")]
@@ -425,9 +441,16 @@ fn parse_backend(s: &str) -> Result<Backend, String> {
         "zstd" => Ok(Backend::Zstd),
         "brotli" => Ok(Backend::Brotli),
         "gzip" | "gz" => Ok(Backend::Gzip),
-        "lzma" | "xz" => Ok(Backend::Lzma),
+        "lzma" => Ok(Backend::Lzma),
+        "xz" => Ok(Backend::Xz),
+        "lz4" => Ok(Backend::Lz4),
+        "snappy" => Ok(Backend::Snappy),
+        "lzham" => Ok(Backend::Lzham),
+        "lizard" => Ok(Backend::Lizard),
+        "zlib-ng" | "zlibng" => Ok(Backend::ZlibNg),
+        "openzl" => Ok(Backend::OpenZl),
         other => Err(format!(
-            "unknown backend: {other} (available: raw, zstd, brotli, gzip, lzma)"
+            "unknown backend: {other} (available: raw, zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl)"
         )),
     }
 }
@@ -554,7 +577,11 @@ fn load_dict_bytes(p: &std::path::Path, verbose: u8) -> Vec<u8> {
         }
     }
     if verbose >= 1 {
-        eprintln!("Loaded raw dictionary: {} bytes ({})", bytes.len(), p.display());
+        eprintln!(
+            "Loaded raw dictionary: {} bytes ({})",
+            bytes.len(),
+            p.display()
+        );
     }
     bytes
 }
@@ -583,8 +610,10 @@ fn auto_select_dict_for_input(input: &std::path::Path, verbose: u8) -> Option<Ve
 
 fn parse_level(s: &str) -> CompressionLevel {
     match s.to_ascii_lowercase().as_str() {
+        "ultrafast" | "uf" | "0" => CompressionLevel::UltraFast,
         "fast" | "f" | "1" => CompressionLevel::Fast,
-        "best" | "max" | "b" | "3" => CompressionLevel::Best,
+        "high" | "h" | "3" => CompressionLevel::High,
+        "best" | "max" | "b" | "4" => CompressionLevel::Best,
         _ => CompressionLevel::Default,
     }
 }
@@ -782,11 +811,12 @@ fn cmd_compress(
                     eprintln!("Error reading public key '{}': {e}", key_path.display());
                     process::exit(1);
                 });
-                cpac_streaming::cpce::cpce_encrypt_pqc(&compressed_data, &pub_data)
-                    .unwrap_or_else(|e| {
+                cpac_streaming::cpce::cpce_encrypt_pqc(&compressed_data, &pub_data).unwrap_or_else(
+                    |e| {
                         eprintln!("PQC encryption failed: {e}");
                         process::exit(1);
-                    })
+                    },
+                )
             } else {
                 // Password mode
                 let password = std::env::var("CPAC_PASSWORD").unwrap_or_else(|_| {
@@ -944,7 +974,9 @@ fn cmd_decompress(
             Ok(inner) => inner,
             Err(e) => {
                 eprintln!("CPCE decryption failed for '{}': {e}", input.display());
-                eprintln!("Hint: Set CPAC_PASSWORD env var or provide --encrypt-key with secret key.");
+                eprintln!(
+                    "Hint: Set CPAC_PASSWORD env var or provide --encrypt-key with secret key."
+                );
                 process::exit(1);
             }
         }
@@ -1121,7 +1153,13 @@ fn cmd_list_backends() {
     println!("  zstd      Zstandard compression (default for most data)");
     println!("  brotli    Brotli compression (better for text)");
     println!("  gzip      Gzip/Deflate (RFC 1952, wide compatibility)");
-    println!("  lzma      LZMA/xz compression (maximum ratio, slow)");
+    println!("  lzma      LZMA compression (raw LZMA stream)");
+    println!("  xz        XZ container format (LZMA2)");
+    println!("  lz4       LZ4 compression (fast + HC modes)");
+    println!("  snappy    Snappy compression (no levels)");
+    println!("  lzham     LZHAM compression");
+    println!("  lizard    Lizard compression");
+    println!("  zlib-ng   zlib-ng compression");
 }
 
 fn cmd_list_domains() {
@@ -1148,6 +1186,7 @@ fn cmd_list_domains() {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::fn_params_excessive_bools)]
 fn cmd_benchmark(
     input: PathBuf,
     iterations: Option<usize>,
@@ -1155,21 +1194,22 @@ fn cmd_benchmark(
     full: bool,
     skip_baselines: bool,
     json: bool,
-    track1: bool,
+    _track1: bool,
     discovery: bool,
+    cli_backends: Option<Vec<String>>,
+    cli_levels: Option<Vec<String>>,
+    cli_baselines: Option<Vec<String>>,
 ) {
-    use cpac_engine::{BaselineEngine, BenchProfile, BenchmarkRunner};
+    use cpac_engine::{
+        matched_baselines, parse_compression_level, BenchProfile, BenchmarkRunner, StandaloneCodec,
+    };
 
-    // Determine profile
+    // Determine bench profile (iteration count)
     let profile = if quick {
         BenchProfile::Quick
     } else if full {
         BenchProfile::Full
-    } else if iterations.is_some() {
-        // Custom iterations via -n flag: use balanced as base
-        BenchProfile::Balanced
     } else {
-        // Default: balanced
         BenchProfile::Balanced
     };
 
@@ -1177,6 +1217,55 @@ fn cmd_benchmark(
     if skip_baselines {
         runner.skip_baselines = true;
     }
+
+    // Override backends from --backends flag
+    if let Some(ref names) = cli_backends {
+        let mut backends = Vec::new();
+        for name in names {
+            match parse_backend(name) {
+                Ok(b) => backends.push(b),
+                Err(e) => eprintln!("Warning: {e}"),
+            }
+        }
+        if !backends.is_empty() {
+            runner.backends = backends;
+        }
+    }
+
+    // Parse --levels (default: [Default])
+    let levels: Vec<CompressionLevel> = if let Some(ref names) = cli_levels {
+        names
+            .iter()
+            .filter_map(|s| {
+                let lvl = parse_compression_level(s);
+                if lvl.is_none() {
+                    eprintln!("Warning: unknown level '{s}', skipping");
+                }
+                lvl
+            })
+            .collect()
+    } else {
+        vec![CompressionLevel::Default]
+    };
+    let levels = if levels.is_empty() {
+        vec![CompressionLevel::Default]
+    } else {
+        levels
+    };
+
+    // Parse --baselines override (if provided, same for all levels)
+    let baselines_override: Option<Vec<StandaloneCodec>> = cli_baselines.as_ref().map(|labels| {
+        labels
+            .iter()
+            .filter_map(|l| {
+                let codec = StandaloneCodec::from_label(l);
+                if codec.is_none() {
+                    eprintln!("Warning: unknown baseline '{l}', skipping");
+                }
+                codec
+            })
+            .collect()
+    });
 
     // Override iterations if -n was provided
     let actual_iterations = iterations.unwrap_or_else(|| profile.iterations());
@@ -1199,85 +1288,112 @@ fn cmd_benchmark(
     println!("CPAC Benchmark ({mode_label} mode, {actual_iterations} iterations)");
     println!("File: {}\n", input.display());
 
-    // Benchmark CPAC backends
     let mut all_results = Vec::new();
-    for &backend in &runner.backends {
-        match runner.bench_file(&input, backend) {
+
+    // --- Per-level benchmark: CPAC backends + matched baselines ---
+    for &level in &levels {
+        let level_tag = format!("{level:?}");
+        if levels.len() > 1 {
+            println!("--- CPAC level: {level_tag} ---");
+        }
+
+        // CPAC backends at this level
+        for &backend in &runner.backends {
+            match runner.bench_file_with_level(&input, backend, Some(level)) {
+                Ok(result) => {
+                    let label = result.engine_label.clone();
+                    let ram_mb = result.peak_memory_bytes as f64 / 1_048_576.0;
+                    let ssr_tag = result.ssr_time.map_or(String::new(), |d| {
+                        format!("  SSR:{:.1}ms", d.as_secs_f64() * 1000.0)
+                    });
+                    println!(
+                        "  {:16}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  RAM: {:5.1} MB  verified: {}{}",
+                        label,
+                        result.ratio,
+                        result.compress_throughput_mbs,
+                        result.decompress_throughput_mbs,
+                        ram_mb,
+                        if result.lossless_verified { "YES" } else { "NO" },
+                        ssr_tag,
+                    );
+                    all_results.push(result);
+                }
+                Err(e) => eprintln!("  {:16}  ERROR: {}", format!("{backend:?}"), e),
+            }
+        }
+
+        // Matched standalone baselines (or override)
+        if !runner.skip_baselines {
+            println!();
+            let baselines = if let Some(ref over) = baselines_override {
+                over.clone()
+            } else {
+                matched_baselines(level)
+            };
+            for codec in &baselines {
+                match runner.bench_standalone(&input, codec) {
+                    Ok(result) => {
+                        let ram_mb = result.peak_memory_bytes as f64 / 1_048_576.0;
+                        println!(
+                            "  {:16}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  RAM: {:5.1} MB  verified: {}",
+                            result.engine_label,
+                            result.ratio,
+                            result.compress_throughput_mbs,
+                            result.decompress_throughput_mbs,
+                            ram_mb,
+                            if result.lossless_verified { "YES" } else { "NO" }
+                        );
+                        all_results.push(result);
+                    }
+                    Err(e) => eprintln!("  {:16}  ERROR: {}", codec.label(), e),
+                }
+            }
+        }
+
+        if levels.len() > 1 {
+            println!();
+        }
+    }
+
+    // Always run Track 1 (SSR auto) and Track 2 (SSR+MSN)
+    // Use the first requested level so auto-routing is compared fairly.
+    let auto_level = levels[0];
+    println!();
+    println!("  --- Track 1+2: SSR auto-routing (level: {auto_level:?}) ---");
+    for enable_msn in [false, true] {
+        match runner.bench_file_auto(&input, enable_msn, auto_level) {
             Ok(result) => {
+                let ram_mb = result.peak_memory_bytes as f64 / 1_048_576.0;
+                let ssr_tag = result.ssr_time.map_or(String::new(), |d| {
+                    format!("  SSR:{:.1}ms", d.as_secs_f64() * 1000.0)
+                });
                 println!(
-                    "  {:12}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  verified: {}",
+                    "  {:20}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  RAM: {:5.1} MB  verified: {}{}",
                     result.engine_label,
                     result.ratio,
                     result.compress_throughput_mbs,
                     result.decompress_throughput_mbs,
-                    if result.lossless_verified { "YES" } else { "NO" }
+                    ram_mb,
+                    if result.lossless_verified { "YES" } else { "NO" },
+                    ssr_tag,
                 );
                 all_results.push(result);
             }
-            Err(e) => eprintln!("  {:12}  ERROR: {}", format!("{:?}", backend), e),
-        }
-    }
-
-    // Benchmark baselines (if not skipped)
-    if !runner.skip_baselines {
-        println!();
-        let baselines = if quick {
-            &[BaselineEngine::Gzip9, BaselineEngine::Zstd3][..]
-        } else {
-            BaselineEngine::all()
-        };
-        for &engine in baselines {
-            match runner.bench_baseline(&input, engine) {
-                Ok(result) => {
-                    println!(
-                        "  {:12}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  verified: {}",
-                        result.engine_label,
-                        result.ratio,
-                        result.compress_throughput_mbs,
-                        result.decompress_throughput_mbs,
-                        if result.lossless_verified { "YES" } else { "NO" }
-                    );
-                    all_results.push(result);
-                }
-                Err(e) => eprintln!("  {:12}  ERROR: {}", engine.label(), e),
-            }
-        }
-    }
-
-    // Track 1: SSR auto-routing and SSR+MSN
-    if track1 {
-        println!();
-        for enable_msn in [false, true] {
-            match runner.bench_file_auto(&input, enable_msn) {
-                Ok(result) => {
-                    println!(
-                        "  {:20}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  verified: {}",
-                        result.engine_label,
-                        result.ratio,
-                        result.compress_throughput_mbs,
-                        result.decompress_throughput_mbs,
-                        if result.lossless_verified { "YES" } else { "NO" }
-                    );
-                    all_results.push(result);
-                }
-                Err(e) => eprintln!(
-                    "  Track1({})  ERROR: {}",
-                    if enable_msn { "MSN" } else { "SSR" },
-                    e
-                ),
-            }
+            Err(e) => eprintln!(
+                "  Track({})  ERROR: {}",
+                if enable_msn { "MSN" } else { "SSR" },
+                e
+            ),
         }
     }
 
     // Discovery: forced-T1 (MSN on every block) vs forced-T2 (MSN on no block).
-    // This reveals MSN's ceiling: what happens if we apply domain extraction everywhere,
-    // and MSN's floor: pure entropy coding with no semantic extraction.
     if discovery {
         use cpac_engine::Track;
         println!();
         println!("  --- Discovery: forced track override ---");
         for force_track in [Some(Track::Track2), Some(Track::Track1)] {
-            match runner.bench_file_forced_track(&input, force_track) {
+            match runner.bench_file_forced_track(&input, force_track, auto_level) {
                 Ok(result) => {
                     println!(
                         "  {:26}  ratio: {:5.2}x  compress: {:6.1} MB/s  decompress: {:6.1} MB/s  verified: {}",
@@ -1296,7 +1412,6 @@ fn cmd_benchmark(
 
     // Summary / JSON output
     if json {
-        // Machine-readable JSON output for automation.
         println!("[");
         for (i, r) in all_results.iter().enumerate() {
             let comma = if i + 1 < all_results.len() { "," } else { "" };
@@ -1865,8 +1980,8 @@ fn cmd_lab(action: LabAction) {
 // ---------------------------------------------------------------------------
 
 fn cmd_serve(listen: String, _metrics: bool) {
-    use std::net::TcpListener;
     use std::io::{BufRead, BufReader};
+    use std::net::TcpListener;
 
     let listener = TcpListener::bind(&listen).unwrap_or_else(|e| {
         eprintln!("Error binding to {listen}: {e}");
@@ -1998,7 +2113,9 @@ fn default_route(ext: &str) -> CompressConfig {
 }
 
 /// Load a YAML routes file mapping extensions to overrides.
-fn load_routes_file(path: &std::path::Path) -> Result<std::collections::HashMap<String, String>, String> {
+fn load_routes_file(
+    path: &std::path::Path,
+) -> Result<std::collections::HashMap<String, String>, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read routes file '{}': {e}", path.display()))?;
     // Simple YAML: ext: preset_name (one per line)
@@ -2066,7 +2183,11 @@ fn cmd_compress_batch(
         return;
     }
 
-    println!("CPAC Batch Compress: {} files, {} concurrent", files.len(), concurrency);
+    println!(
+        "CPAC Batch Compress: {} files, {} concurrent",
+        files.len(),
+        concurrency
+    );
 
     // Create output dir if needed
     if let Some(ref dir) = output_dir {
@@ -2258,7 +2379,15 @@ fn main() {
             streaming,
             encrypt_key,
         } => cmd_decompress(
-            input, output, force, keep, verbose, threads, mmap, streaming, encrypt_key,
+            input,
+            output,
+            force,
+            keep,
+            verbose,
+            threads,
+            mmap,
+            streaming,
+            encrypt_key,
         ),
         Commands::Info { input, host } => cmd_info(input, host),
         Commands::ListProfiles => cmd_list_profiles(),
@@ -2273,6 +2402,9 @@ fn main() {
             json,
             track1,
             discovery,
+            backends,
+            levels,
+            baselines,
         } => cmd_benchmark(
             input,
             iterations,
@@ -2282,6 +2414,9 @@ fn main() {
             json,
             track1,
             discovery,
+            backends,
+            levels,
+            baselines,
         ),
         Commands::Analyze { input } => cmd_analyze(input),
         Commands::Profile { input, quick } => cmd_profile(input, quick),
@@ -2296,7 +2431,11 @@ fn main() {
             output,
             algorithm,
         } => cmd_decrypt(input, output, algorithm),
-        Commands::ArchiveCreate { input, output, solid } => cmd_archive_create(input, output, solid),
+        Commands::ArchiveCreate {
+            input,
+            output,
+            solid,
+        } => cmd_archive_create(input, output, solid),
         Commands::ArchiveExtract { input, output } => cmd_archive_extract(input, output),
         Commands::ArchiveList { input } => cmd_archive_list(input),
         Commands::Serve { listen, metrics } => cmd_serve(listen, metrics),
@@ -2309,7 +2448,16 @@ fn main() {
             dict,
             routes,
             verbose,
-        } => cmd_compress_batch(input, output, force, threads, concurrency, dict, routes, verbose),
+        } => cmd_compress_batch(
+            input,
+            output,
+            force,
+            threads,
+            concurrency,
+            dict,
+            routes,
+            verbose,
+        ),
         Commands::Pqc { action } => cmd_pqc(action),
         Commands::Lab { action } => cmd_lab(action),
         Commands::Completions { shell } => cmd_completions(shell),

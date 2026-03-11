@@ -85,21 +85,30 @@ fn build_trial_configs(quick: bool) -> Vec<(String, CompressConfig)> {
         // Default CPAC pipeline
         ("cpac-default".to_string(), CompressConfig::default()),
         // Default with MSN enabled
-        ("cpac-msn".to_string(), CompressConfig {
-            enable_msn: true,
-            ..Default::default()
-        }),
+        (
+            "cpac-msn".to_string(),
+            CompressConfig {
+                enable_msn: true,
+                ..Default::default()
+            },
+        ),
         // Default with smart transforms
-        ("cpac-smart".to_string(), CompressConfig {
-            enable_smart_transforms: true,
-            ..Default::default()
-        }),
+        (
+            "cpac-smart".to_string(),
+            CompressConfig {
+                enable_smart_transforms: true,
+                ..Default::default()
+            },
+        ),
         // Smart + MSN combined
-        ("cpac-smart+msn".to_string(), CompressConfig {
-            enable_smart_transforms: true,
-            enable_msn: true,
-            ..Default::default()
-        }),
+        (
+            "cpac-smart+msn".to_string(),
+            CompressConfig {
+                enable_smart_transforms: true,
+                enable_msn: true,
+                ..Default::default()
+            },
+        ),
     ];
 
     // Backend-specific trials
@@ -108,60 +117,84 @@ fn build_trial_configs(quick: bool) -> Vec<(String, CompressConfig)> {
         ("brotli-6", Backend::Brotli),
         ("gzip-6", Backend::Gzip),
     ] {
-        trials.push((label.to_string(), CompressConfig {
-            backend: Some(backend),
-            ..Default::default()
-        }));
+        trials.push((
+            label.to_string(),
+            CompressConfig {
+                backend: Some(backend),
+                ..Default::default()
+            },
+        ));
     }
 
     if !quick {
         // Higher compression level trials
-        trials.push(("zstd-high".to_string(), CompressConfig {
-            backend: Some(Backend::Zstd),
-            level: CompressionLevel::High,
-            ..Default::default()
-        }));
+        trials.push((
+            "zstd-high".to_string(),
+            CompressConfig {
+                backend: Some(Backend::Zstd),
+                level: CompressionLevel::High,
+                ..Default::default()
+            },
+        ));
 
-        trials.push(("zstd-best".to_string(), CompressConfig {
-            backend: Some(Backend::Zstd),
-            level: CompressionLevel::Best,
-            ..Default::default()
-        }));
+        trials.push((
+            "zstd-best".to_string(),
+            CompressConfig {
+                backend: Some(Backend::Zstd),
+                level: CompressionLevel::Best,
+                ..Default::default()
+            },
+        ));
 
-        trials.push(("brotli-best".to_string(), CompressConfig {
-            backend: Some(Backend::Brotli),
-            level: CompressionLevel::Best,
-            ..Default::default()
-        }));
+        trials.push((
+            "brotli-best".to_string(),
+            CompressConfig {
+                backend: Some(Backend::Brotli),
+                level: CompressionLevel::Best,
+                ..Default::default()
+            },
+        ));
 
         // Force Track 1 (MSN on every block)
-        trials.push(("force-track1".to_string(), CompressConfig {
-            enable_msn: true,
-            force_track: Some(Track::Track1),
-            ..Default::default()
-        }));
+        trials.push((
+            "force-track1".to_string(),
+            CompressConfig {
+                enable_msn: true,
+                force_track: Some(Track::Track1),
+                ..Default::default()
+            },
+        ));
 
         // Force Track 2 (bypass MSN)
-        trials.push(("force-track2".to_string(), CompressConfig {
-            force_track: Some(Track::Track2),
-            ..Default::default()
-        }));
+        trials.push((
+            "force-track2".to_string(),
+            CompressConfig {
+                force_track: Some(Track::Track2),
+                ..Default::default()
+            },
+        ));
 
         // Preset-like: Maximum (all features on)
-        trials.push(("preset-maximum".to_string(), CompressConfig {
-            enable_smart_transforms: true,
-            enable_msn: true,
-            level: CompressionLevel::High,
-            ..Default::default()
-        }));
+        trials.push((
+            "preset-maximum".to_string(),
+            CompressConfig {
+                enable_smart_transforms: true,
+                enable_msn: true,
+                level: CompressionLevel::High,
+                ..Default::default()
+            },
+        ));
 
         // Preset-like: Archive (max ratio)
-        trials.push(("preset-archive".to_string(), CompressConfig {
-            enable_smart_transforms: true,
-            enable_msn: true,
-            level: CompressionLevel::Best,
-            ..Default::default()
-        }));
+        trials.push((
+            "preset-archive".to_string(),
+            CompressConfig {
+                enable_smart_transforms: true,
+                enable_msn: true,
+                level: CompressionLevel::Best,
+                ..Default::default()
+            },
+        ));
     }
 
     trials
@@ -177,11 +210,7 @@ fn build_trial_configs(quick: bool) -> Vec<(String, CompressConfig)> {
 /// * `data` — file contents
 /// * `filename` — optional filename for extension-based detection
 /// * `quick` — if true, run fewer trials (faster but less thorough)
-pub fn profile_file(
-    data: &[u8],
-    filename: Option<&str>,
-    quick: bool,
-) -> CpacResult<ProfileResult> {
+pub fn profile_file(data: &[u8], filename: Option<&str>, quick: bool) -> CpacResult<ProfileResult> {
     let original_size = data.len();
 
     // SSR analysis
@@ -235,7 +264,11 @@ pub fn profile_file(
     }
 
     // Sort trials by ratio (best first)
-    trials.sort_by(|a, b| b.ratio.partial_cmp(&a.ratio).unwrap_or(std::cmp::Ordering::Equal));
+    trials.sort_by(|a, b| {
+        b.ratio
+            .partial_cmp(&a.ratio)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Gap analysis: compare default vs best
     let default_trial = trials.iter().find(|t| t.label == "cpac-default");
@@ -342,11 +375,11 @@ fn generate_recommendations(
     if let Some(ref g) = gap {
         if g.gap_pct > 5.0 {
             recs.push(Recommendation {
-                action: format!(
-                    "Switch to '{}' pipeline for this file type",
-                    g.best_label
+                action: format!("Switch to '{}' pipeline for this file type", g.best_label),
+                expected_gain: format!(
+                    "{:+.1}% ({:.2}x → {:.2}x)",
+                    g.gap_pct, g.current_ratio, g.best_ratio
                 ),
-                expected_gain: format!("{:+.1}% ({:.2}x → {:.2}x)", g.gap_pct, g.current_ratio, g.best_ratio),
                 confidence: 0.95,
             });
         }
@@ -376,10 +409,7 @@ pub fn format_profile_result(result: &ProfileResult) -> String {
         result.original_size,
         result.original_size as f64 / 1024.0
     ));
-    out.push_str(&format!(
-        "Entropy:     {:.2} bits/byte\n",
-        result.entropy
-    ));
+    out.push_str(&format!("Entropy:     {:.2} bits/byte\n", result.entropy));
     out.push_str(&format!(
         "ASCII ratio: {:.1}%\n",
         result.ascii_ratio * 100.0

@@ -1,0 +1,11 @@
+[package]
+name = "cpac-lzham-sys"
+description = "Vendored LZHAM C++ source compiled via cc — no cmake required"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+links = "lzham"
+
+[build-dependencies]
+cc = { workspace = true }

@@ -91,7 +91,7 @@ Key metrics:
 
 ### Step 3: Add a Corpus Config
 
-Create `benches/corpora/corpus_my_format.yaml`:
+Create `benches/cpac/corpora/corpus_my_format.yaml`:
 
 ```yaml
 id: my_format
@@ -117,7 +117,7 @@ If MSN showed improvement in Step 1, add a domain detector in `crates/cpac-msn/`
 
 ```bash
 # Create a benchmark profile including your format
-# Add to benches/cpac-profiles/profile_balanced.yaml corpora list
+# Add to benches/cpac/profiles/profile_balanced.yaml corpora list
 
 # Run benchmarks
 shell.ps1 benchmark-all --profile balanced

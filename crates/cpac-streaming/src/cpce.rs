@@ -64,7 +64,7 @@ pub fn cpce_encrypt_password(
         + 1 + salt.len()      // salt_len + salt
         + 1 + nonce.len()     // nonce_len + nonce
         + 8                   // payload_len
-        + ciphertext.len();   // encrypted payload
+        + ciphertext.len(); // encrypted payload
 
     let mut out = Vec::with_capacity(total);
     out.extend_from_slice(CPCE_MAGIC);
@@ -142,16 +142,21 @@ pub fn cpce_encrypt_pqc(
     }
     let cphe_version = cphe_data[4];
     let data_start: usize = match cphe_version {
-        cpac_crypto::hybrid::CPHE_VERSION => 8,     // v2: 3 algo-ID bytes after version
-        cpac_crypto::hybrid::CPHE_VERSION_V1 => 5,  // v1: data right after version
-        _ => return Err(CpacError::Encryption(format!("unsupported CPHE version {cphe_version}"))),
+        cpac_crypto::hybrid::CPHE_VERSION => 8, // v2: 3 algo-ID bytes after version
+        cpac_crypto::hybrid::CPHE_VERSION_V1 => 5, // v1: data right after version
+        _ => {
+            return Err(CpacError::Encryption(format!(
+                "unsupported CPHE version {cphe_version}"
+            )))
+        }
     };
     if cphe_data.len() < data_start + 34 {
         return Err(CpacError::Encryption("CPHE output too short".into()));
     }
     let eph_pub = &cphe_data[data_start..data_start + 32];
     let ct_len_off = data_start + 32;
-    let mlkem_ct_len = u16::from_le_bytes([cphe_data[ct_len_off], cphe_data[ct_len_off + 1]]) as usize;
+    let mlkem_ct_len =
+        u16::from_le_bytes([cphe_data[ct_len_off], cphe_data[ct_len_off + 1]]) as usize;
     let mlkem_ct_end = ct_len_off + 2 + mlkem_ct_len;
     if cphe_data.len() < mlkem_ct_end + 1 {
         return Err(CpacError::Encryption("CPHE truncated".into()));
@@ -169,7 +174,7 @@ pub fn cpce_encrypt_pqc(
         + 2 + mlkem_ct.len()  // mlkem_ct_len + mlkem_ct
         + 1 + nonce.len()     // nonce_len + nonce
         + 8                   // payload_len
-        + ciphertext.len();   // encrypted payload
+        + ciphertext.len(); // encrypted payload
 
     let mut out = Vec::with_capacity(total);
     out.extend_from_slice(CPCE_MAGIC);
@@ -201,7 +206,9 @@ pub fn cpce_decrypt_pqc(cpce_data: &[u8], secret_key: &[u8]) -> CpacResult<Vec<u
 
     // Parse ephemeral X25519 public key
     if offset + 32 > cpce_data.len() {
-        return Err(CpacError::Encryption("truncated ephemeral public key".into()));
+        return Err(CpacError::Encryption(
+            "truncated ephemeral public key".into(),
+        ));
     }
     let eph_pub = &cpce_data[offset..offset + 32];
 
@@ -249,7 +256,8 @@ pub fn cpce_decrypt_pqc(cpce_data: &[u8], secret_key: &[u8]) -> CpacResult<Vec<u
     let mut ikm = Vec::with_capacity(32 + mlkem_ss.len());
     ikm.extend_from_slice(&x_shared);
     ikm.extend_from_slice(&mlkem_ss);
-    let combined_key = cpac_crypto::kdf::derive_key_hkdf(&ikm, b"CPHE-hybrid-salt", b"CPHE-hybrid-v1")?;
+    let combined_key =
+        cpac_crypto::kdf::derive_key_hkdf(&ikm, b"CPHE-hybrid-salt", b"CPHE-hybrid-v1")?;
 
     // Parse nonce + payload and decrypt
     parse_nonce_and_decrypt(cpce_data, mlkem_ct_end, algo, |nonce, ciphertext| {
@@ -462,12 +470,9 @@ mod tests {
         let compressed = cpac_engine::compress(original, &config).unwrap();
 
         let password = b"compress-encrypt-test";
-        let encrypted = cpce_encrypt_password(
-            &compressed.data,
-            password,
-            AeadAlgorithm::ChaCha20Poly1305,
-        )
-        .unwrap();
+        let encrypted =
+            cpce_encrypt_password(&compressed.data, password, AeadAlgorithm::ChaCha20Poly1305)
+                .unwrap();
         assert!(is_cpce(&encrypted));
 
         // Decrypt then decompress

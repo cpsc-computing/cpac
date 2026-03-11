@@ -31,9 +31,9 @@ const DEDUP_MAGIC: &[u8; 2] = b"DD";
 const DEDUP_VERSION: u8 = 1;
 
 /// Default CDC parameters.
-const DEFAULT_MIN_CHUNK: usize = 4 * 1024;       // 4 KB
-const DEFAULT_AVG_CHUNK: usize = 64 * 1024;      // 64 KB
-const DEFAULT_MAX_CHUNK: usize = 1024 * 1024;    // 1 MB
+const DEFAULT_MIN_CHUNK: usize = 4 * 1024; // 4 KB
+const DEFAULT_AVG_CHUNK: usize = 64 * 1024; // 64 KB
+const DEFAULT_MAX_CHUNK: usize = 1024 * 1024; // 1 MB
 
 // Gear-hash parameters
 const _GEAR_MASK: u64 = (1u64 << 16) - 1; // ~64 KB average (reserved)
@@ -71,7 +71,9 @@ fn gear_table() -> &'static [u64; 256] {
                 }
                 if idx + 1 < 256 {
                     // Second half of the block
-                    table[idx + 1] = table[idx].wrapping_mul(0x517cc1b727220a95).wrapping_add(i as u64);
+                    table[idx + 1] = table[idx]
+                        .wrapping_mul(0x517cc1b727220a95)
+                        .wrapping_add(i as u64);
                 }
             }
         }

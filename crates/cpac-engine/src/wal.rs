@@ -212,7 +212,9 @@ impl<R: Read> WalReader<R> {
         // seq(8) + ts(8) + key_len(2)
         let mut buf = [0u8; 18];
         if self.inner.read_exact(&mut buf).is_err() {
-            return Some(Err(CpacError::InvalidFrame("truncated entry header".into())));
+            return Some(Err(CpacError::InvalidFrame(
+                "truncated entry header".into(),
+            )));
         }
         let seq = u64::from_le_bytes(buf[0..8].try_into().unwrap());
         let ts = u64::from_le_bytes(buf[8..16].try_into().unwrap());

@@ -10,4 +10,12 @@ cpac-types = { workspace = true }
 zstd = { workspace = true }
 brotli = { workspace = true }
 flate2 = { workspace = true }
-lzma-rs = { workspace = true }
+xz2 = { workspace = true }
+snap = { workspace = true }
+lzzzz = { workspace = true }
+cpac-lzham-sys = { workspace = true }
+libz-ng-sys = { workspace = true }
+cpac-lizard-sys = { workspace = true }
+
+[features]
+default = []

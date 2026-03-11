@@ -277,10 +277,57 @@ CPAC supports five entropy coding backends:
 
 ### LZMA (Backend ID: 0x04)
 
-- Implementation: `lzma-rs` crate (pure Rust, xz format)
+- Implementation: `xz2` crate (wraps liblzma)
 - Compression presets: 0-9 (default: 6)
-- Features: high compression ratios, dictionary-based
+- Features: high compression ratios, dictionary-based, full level control
 - Use case: maximum compression, archival, slow decompression acceptable
+
+### XZ (Backend ID: 0x05)
+
+- Implementation: `xz2` crate (wraps liblzma, XZ container format)
+- Compression presets: 0-9 (default: 6 at all CPAC levels)
+- Features: LZMA2 algorithm with XZ framing, CRC checksums
+- Use case: archival, maximum compression with standardized container
+
+### LZ4 (Backend ID: 0x06)
+
+- Implementation: `lz4_flex` crate (pure Rust)
+- Features: block-level compression with prepended size
+- Use case: maximum throughput, real-time compression/decompression
+
+### Snappy (Backend ID: 0x07)
+
+- Implementation: `snap` crate (pure Rust)
+- Features: single-speed compression, no level control
+- Use case: lowest latency, hot-path data, real-time streaming
+
+### LZHAM (Backend ID: 0x08)
+
+- Implementation: `lzham` crate (FFI to C++)
+- Compression levels: 0-4 (FASTEST to UBER)
+- Features: high compression ratios, dictionary-based
+- Use case: high-ratio archival, offline compression
+
+### Lizard (Backend ID: 0x09)
+
+- Implementation: vendored C source via `cc` crate
+- Compression levels: 10-49 across 4 modes (fastLZ4, LIZv1, +Huffman variants)
+- Features: LZ4-derivative with optional Huffman entropy coding
+- Use case: tunable speed/ratio tradeoff
+
+### zlib-ng (Backend ID: 0x0A)
+
+- Implementation: `libz-ng-sys` crate (FFI to zlib-ng)
+- Compression levels: 1-9
+- Features: gzip-compatible output with optimized zlib-ng engine
+- Use case: gzip-compatible compression with better performance
+
+### OpenZL (Backend ID: 0x0B)
+
+- Implementation: delegates to Zstd (future: OpenZL C++ DAG via FFI)
+- Compression levels: same as Zstd (1-19)
+- Features: CPAC datacenter compression initiative
+- Use case: datacenter workloads, managed compression
 
 ### Raw (Backend ID: 0x00)
 

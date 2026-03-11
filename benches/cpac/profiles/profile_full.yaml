@@ -1,0 +1,35 @@
+# Full benchmark profile — comprehensive evaluation (~2+ GB, 30-60 min)
+# All major corpora including cloud, database, and large text datasets.
+# Uses larger variants (enwik9) where available.
+
+id: full
+description: "Comprehensive benchmark using all major corpora with larger variants"
+
+corpora:
+  - canterbury
+  - calgary
+  - silesia
+  - enwik9
+  - loghub2_2k
+  - loghub2_full
+  - kodak
+  - nasa_logs
+  - digitalcorpora
+  - cloud_configs
+  - docker_layers
+  - database_dumps
+  - json_apis
+  - github_events_large
+  - musan
+  - vctk
+  - librispeech
+
+iterations: 10
+timeout_seconds: 600
+track1: true
+skip_baselines: false
+
+# Backend and level configuration
+backends: [zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl, raw]
+cpac_levels: [ultrafast, fast, default, high, best]   # baselines auto-matched per level
+discovery: false

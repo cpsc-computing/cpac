@@ -21,6 +21,7 @@ pub const TRANSFORM_ID: u8 = 17;
 
 /// Normalization mode flags.
 const MODE_JSON_WS: u8 = 0x01;
+const MODE_XML_WS: u8 = 0x02;
 
 // ---------------------------------------------------------------------------
 // Core encode/decode
@@ -101,6 +102,68 @@ fn normalize_json_whitespace(data: &[u8]) -> (Vec<u8>, Vec<NormDiff>) {
     }
 
     (out, diffs)
+}
+
+/// Normalize an XML byte stream by removing whitespace-only text nodes
+/// (whitespace between `>` and `<`).  This targets pretty-printed XML where
+/// indentation and blank lines between tags are redundant.
+fn normalize_xml_whitespace(data: &[u8]) -> (Vec<u8>, Vec<NormDiff>) {
+    let mut out = Vec::with_capacity(data.len());
+    let mut diffs = Vec::new();
+    let mut i = 0;
+
+    while i < data.len() {
+        // After a '>', scan for whitespace-only gap before '<'
+        if data[i] == b'>' {
+            out.push(b'>');
+            i += 1;
+            // Scan ahead for whitespace-only text node
+            let ws_start = i;
+            let mut j = i;
+            while j < data.len()
+                && (data[j] == b' ' || data[j] == b'\t' || data[j] == b'\n' || data[j] == b'\r')
+            {
+                j += 1;
+            }
+            // Only strip if the whitespace ends at '<' (pure inter-tag gap)
+            if j > ws_start && j < data.len() && data[j] == b'<' {
+                diffs.push(NormDiff {
+                    offset: ws_start as u32,
+                    removed: data[ws_start..j].to_vec(),
+                });
+                i = j; // skip the whitespace, next char is '<'
+            }
+            // else: whitespace followed by text content — keep it
+        } else {
+            out.push(data[i]);
+            i += 1;
+        }
+    }
+
+    (out, diffs)
+}
+
+/// Pick the best normalization mode for the input data.
+///
+/// Tries JSON whitespace stripping first (effective on JSON/YAML), then XML
+/// whitespace stripping (effective on pretty-printed XML).  Returns the mode
+/// that produces the largest reduction, or `None` if neither helps.
+fn best_normalize_mode(data: &[u8]) -> Option<(Vec<u8>, Vec<NormDiff>, u8)> {
+    let (json_norm, json_diffs) = normalize_json_whitespace(data);
+    let json_savings = data.len().saturating_sub(json_norm.len());
+
+    let (xml_norm, xml_diffs) = normalize_xml_whitespace(data);
+    let xml_savings = data.len().saturating_sub(xml_norm.len());
+
+    if json_savings == 0 && xml_savings == 0 {
+        return None;
+    }
+
+    if json_savings >= xml_savings {
+        Some((json_norm, json_diffs, MODE_JSON_WS))
+    } else {
+        Some((xml_norm, xml_diffs, MODE_XML_WS))
+    }
 }
 
 /// Serialize diffs to metadata bytes.
@@ -231,19 +294,29 @@ impl TransformNode for NormalizeTransform {
     fn encode(&self, input: CpacType, _ctx: &TransformContext) -> CpacResult<(CpacType, Vec<u8>)> {
         match input {
             CpacType::Serial(data) => {
-                let (normalized, diffs) = normalize_json_whitespace(&data);
-                if normalized.len() < data.len() {
-                    let meta = encode_diffs(data.len(), MODE_JSON_WS, &diffs);
-                    // Guard: DAG descriptor uses u16 for per-step metadata length.
-                    // If metadata exceeds that limit, passthrough to avoid truncation.
-                    if meta.len() > u16::MAX as usize {
-                        return Ok((CpacType::Serial(data), Vec::new()));
-                    }
-                    Ok((CpacType::Serial(normalized), meta))
-                } else {
-                    // No benefit — passthrough
-                    Ok((CpacType::Serial(data), Vec::new()))
+                let best = best_normalize_mode(&data);
+                let (normalized, diffs, mode) = match best {
+                    Some(b) => b,
+                    None => return Ok((CpacType::Serial(data), Vec::new())),
+                };
+                let raw_savings = data.len().saturating_sub(normalized.len());
+                if raw_savings == 0 {
+                    return Ok((CpacType::Serial(data), Vec::new()));
                 }
+                // Estimate descriptor overhead before encoding:
+                // each diff = 4B offset + 2B len + removed bytes.
+                // Gate: if estimated descriptor > 50% of raw savings,
+                // the transform is net-negative after entropy coding.
+                let estimated_meta: usize = 9 + diffs.iter().map(|d| 6 + d.removed.len()).sum::<usize>();
+                if estimated_meta > raw_savings / 2 {
+                    return Ok((CpacType::Serial(data), Vec::new()));
+                }
+                let meta = encode_diffs(data.len(), mode, &diffs);
+                // Guard: DAG descriptor uses u16 for per-step metadata length.
+                if meta.len() > u16::MAX as usize {
+                    return Ok((CpacType::Serial(data), Vec::new()));
+                }
+                Ok((CpacType::Serial(normalized), meta))
             }
             _ => Err(CpacError::Transform(
                 "normalize: unsupported input type".into(),

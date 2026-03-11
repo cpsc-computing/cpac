@@ -115,7 +115,11 @@ pub fn hybrid_sign(
     let ed_sig = ed25519_sign(&ed_sk, message);
 
     // ML-DSA-65
-    let mldsa_sig = crate::pqc::pqc_sign(message, mldsa_signing_key, crate::pqc::PqcAlgorithm::MlDsa65)?;
+    let mldsa_sig = crate::pqc::pqc_sign(
+        message,
+        mldsa_signing_key,
+        crate::pqc::PqcAlgorithm::MlDsa65,
+    )?;
 
     // Build CPHS frame
     let total = 4 + 1 + 64 + 4 + mldsa_sig.len();
@@ -137,15 +141,16 @@ pub fn hybrid_verify(
     mldsa_verifying_key: &[u8],
 ) -> cpac_types::CpacResult<bool> {
     if cphs_data.len() < 4 + 1 + 64 + 4 {
-        return Err(cpac_types::CpacError::Encryption("CPHS data too short".into()));
+        return Err(cpac_types::CpacError::Encryption(
+            "CPHS data too short".into(),
+        ));
     }
     if &cphs_data[..4] != CPHS_MAGIC || cphs_data[4] != CPHS_VERSION {
         return Err(cpac_types::CpacError::Encryption("not a CPHS frame".into()));
     }
     let ed_sig = &cphs_data[5..69];
-    let mldsa_sig_len = u32::from_le_bytes([
-        cphs_data[69], cphs_data[70], cphs_data[71], cphs_data[72],
-    ]) as usize;
+    let mldsa_sig_len =
+        u32::from_le_bytes([cphs_data[69], cphs_data[70], cphs_data[71], cphs_data[72]]) as usize;
     if cphs_data.len() < 73 + mldsa_sig_len {
         return Err(cpac_types::CpacError::Encryption("CPHS truncated".into()));
     }
@@ -155,8 +160,9 @@ pub fn hybrid_verify(
     let vk_bytes: [u8; 32] = ed_verifying_key
         .try_into()
         .map_err(|_| cpac_types::CpacError::Encryption("invalid Ed25519 verifying key".into()))?;
-    let vk = VerifyingKey::from_bytes(&vk_bytes)
-        .map_err(|e| cpac_types::CpacError::Encryption(format!("bad Ed25519 verifying key: {e}")))?;
+    let vk = VerifyingKey::from_bytes(&vk_bytes).map_err(|e| {
+        cpac_types::CpacError::Encryption(format!("bad Ed25519 verifying key: {e}"))
+    })?;
     if !ed25519_verify(&vk, message, ed_sig) {
         return Ok(false);
     }

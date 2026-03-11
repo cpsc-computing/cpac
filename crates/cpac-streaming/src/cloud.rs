@@ -132,9 +132,8 @@ impl FileTarget {
 
 impl CloudTarget for FileTarget {
     fn begin(&mut self) -> CpacResult<()> {
-        let f = std::fs::File::create(&self.path).map_err(|e| {
-            CpacError::IoError(format!("failed to create {}: {e}", self.path))
-        })?;
+        let f = std::fs::File::create(&self.path)
+            .map_err(|e| CpacError::IoError(format!("failed to create {}: {e}", self.path)))?;
         self.writer = Some(f);
         Ok(())
     }
@@ -255,10 +254,7 @@ pub mod s3 {
                         .send(),
                 )
                 .map_err(|e| CpacError::Other(format!("S3 upload_part: {e}")))?;
-            let etag = resp
-                .e_tag()
-                .unwrap_or_default()
-                .to_string();
+            let etag = resp.e_tag().unwrap_or_default().to_string();
             self.parts.push((pn, etag));
             self.buffer.clear();
             Ok(())

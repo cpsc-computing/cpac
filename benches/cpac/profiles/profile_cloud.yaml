@@ -1,0 +1,21 @@
+# Cloud benchmark profile — focused on cloud infrastructure configs
+# Covers K8s manifests, CloudFormation, Terraform, Helm charts, OTel, Prometheus
+
+id: cloud
+description: "Cloud infrastructure benchmark: JSON/YAML/HCL configs, IaC templates, K8s manifests"
+
+corpora:
+  - cloud_configs
+  - cloud_benchmark
+
+iterations: 3
+timeout_seconds: 900
+large_file_threshold_mb: 50
+large_file_iterations: 1
+track1: true
+skip_baselines: false
+
+# Backend and level configuration
+backends: [zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl, raw]
+cpac_levels: [ultrafast, fast, default, high, best]   # baselines auto-matched per level
+discovery: false

@@ -151,10 +151,8 @@ impl JsonDomain {
         for &(start, end) in &positions {
             *freq.entry(&data[start..end]).or_insert(0) += 1;
         }
-        let mut repeated: Vec<(&[u8], usize)> = freq
-            .into_iter()
-            .filter(|(_, count)| *count >= 2)
-            .collect();
+        let mut repeated: Vec<(&[u8], usize)> =
+            freq.into_iter().filter(|(_, count)| *count >= 2).collect();
         repeated.sort_by(|a, b| b.1.cmp(&a.1));
 
         let mut total_savings: usize = 0;
@@ -185,10 +183,8 @@ impl JsonDomain {
         }
 
         // Build dedup map: repeated keys sorted by frequency (descending).
-        let mut repeated: Vec<(Vec<u8>, usize)> = freq
-            .into_iter()
-            .filter(|(_, count)| *count >= 2)
-            .collect();
+        let mut repeated: Vec<(Vec<u8>, usize)> =
+            freq.into_iter().filter(|(_, count)| *count >= 2).collect();
         repeated.sort_by(|a, b| b.1.cmp(&a.1));
 
         // Map: original key bytes (with quotes) → index
@@ -248,10 +244,7 @@ impl JsonDomain {
     }
 
     /// Reconstruct single-doc JSON from key-dedup residual.
-    fn reconstruct_single_keydedup(
-        residual: &[u8],
-        field_names: &[String],
-    ) -> CpacResult<Vec<u8>> {
+    fn reconstruct_single_keydedup(residual: &[u8], field_names: &[String]) -> CpacResult<Vec<u8>> {
         // Scan the residual for token key positions and replace back.
         let positions = Self::scan_json_key_positions(residual);
         let mut output = residual.to_vec();
@@ -268,7 +261,7 @@ impl JsonDomain {
         restore_positions.sort_by(|a, b| b.0.cmp(&a.0)); // reverse order
 
         for (start, end, idx) in restore_positions {
-            let original_key = format!("\"{}\"" , field_names[idx]);
+            let original_key = format!("\"{}\"", field_names[idx]);
             output.splice(start..end, original_key.bytes());
         }
 
@@ -353,11 +346,7 @@ impl JsonDomain {
         if !hex.iter().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
-        usize::from_str_radix(
-            std::str::from_utf8(hex).ok()?,
-            16,
-        )
-        .ok()
+        usize::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()
     }
 
     /// Build a columnar residual from parsed JSONL rows.
@@ -558,6 +547,96 @@ impl JsonDomain {
         Ok(output)
     }
 
+    /// Internal: extract a single-document JSON array of objects into columnar
+    /// format.  This gives huge compression wins for files like `[{"a":1},{"a":2}]`
+    /// by transposing rows → columns (same transform used for JSONL).
+    fn extract_single_array(data: &[u8]) -> CpacResult<ExtractionResult> {
+        // Quick pre-check: only apply if serde roundtrip preserves the exact bytes.
+        // This rejects pretty-printed JSON where serde_json::to_vec would lose whitespace.
+        let parsed: Value = serde_json::from_slice(data)
+            .map_err(|e| CpacError::CompressFailed(format!("text.json array parse: {e}")))?;
+        let reser = serde_json::to_vec(&parsed)
+            .map_err(|e| CpacError::CompressFailed(format!("text.json roundtrip: {e}")))?;
+        if reser.len() != data.len() || reser != data {
+            return Err(CpacError::CompressFailed(
+                "text.json: single_array roundtrip mismatch (whitespace?)".into(),
+            ));
+        }
+        let rows = match &parsed {
+            Value::Array(arr) if arr.len() >= 2 => arr,
+            _ => {
+                return Err(CpacError::CompressFailed(
+                    "text.json: not an array or too few elements".into(),
+                ));
+            }
+        };
+        // At least half the elements must be objects for columnar to be useful.
+        let obj_count = rows.iter().filter(|v| v.is_object()).count();
+        if obj_count < rows.len() / 2 {
+            return Err(CpacError::CompressFailed(
+                "text.json: array elements are not objects".into(),
+            ));
+        }
+        // Collect field names in first-occurrence order.
+        let mut field_names: Vec<String> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        for val in rows {
+            if let Value::Object(map) = val {
+                for key in map.keys() {
+                    if seen.insert(key.clone()) {
+                        field_names.push(key.clone());
+                    }
+                }
+            }
+        }
+        if field_names.is_empty() {
+            return Err(CpacError::CompressFailed(
+                "text.json: no fields found in array objects".into(),
+            ));
+        }
+        let residual = Self::build_columnar_residual(rows, &field_names)?;
+        let mut fields = HashMap::new();
+        fields.insert(
+            "field_names".to_string(),
+            Value::Array(field_names.into_iter().map(Value::String).collect()),
+        );
+        fields.insert(
+            "format".to_string(),
+            Value::String("single_array".to_string()),
+        );
+        fields.insert(
+            "original_size".to_string(),
+            Value::Number(data.len().into()),
+        );
+        Ok(ExtractionResult {
+            fields,
+            residual,
+            metadata: HashMap::new(),
+            domain_id: "text.json".to_string(),
+        })
+    }
+
+    /// Reconstruct a JSON array from columnar residual.
+    fn reconstruct_single_array(
+        residual: &[u8],
+        field_names: &[String],
+    ) -> CpacResult<Vec<u8>> {
+        // Reuse the columnar reconstruction to get JSONL rows, then wrap in array.
+        let jsonl_bytes =
+            Self::reconstruct_columnar(residual, field_names, /* trailing_newline */ false)?;
+        // Parse JSONL rows back into values and serialize as a JSON array.
+        let rows: Vec<Value> = jsonl_bytes
+            .split(|&b| b == b'\n')
+            .filter(|l| !l.is_empty())
+            .map(|l| {
+                serde_json::from_slice(l)
+                    .map_err(|e| CpacError::DecompressFailed(format!("text.json row parse: {e}")))
+            })
+            .collect::<CpacResult<Vec<Value>>>()?;
+        serde_json::to_vec(&Value::Array(rows))
+            .map_err(|e| CpacError::DecompressFailed(format!("text.json array serialize: {e}")))
+    }
+
     /// Internal: extract JSONL (newline-delimited JSON) blocks using columnar layout.
     ///
     /// Strict: any non-empty line that fails JSON parsing causes this to return
@@ -583,6 +662,12 @@ impl JsonDomain {
                 "text.json: data is not valid JSON or JSONL".into(),
             ));
         }
+        // JSONL must have at least 2 lines (otherwise it's single-doc JSON, not JSONL).
+        if lines.len() < 2 {
+            return Err(CpacError::CompressFailed(
+                "text.json: single line is not JSONL".into(),
+            ));
+        }
         // Collect field names in first-occurrence document order to preserve JSON key ordering.
         let mut repeated_fields: Vec<String> = Vec::new();
         {
@@ -596,6 +681,11 @@ impl JsonDomain {
                     }
                 }
             }
+        }
+        if repeated_fields.is_empty() {
+            return Err(CpacError::CompressFailed(
+                "text.json: no object fields found in JSONL lines".into(),
+            ));
         }
         // Build columnar residual.
         let residual = Self::build_columnar_residual(&lines, &repeated_fields)?;
@@ -649,18 +739,25 @@ impl Domain for JsonDomain {
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("json"))
             {
-                // Check if it's JSONL in a .json file (first line = valid JSON object)
+                // Check if it's JSONL in a .json file (first line = valid JSON object
+                // and there's more data after the first line).
                 let nl = memchr::memchr(b'\n', data).unwrap_or(data.len());
                 let first_line = data[..nl].strip_suffix(b"\r").unwrap_or(&data[..nl]);
                 if !first_line.is_empty()
+                    && nl < data.len()
                     && serde_json::from_slice::<serde_json::Value>(first_line).is_ok()
-                    && serde_json::from_slice::<serde_json::Value>(data).is_err()
                 {
                     return 0.9; // JSONL with .json extension
                 }
-                // Single-doc .json: check if key dedup would save enough bytes.
-                let (repeated_keys, byte_savings) = Self::keydedup_savings(data);
-                if repeated_keys >= 3 && byte_savings > data.len() / 20 {
+                // Single-doc .json: sample first 32KB for key dedup savings estimate.
+                let sample_size = data.len().min(32_768);
+                let (repeated_keys, byte_savings) = Self::keydedup_savings(&data[..sample_size]);
+                let est_savings = if sample_size < data.len() {
+                    byte_savings * data.len() / sample_size
+                } else {
+                    byte_savings
+                };
+                if repeated_keys >= 3 && est_savings > data.len() / 20 {
                     return 0.7; // Enough key repetition for byte-level dedup
                 }
                 return 0.2;
@@ -680,35 +777,47 @@ impl Domain for JsonDomain {
             return 0.0;
         }
 
-        // Single-doc JSON: check if byte-level key dedup helps.
-        if serde_json::from_slice::<Value>(data).is_ok() {
-            let (repeated_keys, byte_savings) = Self::keydedup_savings(data);
-            if repeated_keys >= 3 && byte_savings > data.len() / 20 {
-                return 0.7;
-            }
-            return 0.2;
-        }
-
-        // Check if it's JSONL: first line must be a valid JSON object.
+        // Check if it's JSONL: first line must be a valid JSON object but
+        // the whole file must NOT be a single JSON document.
         let nl = memchr::memchr(b'\n', data).unwrap_or(data.len());
-        // Guard: if the file starts with newlines (start > nl), the first line
-        // is empty — not JSONL.
-        if start > nl {
-            return 0.0;
-        }
-        let first_line = data[start..nl]
-            .strip_suffix(b"\r")
-            .unwrap_or(&data[start..nl]);
-        if !first_line.is_empty() && serde_json::from_slice::<Value>(first_line).is_ok() {
-            return 0.85; // Likely JSONL
+        if start < nl {
+            let first_line = data[start..nl]
+                .strip_suffix(b"\r")
+                .unwrap_or(&data[start..nl]);
+            if !first_line.is_empty() && serde_json::from_slice::<Value>(first_line).is_ok() {
+                // If first line parses and there's more data, likely JSONL.
+                if nl < data.len() {
+                    return 0.85;
+                }
+            }
         }
 
-        0.0 // Starts with JSON magic but unparseable and not JSONL
+        // Single-doc JSON: sample first 32KB for key dedup savings estimate.
+        // Avoid parsing the entire file — that's O(N) and too slow for detect().
+        let sample_size = data.len().min(32_768);
+        let sample = &data[..sample_size];
+        let (repeated_keys, byte_savings) = Self::keydedup_savings(sample);
+        // Scale savings estimate to full file size.
+        let est_savings = if sample_size < data.len() {
+            byte_savings * data.len() / sample_size
+        } else {
+            byte_savings
+        };
+        if repeated_keys >= 3 && est_savings > data.len() / 20 {
+            return 0.7;
+        }
+
+        // Starts with JSON magic but not enough key repetition to benefit from MSN.
+        0.2
     }
 
     fn extract(&self, data: &[u8]) -> CpacResult<ExtractionResult> {
         // Try JSONL first (multi-line, columnar extraction).
         if let Ok(result) = Self::extract_jsonl(data) {
+            return Ok(result);
+        }
+        // Try single-doc JSON array → columnar (huge wins for arrays of objects).
+        if let Ok(result) = Self::extract_single_array(data) {
             return Ok(result);
         }
         // Single-doc: use byte-level key dedup (preserves whitespace).
@@ -850,12 +959,16 @@ impl Domain for JsonDomain {
             return Ok(output);
         }
 
+        // Single-doc array → columnar path.
+        let is_single_array =
+            result.fields.get("format").and_then(Value::as_str) == Some("single_array");
+        if is_single_array && result.residual.first() == Some(&0x02u8) {
+            return Self::reconstruct_single_array(&result.residual, &field_names);
+        }
+
         // Single-doc key dedup path (byte-level, preserves whitespace).
-        let is_keydedup = result
-            .fields
-            .get("format")
-            .and_then(Value::as_str)
-            == Some("single_keydedup");
+        let is_keydedup =
+            result.fields.get("format").and_then(Value::as_str) == Some("single_keydedup");
         if is_keydedup {
             return Self::reconstruct_single_keydedup(&result.residual, &field_names);
         }

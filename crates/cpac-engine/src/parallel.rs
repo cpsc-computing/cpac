@@ -38,9 +38,13 @@ pub const PARALLEL_THRESHOLD: usize = 4 * 1024 * 1024;
 
 /// P3: Higher threshold for text-heavy data.  Structured text (JSON, logs,
 /// YAML, config) benefits far more from full-file LZ77 context than from
-/// parallelism.  Files below 16 MiB that are mostly ASCII stay on the
+/// parallelism.  Files below 32 MiB that are mostly ASCII stay on the
 /// single-stream path for better ratios and lower preprocessing overhead.
-pub const PARALLEL_THRESHOLD_TEXT: usize = 16 * 1024 * 1024;
+/// Raised from 16 MiB to 32 MiB so MSN extraction sees full-file context
+/// for structured data (JSON, XML, YAML) where repeated keys/tags span
+/// the entire file.  Block-level MSN extraction loses this cross-block
+/// context and typically fails to produce a smaller residual.
+pub const PARALLEL_THRESHOLD_TEXT: usize = 32 * 1024 * 1024;
 
 /// Small block size: 4 MiB.  Used for high-entropy or small files.
 pub const BLOCK_SIZE_SMALL: usize = 4 << 20;

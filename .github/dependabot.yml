@@ -41,7 +41,11 @@ updates:
           - "zstd*"
           - "brotli*"
           - "flate2"
-          - "lzma-rs"
+          - "xz2"
+          - "lz4*"
+          - "snap"
+          - "lzham*"
+          - "libz-ng-sys"
       crypto:
         patterns:
           - "aes*"

@@ -40,9 +40,7 @@ impl HqcLevel {
             30 => Ok(HqcLevel::Hqc128),
             31 => Ok(HqcLevel::Hqc192),
             32 => Ok(HqcLevel::Hqc256),
-            _ => Err(CpacError::Encryption(format!(
-                "unknown HQC level ID: {id}"
-            ))),
+            _ => Err(CpacError::Encryption(format!("unknown HQC level ID: {id}"))),
         }
     }
 

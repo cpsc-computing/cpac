@@ -92,11 +92,11 @@ unsafe fn count_ascii_avx2(data: &[u8]) -> usize {
     let mut i: usize = 0;
 
     // Constants for range checks.
-    let lo = _mm256_set1_epi8(0x1F_u8 as i8);  // < 0x20 → not printable
-    let hi = _mm256_set1_epi8(0x7E_u8 as i8);  // <= 0x7E → printable
-    let tab = _mm256_set1_epi8(0x09_u8 as i8);  // \t
-    let lf = _mm256_set1_epi8(0x0A_u8 as i8);   // \n
-    let cr = _mm256_set1_epi8(0x0D_u8 as i8);   // \r
+    let lo = _mm256_set1_epi8(0x1F_u8 as i8); // < 0x20 → not printable
+    let hi = _mm256_set1_epi8(0x7E_u8 as i8); // <= 0x7E → printable
+    let tab = _mm256_set1_epi8(0x09_u8 as i8); // \t
+    let lf = _mm256_set1_epi8(0x0A_u8 as i8); // \n
+    let cr = _mm256_set1_epi8(0x0D_u8 as i8); // \r
 
     while i + 32 <= len {
         let v = _mm256_loadu_si256(data.as_ptr().add(i) as *const __m256i);

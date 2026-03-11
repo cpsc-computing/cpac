@@ -108,6 +108,126 @@ canonical. Python runs everywhere the project does.
 wire it into `argparse` and the `dispatch` dict, then invoke via
 `shell.ps1 <name>` or `shell.sh <name>`.
 
+## Common CLI Operations
+
+Quick reference for frequently-used benchmark and development commands.
+All must go through `shell.ps1` / `shell.sh` (see Shell Execution Rule).
+
+### Benchmarking
+
+```powershell
+# Quick benchmark (1 iteration, all 12 backends + matched baselines + Track 1+2)
+cargo run --release -p cpac-cli -- benchmark <file> --quick
+
+# Balanced benchmark (5 iterations)
+cargo run --release -p cpac-cli -- benchmark <file>
+
+# Full benchmark (50 iterations, high-precision)
+cargo run --release -p cpac-cli -- benchmark <file> --full
+
+# Skip standalone baselines (CPAC pipeline only)
+cargo run --release -p cpac-cli -- benchmark <file> --quick --skip-baselines
+
+# JSON output for machine parsing
+cargo run --release -p cpac-cli -- benchmark <file> --quick --json
+
+# Discovery mode (forced Track 1 vs Track 2 comparison)
+cargo run --release -p cpac-cli -- benchmark <file> --quick --discovery
+
+# Specific backends only
+cargo run --release -p cpac-cli -- benchmark <file> --quick --backends zstd,brotli,lz4
+
+# Specific levels
+cargo run --release -p cpac-cli -- benchmark <file> --quick --levels ultrafast,default,best
+
+# Full presubmit check (build + test + clippy + fmt)
+.\shell.ps1 check
+```
+
+IMPORTANT: Always use `--release` for benchmark runs. Debug-mode throughput
+numbers are 5-50x slower and misleading.
+
+### Development Workflow
+
+```powershell
+.\shell.ps1 check          # full presubmit: build + test + clippy + fmt
+.\shell.ps1 build          # cargo build --workspace
+.\shell.ps1 test           # cargo test --workspace
+.\shell.ps1 clippy         # cargo clippy --workspace -- -D warnings
+.\shell.ps1 fmt            # cargo fmt --all -- --check
+cargo fmt --all            # auto-fix formatting
+cargo test -p cpac-engine  # test a single crate
+cargo test -p cpac-entropy -- roundtrip_lzham  # run one specific test
+```
+
+### Compression / Decompression
+
+```powershell
+cargo run --release -p cpac-cli -- compress <file> --backend zstd --level best
+cargo run --release -p cpac-cli -- decompress <file>.cpac
+cargo run --release -p cpac-cli -- compress <file> --enable-msn --smart
+cargo run --release -p cpac-cli -- info <file>.cpac
+cargo run --release -p cpac-cli -- info --host
+```
+
+## CPAC Pipeline vs Standalone Backend Performance
+
+### What the Data Shows (release-mode, 500 KB JSONL, Quick benchmark)
+
+**Compression ratio**: CPAC pipeline achieves the **same ratio** as the
+standalone backend in every case. The SSR analyzer routes data to the correct
+backend and the framing overhead is negligible (<0.1% size increase).
+
+**Compression throughput**: CPAC pipeline is **slower** than standalone
+backends due to pipeline overhead (SSR analysis, transform evaluation,
+wire-format framing). The overhead varies by backend speed:
+- Slow backends (LZMA, XZ, LZHAM): ~1.2-1.4x slower (pipeline cost small vs codec cost)
+- Medium backends (Brotli, Lizard): ~1.5-3.7x slower
+- Fast backends (Zstd, Gzip, zlib-ng, OpenZl): ~5-9x slower
+- Ultra-fast backends (LZ4, Snappy): ~12-74x slower (pipeline dominates)
+
+**Decompression throughput**: CPAC is 5-80% slower depending on backend,
+with fast decompressors (LZ4, Lizard) showing the largest relative overhead
+because frame parsing cost becomes significant vs near-memcpy decompression.
+
+### Why CPAC Exists Despite Pipeline Overhead
+
+CPAC does NOT aim to beat individual backends on raw throughput. The value
+proposition is the **integrated pipeline**:
+
+1. **Adaptive backend selection** — SSR automatically picks the best backend
+   for each data block (e.g., Zstd for binary, Brotli for text, Raw for
+   incompressible data). Users don't need to guess.
+2. **Format-aware MSN extraction** — Semantic field extraction for JSON, CSV,
+   XML, logs that can improve ratio on structured data.
+3. **Transform pipeline** — BWT, delta coding, dictionary dedup applied when
+   they help (corpus-dependent; not all data benefits).
+4. **Integrated encryption** — AEAD + PQC hybrid encryption in the same
+   pipeline, no separate tooling.
+5. **Streaming / parallel** — Bounded-memory streaming, block-parallel
+   compression, mmap I/O.
+6. **Cross-engine compatibility** — Same wire format readable by Rust and
+   Python engines.
+
+### When CPAC Adds Ratio Improvement
+
+The quick single-file benchmarks above show equal ratios because the test
+data doesn't trigger transforms. CPAC can improve ratio when:
+- **MSN is enabled** on structured data (JSON/CSV logs) — field extraction
+  reduces redundancy before backend compression.
+- **Transform pipeline** kicks in — BWT on text, delta on time-series,
+  dictionary dedup on repetitive corpora.
+- **Multi-file archives** with dedup — cross-file content-addressable dedup
+  in CPAR format.
+
+### Honest Assessment
+
+On simple single-file compression of typical data, a standalone `zstd` or
+`brotli` call will be faster than CPAC with the same backend. CPAC's value
+is in scenarios where the full pipeline matters: heterogeneous data,
+automated backend selection, encryption, streaming, or structured data
+where MSN/transforms provide ratio lift.
+
 ## Coding Conventions
 
 - **Error handling**: `CpacError` enum (thiserror). No `unwrap()` in library crates.
@@ -115,7 +235,7 @@ wire it into `argparse` and the `dispatch` dict, then invoke via
 - **Doc comments** on all public items.
 - **Unit tests** in each crate (`#[cfg(test)] mod tests`).
 - **Integration tests** in `tests/` directory of `cpac-engine`.
-- **NO SYNTHETIC DATA — HARD RULE**: This applies to **tests AND benchmarks**. Never generate, create, or use synthetic/fake data for any test or benchmark purpose. Benchmark results derived from synthetic data are invalid and must be deleted. All benchmarks must run exclusively against the official corpus files downloaded via the corpus configs in `benches/corpora/`. Never create files under `.work/benchmarks/bench-corpus/` or any ad-hoc corpus directory — this is explicitly prohibited.
+- **NO SYNTHETIC DATA — HARD RULE**: This applies to **tests AND benchmarks**. Never generate, create, or use synthetic/fake data for any test or benchmark purpose. Benchmark results derived from synthetic data are invalid and must be deleted. All benchmarks must run exclusively against the official corpus files downloaded via the corpus configs in `benches/cpac/corpora/`. Never create files under `.work/benchmarks/bench-corpus/` or any ad-hoc corpus directory — this is explicitly prohibited.
 - **CORPUS LOCALITY — HARD RULE**: Benchmark corpus files must live in `cpac/.work/benchdata/` inside **this** repository. Never reference, symlink, junction, or use corpus files from other repositories (e.g. `cpac-engine-python/.work/`). Download corpora with `shell.ps1 download-corpus`. The `.work/` directory must be a real directory, not a junction or symlink.
 - **Copyright header** on every `.rs` file:
   ```

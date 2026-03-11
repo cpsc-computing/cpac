@@ -89,7 +89,7 @@ Threads:    1      2      4      8      16     24
 
 ```bash
 # Run benchmarks
-./shell.ps1 benchmark-external --corpus benches/openzl-corpora --profile full
+./shell.ps1 benchmark-external --corpus benches/openzl/corpora --profile full
 
 # Generate markdown report
 python3 scripts/gen-report.py benchmark-external-results.csv > docs/BENCHMARK_REPORT.md

@@ -92,8 +92,8 @@ impl BandwidthController {
 
         // Proportional adjustment (clamped to ±3 levels per block)
         let delta = (error * self.config.gain).clamp(-3.0, 3.0) as i32;
-        self.current_level = (self.current_level + delta)
-            .clamp(self.config.min_level, self.config.max_level);
+        self.current_level =
+            (self.current_level + delta).clamp(self.config.min_level, self.config.max_level);
     }
 
     /// Summary statistics.
@@ -237,7 +237,8 @@ pub fn decompress_bandwidth_adaptive(data: &[u8]) -> CpacResult<Vec<u8>> {
 /// Map integer level to CompressionLevel enum.
 fn level_from_i32(level: i32) -> CompressionLevel {
     match level {
-        0..=3 => CompressionLevel::Fast,
+        0..=1 => CompressionLevel::UltraFast,
+        2..=3 => CompressionLevel::Fast,
         4..=9 => CompressionLevel::Default,
         10..=15 => CompressionLevel::High,
         _ => CompressionLevel::Best,

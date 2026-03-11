@@ -1,0 +1,11 @@
+[package]
+name = "cpac-lizard-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Vendored Lizard (LZ5) compression C library - raw FFI bindings"
+links = "lizard"
+
+[build-dependencies]
+cc = { workspace = true }

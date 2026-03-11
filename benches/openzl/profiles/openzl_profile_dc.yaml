@@ -1,0 +1,59 @@
+# OpenZL Datacenter Benchmark Profiles
+# Run with: shell.ps1 benchmark-external --corpus benches/openzl/corpora
+#
+# These profiles target datacenter workloads where CPAC's format-aware
+# pipeline (MSN + DAG + adaptive backend) provides the largest gains
+# over generic compressors like zstd/lz4/gzip.
+#
+# NOTE: cmd_benchmark_external reads --corpus and --codecs from the CLI,
+# not from this file.  These profiles document the intended test matrix
+# and will be wired into the benchmark-external pipeline in the future.
+
+profiles:
+  dc-logs:
+    description: "Structured logs (JSON, syslog, access logs)"
+    corpus_pattern: "benches/openzl/corpora/logs/**"
+    codecs: [cpac, zstd, lz4, gzip, xz, snappy]
+    backends: [zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl, raw]
+    cpac_levels: [ultrafast, fast, default, high, best]
+    iterations: 5
+
+  dc-configs:
+    description: "Configuration files (YAML, TOML, JSON, XML)"
+    corpus_pattern: "benches/openzl/corpora/configs/**"
+    codecs: [cpac, zstd, brotli, xz, snappy]
+    backends: [zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl, raw]
+    cpac_levels: [ultrafast, fast, default, high, best]
+    iterations: 5
+
+  dc-mixed-archive:
+    description: "Mixed archive (code, docs, binaries, images)"
+    corpus_pattern: "benches/openzl/corpora/mixed/**"
+    codecs: [cpac, zstd, lz4, xz, snappy]
+    backends: [zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl, raw]
+    cpac_levels: [ultrafast, fast, default, high, best]
+    iterations: 3
+
+  dc-large-binary:
+    description: "Large binary blobs (DB dumps, VM images)"
+    corpus_pattern: "benches/openzl/corpora/large/**"
+    codecs: [cpac, zstd, lz4, xz, snappy]
+    backends: [zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl, raw]
+    cpac_levels: [ultrafast, fast, default, high, best]
+    iterations: 3
+
+  dc-dedup:
+    description: "Versioned/backup data with heavy duplication"
+    corpus_pattern: "benches/openzl/corpora/dedup/**"
+    codecs: [cpac]
+    backends: [zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl, raw]
+    cpac_levels: [ultrafast, fast, default, high, best]
+    iterations: 3
+
+  dc-streaming:
+    description: "Streaming ingestion (Kafka-style messages)"
+    corpus_pattern: "benches/openzl/corpora/streaming/**"
+    codecs: [cpac, zstd, lz4, snappy]
+    backends: [zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl, raw]
+    cpac_levels: [ultrafast, fast, default, high, best]
+    iterations: 5

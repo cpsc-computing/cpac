@@ -20,6 +20,8 @@ members = [
     "crates/cpac-lab",
     "crates/cpac-conditioning",
     "crates/cpac-predict",
+    "crates/cpac-lizard-sys",
+    "crates/cpac-lzham-sys",
 ]
 
 [workspace.package]
@@ -44,7 +46,13 @@ toml = "1.0"
 rayon = "1.10"
 sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 flate2 = "1"
-lzma-rs = "0.3"
+xz2 = "0.1"
+snap = "1"
+lzzzz = "1"
+cpac-lzham-sys = { path = "crates/cpac-lzham-sys" }
+libz-ng-sys = "1.1"
+cpac-lizard-sys = { path = "crates/cpac-lizard-sys" }
+cc = "1"
 indicatif = "0.18"
 serde_yaml = "0.9"
 reqwest = { version = "0.13", features = ["blocking"] }

@@ -98,10 +98,10 @@ pub fn hybrid_encrypt(
     let total = 4 + 1 + 3 + 32 + 2 + mlkem_ct.len() + 1 + nonce.len() + ciphertext.len();
     let mut out = Vec::with_capacity(total);
     out.extend_from_slice(CPHE_MAGIC);
-    out.push(CPHE_VERSION);                                          // v2
-    out.push(crate::pqc::PqcAlgorithm::MlKem768.id());              // kem_id
-    out.push(crate::aead::AeadAlgorithm::ChaCha20Poly1305.id());    // aead_id
-    out.push(crate::kdf::KdfAlgorithm::HkdfSha256.id());            // kdf_id
+    out.push(CPHE_VERSION); // v2
+    out.push(crate::pqc::PqcAlgorithm::MlKem768.id()); // kem_id
+    out.push(crate::aead::AeadAlgorithm::ChaCha20Poly1305.id()); // aead_id
+    out.push(crate::kdf::KdfAlgorithm::HkdfSha256.id()); // kdf_id
     out.extend_from_slice(&eph_pub);
     out.extend_from_slice(&mlkem_ct_len.to_le_bytes());
     out.extend_from_slice(&mlkem_ct);
@@ -183,8 +183,7 @@ pub fn hybrid_decrypt(
     let x_shared = crate::keys::x25519_shared_secret(&our_sk, &eph_pub);
 
     // 2. ML-KEM decapsulate (algorithm from header)
-    let mlkem_ss =
-        crate::pqc::pqc_decapsulate(mlkem_ct, our_mlkem_secret, kem_algo)?;
+    let mlkem_ss = crate::pqc::pqc_decapsulate(mlkem_ct, our_mlkem_secret, kem_algo)?;
 
     // 3. Combine shared secrets
     let combined_key = derive_hybrid_key(&x_shared, &mlkem_ss)?;

@@ -78,9 +78,7 @@ pub fn analyze_structure(data: &[u8], filename: Option<&str>) -> StructureProfil
     }
 
     // Step 4: Build overall recommendation
-    let ext = filename
-        .and_then(|f| f.rsplit_once('.'))
-        .map(|(_, e)| e);
+    let ext = filename.and_then(|f| f.rsplit_once('.')).map(|(_, e)| e);
     let recommended_chain = if overall_constraints.is_empty() {
         // No columnar data — recommend based on SSR characteristics
         recommend_from_ssr(&ssr, ext)
@@ -95,6 +93,40 @@ pub fn analyze_structure(data: &[u8], filename: Option<&str>) -> StructureProfil
         ssr,
         domain: best_domain,
         columns,
+        recommended_chain,
+        estimated_gain,
+    }
+}
+
+/// Lightweight variant of [`analyze_structure`] for the `smart_preprocess` path.
+///
+/// Accepts a pre-computed SSR result and skips MSN domain detection/extraction
+/// entirely — the caller (`compress()`) already ran MSN and passed the residual.
+/// Also accepts `skip_expensive` flag to suppress BWT on parallel sub-blocks.
+/// This eliminates ~33% of per-block overhead for structured text data where
+/// MSN extraction was the dominant cost inside the original `analyze_structure`.
+#[must_use]
+pub fn analyze_structure_fast(
+    ssr: &SSRResult,
+    filename: Option<&str>,
+    skip_expensive: bool,
+) -> StructureProfile {
+    let ext = filename.and_then(|f| f.rsplit_once('.')).map(|(_, e)| e);
+    let mut recommended_chain = recommend_from_ssr(ssr, ext);
+
+    // P1: drop bwt_chain when called from parallel sub-blocks — BWT on
+    // multi-MB blocks is expensive and block-parallel framing already
+    // destroys the cross-block context BWT relies on.
+    if skip_expensive {
+        recommended_chain.retain(|r| r.name != "bwt_chain");
+    }
+
+    let estimated_gain = estimate_overall_gain(ssr, &[], &recommended_chain);
+
+    StructureProfile {
+        ssr: ssr.clone(),
+        domain: None,
+        columns: Vec::new(),
         recommended_chain,
         estimated_gain,
     }
@@ -229,7 +261,11 @@ fn calibrated_confidence(name: &str, ext: Option<&str>) -> Option<f64> {
 
     if let Some(extension) = ext {
         // Extension known — use per-extension rate when we have enough data
-        let key = if extension.is_empty() { "(none)" } else { extension };
+        let key = if extension.is_empty() {
+            "(none)"
+        } else {
+            extension
+        };
         if let Some(&(wr, fc)) = entry.by_extension.get(key) {
             if fc >= 5 {
                 return Some(wr);
@@ -289,7 +325,13 @@ fn recommend_from_ssr(ssr: &SSRResult, ext: Option<&str>) -> Vec<TransformRecomm
     // --- Tier 1: bwt_chain (dominant on large text) ---
     // SA-IS BWT is O(n) — cap raised to 64 MiB (BWT_MAX_SIZE).
     // Per-extension calibration avoids dilution from small config files.
-    if is_text && ssr.entropy_estimate < 5.5 && size > 32_768 && size <= 64_000_000 {
+    // P7: Raised from 32 KB to 16 MB.  Benchmarks (dickens, nci, xml, mozilla)
+    // show that BWT as a pre-transform before zstd-6 never improves ratio over
+    // standalone zstd-6 on files under 16 MB — zstd's LZ77 already captures
+    // the text redundancy that BWT would expose.  The BWT trial is expensive
+    // (~80 ms on 10 MB) and produces no benefit, halving throughput.  Files
+    // >= 16 MB go through the parallel path where P1 strips BWT anyway.
+    if is_text && ssr.entropy_estimate < 5.5 && size > 16_000_000 && size <= 64_000_000 {
         let confidence = calibrated_confidence("bwt_chain", ext).unwrap_or(0.60);
         recs.push(TransformRecommendation {
             name: "bwt_chain".to_string(),

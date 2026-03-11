@@ -1,0 +1,18 @@
+[package]
+name = "cpac-py"
+description = "Python bindings for CPAC compression engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+name = "cpac"
+
+[dependencies]
+cpac-types = { workspace = true }
+cpac-engine = { workspace = true }
+cpac-streaming = { workspace = true }
+pyo3 = { version = "0.22", features = ["extension-module"] }

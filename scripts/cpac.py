@@ -90,8 +90,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _WORK_DIR = REPO_ROOT / ".work"
 VENV_DIR = _WORK_DIR / "env"
 BENCHDATA_DIR = _WORK_DIR / "benchdata"
-CORPUS_DIR = REPO_ROOT / "benches" / "corpora"
-PROFILE_DIR = REPO_ROOT / "benches" / "cpac-profiles"
+CORPUS_DIR = REPO_ROOT / "benches" / "cpac" / "corpora"
+PROFILE_DIR = REPO_ROOT / "benches" / "cpac" / "profiles"
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +403,10 @@ def cmd_benchmark_all(args: argparse.Namespace) -> None:
     skip_baselines = str(profile.get("skip_baselines", "false")).lower() in ("true", "1", "yes")
     large_file_threshold = int(profile.get("large_file_threshold_mb", 0)) * 1024 * 1024
     large_file_iters = int(profile.get("large_file_iterations", iterations))
+    # Backend / level configuration from profile YAML
+    backends_list = profile.get("backends", [])  # e.g. [zstd, brotli, gzip, lzma, raw]
+    cpac_levels = profile.get("cpac_levels", [])  # e.g. [fast, default, best]
+    discovery = str(profile.get("discovery", "false")).lower() in ("true", "1", "yes")
     # CLI overrides
     if args.skip_baselines:
         skip_baselines = True
@@ -418,6 +422,11 @@ def cmd_benchmark_all(args: argparse.Namespace) -> None:
     print(f"  Iterations:  {iterations}")
     print(f"  Timeout:     {timeout_sec}s per file")
     print(f"  Track 1:     {track1}")
+    if backends_list:
+        print(f"  Backends:    {', '.join(str(b) for b in backends_list)}")
+    if cpac_levels:
+        print(f"  CPAC levels: {', '.join(str(l) for l in cpac_levels)}")
+    print(f"  Discovery:   {discovery}")
     print(f"  Output:      {out_dir}")
     print()
 
@@ -482,6 +491,12 @@ def cmd_benchmark_all(args: argparse.Namespace) -> None:
                     cmd.append("--track1")
                 if skip_baselines:
                     cmd.append("--skip-baselines")
+                if backends_list:
+                    cmd.extend(["--backends", ",".join(str(b) for b in backends_list)])
+                if cpac_levels:
+                    cmd.extend(["--levels", ",".join(str(l) for l in cpac_levels)])
+                if discovery:
+                    cmd.append("--discovery")
 
                 log_name = str(rel).replace(os.sep, "_").replace("/", "_")
                 log_file = corpus_out / f"{log_name}.txt"
@@ -1987,14 +2002,14 @@ def main() -> None:
     # benchmark-all
     p = sub.add_parser("benchmark-all", help="Run profile-driven corpus benchmark suite")
     p.add_argument("--profile", default="balanced",
-                    help="Benchmark profile id (default: balanced). See benches/cpac-profiles/")
+                    help="Benchmark profile id (default: balanced). See benches/cpac/profiles/")
     p.add_argument("--skip-baselines", action="store_true", help="Skip baseline engines")
 
     # benchmark-archive
     p = sub.add_parser("benchmark-archive",
                        help="Archive benchmark: per-file vs CPAR vs solid vs tar baselines")
     p.add_argument("--profile", default="archive",
-                    help="Benchmark profile id (default: archive). See benches/cpac-profiles/")
+                    help="Benchmark profile id (default: archive). See benches/cpac/profiles/")
 
     # benchmark-external
     p = sub.add_parser("benchmark-external",
@@ -2040,7 +2055,7 @@ def main() -> None:
     p = sub.add_parser("profile-corpus",
                        help="Profile all files in a corpus with trial compression matrix")
     p.add_argument("--profile", default="balanced",
-                    help="Benchmark profile id (default: balanced). See benches/cpac-profiles/")
+                    help="Benchmark profile id (default: balanced). See benches/cpac/profiles/")
     p.add_argument("--quick", action="store_true",
                     help="Quick mode (fewer trials per file)")
 

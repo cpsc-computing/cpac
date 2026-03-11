@@ -122,10 +122,14 @@ fn extract_solid(archive: &[u8], out_dir: &Path) -> CpacResult<Vec<ArchiveEntry>
 
     // Read blob size and decompress
     if blob_meta_off + 8 > archive.len() {
-        return Err(CpacError::InvalidFrame("truncated solid blob header".into()));
+        return Err(CpacError::InvalidFrame(
+            "truncated solid blob header".into(),
+        ));
     }
     let blob_size = u64::from_le_bytes(
-        archive[blob_meta_off..blob_meta_off + 8].try_into().unwrap(),
+        archive[blob_meta_off..blob_meta_off + 8]
+            .try_into()
+            .unwrap(),
     ) as usize;
     let blob_start = blob_meta_off + 8;
     let blob_end = blob_start + blob_size;
@@ -143,7 +147,10 @@ fn extract_solid(archive: &[u8], out_dir: &Path) -> CpacResult<Vec<ArchiveEntry>
         if end > concat_data.len() {
             return Err(CpacError::InvalidFrame(format!(
                 "solid entry '{}' out of bounds (offset {} + size {} > blob {})",
-                entry.path, start, entry.original_size, concat_data.len()
+                entry.path,
+                start,
+                entry.original_size,
+                concat_data.len()
             )));
         }
         let fp = out_dir.join(&entry.path);
@@ -451,7 +458,8 @@ mod tests {
         // Create corpus with many similar files (should benefit from solid)
         let dir = tempfile::tempdir().unwrap();
         for i in 0..10 {
-            let mut content = format!("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: config-{i}\ndata:\n");
+            let mut content =
+                format!("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: config-{i}\ndata:\n");
             content.push_str(&format!("  key: value-{i}\n  common: shared-pattern\n"));
             std::fs::write(dir.path().join(format!("config-{i}.yaml")), content).unwrap();
         }

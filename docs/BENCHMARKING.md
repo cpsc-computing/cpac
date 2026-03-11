@@ -796,7 +796,7 @@ cpac compress file.log --accel software # Force software
 All corpus data is used under respective licenses:
 - **Canterbury/Calgary**: Public domain
 - **Silesia**: Freely available for research
-- **Others**: See individual corpus YAML configs in `benches/corpora/`
+- **Others**: See individual corpus YAML configs in `benches/cpac/corpora/`
 
 When publishing results using CPAC benchmarks, please cite:
 1. The relevant corpus (Canterbury, Silesia, etc.)
