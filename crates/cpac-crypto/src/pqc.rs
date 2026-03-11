@@ -209,22 +209,26 @@ fn decapsulate_mlkem768(ciphertext: &[u8], secret_key: &[u8]) -> CpacResult<Vec<
 // ---------------------------------------------------------------------------
 
 fn keygen_mldsa65() -> CpacResult<PqcKeyPair> {
-    use ml_dsa::{KeyGen, MlDsa65};
-    let mut rng = rand::thread_rng();
-    let kp = MlDsa65::key_gen(&mut rng);
+    use ml_dsa::{MlDsa65, Seed, SigningKey};
+    use rand::RngCore;
+    let mut seed_bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut seed_bytes);
+    let seed = Seed::from(seed_bytes);
+    let sk = SigningKey::<MlDsa65>::from_seed(&seed);
+    let vk = sk.verifying_key();
     Ok(PqcKeyPair {
         algorithm: PqcAlgorithm::MlDsa65,
-        public_key: kp.verifying_key().encode().as_slice().to_vec(),
-        secret_key: kp.signing_key().encode().as_slice().to_vec(),
+        public_key: vk.encode().as_slice().to_vec(),
+        secret_key: seed_bytes.to_vec(),
     })
 }
 
 fn sign_mldsa65(message: &[u8], secret_key: &[u8]) -> CpacResult<Vec<u8>> {
-    use ml_dsa::{EncodedSigningKey, MlDsa65, SigningKey};
-    let sk_arr: EncodedSigningKey<MlDsa65> = secret_key
+    use ml_dsa::{MlDsa65, Seed, SigningKey};
+    let seed: Seed = secret_key
         .try_into()
-        .map_err(|_| CpacError::Encryption("invalid ML-DSA-65 signing key length".into()))?;
-    let sk = SigningKey::<MlDsa65>::decode(&sk_arr);
+        .map_err(|_| CpacError::Encryption("invalid ML-DSA-65 seed length (expected 32 bytes)".into()))?;
+    let sk = SigningKey::<MlDsa65>::from_seed(&seed);
     let sig = sk
         .sign_deterministic(message, &[])
         .map_err(|e| CpacError::Encryption(format!("ML-DSA-65 signing failed: {e}")))?;
@@ -232,13 +236,16 @@ fn sign_mldsa65(message: &[u8], secret_key: &[u8]) -> CpacResult<Vec<u8>> {
 }
 
 fn verify_mldsa65(message: &[u8], sig_bytes: &[u8], public_key: &[u8]) -> CpacResult<bool> {
-    use ml_dsa::{EncodedVerifyingKey, MlDsa65, Signature, VerifyingKey};
+    use ml_dsa::{EncodedSignature, EncodedVerifyingKey, MlDsa65, Signature, VerifyingKey};
     let vk_arr: EncodedVerifyingKey<MlDsa65> = public_key
         .try_into()
         .map_err(|_| CpacError::Encryption("invalid ML-DSA-65 verifying key length".into()))?;
     let vk = VerifyingKey::<MlDsa65>::decode(&vk_arr);
-    let sig = Signature::<MlDsa65>::try_from(sig_bytes)
-        .map_err(|e| CpacError::Encryption(format!("invalid ML-DSA-65 signature: {e}")))?;
+    let sig_arr: EncodedSignature<MlDsa65> = sig_bytes
+        .try_into()
+        .map_err(|_| CpacError::Encryption("invalid ML-DSA-65 signature length".into()))?;
+    let sig = Signature::<MlDsa65>::decode(&sig_arr)
+        .ok_or_else(|| CpacError::Encryption("invalid ML-DSA-65 signature".into()))?;
     Ok(vk.verify_with_context(message, &[], &sig))
 }
 
