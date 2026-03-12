@@ -103,8 +103,7 @@ impl TransformNode for ConditionedBwtTransform {
                     if stream.len() >= MIN_STREAM_SIZE && stream.len() <= bwt::BWT_MAX_SIZE {
                         // Try BWT+MTF+RLE on this stream
                         if let Ok((bwt_data, original_idx)) = bwt::bwt_encode(stream) {
-                            let mtf_data = mtf::mtf_encode(&bwt_data)
-                                .unwrap_or(bwt_data);
+                            let mtf_data = mtf::mtf_encode(&bwt_data).unwrap_or(bwt_data);
                             let (rle_data, _) = rle::rle_encode(&mtf_data);
 
                             // Only apply if it actually helps
@@ -220,7 +219,9 @@ mod tests {
         // Mix of text and structured data
         let mut data = Vec::new();
         data.extend_from_slice(
-            b"The quick brown fox jumps over the lazy dog. ".repeat(15).as_slice(),
+            b"The quick brown fox jumps over the lazy dog. "
+                .repeat(15)
+                .as_slice(),
         );
         // Add some numeric/structural bytes
         for i in 0u8..200 {
@@ -229,7 +230,9 @@ mod tests {
             data.push(0xFF);
         }
         data.extend_from_slice(
-            b"Another repeated text segment for testing. ".repeat(10).as_slice(),
+            b"Another repeated text segment for testing. "
+                .repeat(10)
+                .as_slice(),
         );
 
         let ctx = TransformContext {

@@ -189,9 +189,11 @@ pub fn compress_parallel(
         // limit; truncating the probe is safe because we only need enough
         // data to detect the domain and build the field map.
         let probe_len = blocks[0].len().min(cpac_msn::MAX_DOMAIN_EXTRACT_SIZE);
-        if let Ok(probe_result) =
-            cpac_msn::extract(&blocks[0][..probe_len], probe_filename, config.msn_confidence)
-        {
+        if let Ok(probe_result) = cpac_msn::extract(
+            &blocks[0][..probe_len],
+            probe_filename,
+            config.msn_confidence,
+        ) {
             cpac_trace!(
                 "[TRACE] parallel MSN probe: applied={} domain={:?} conf={:.3} fields={}",
                 probe_result.applied,
@@ -216,8 +218,7 @@ pub fn compress_parallel(
                 // transform selection (logged for now; future phases use for projection).
                 let typed_cols = probe_result.typed_columns();
                 if !typed_cols.is_empty() {
-                    let analysis =
-                        cpac_cas::analyze_columns(&typed_cols.int_columns);
+                    let analysis = cpac_cas::analyze_columns(&typed_cols.int_columns);
                     cpac_trace!(
                         "[TRACE] Phase 6: CAS bridge → {} int cols, {} constraints, benefit={:.3}",
                         typed_cols.int_columns.len(),
@@ -230,11 +231,7 @@ pub fn compress_parallel(
                     );
                     for (col_name, constraints) in &analysis.constraints {
                         for c in constraints {
-                            cpac_trace!(
-                                "[TRACE] Phase 6: CAS col '{}': {:?}",
-                                col_name,
-                                c
-                            );
+                            cpac_trace!("[TRACE] Phase 6: CAS col '{}': {:?}", col_name, c);
                         }
                     }
                     // Also analyze string columns for enumeration/length constraints
@@ -275,10 +272,7 @@ pub fn compress_parallel(
         && config.dictionary.is_none()
     {
         let sample_count = block_count.min(DICT_TRAIN_MAX_BLOCKS);
-        let samples: Vec<Vec<u8>> = blocks[..sample_count]
-            .iter()
-            .map(|b| b.to_vec())
-            .collect();
+        let samples: Vec<Vec<u8>> = blocks[..sample_count].iter().map(|b| b.to_vec()).collect();
         match cpac_dict::CpacDictionary::train(&samples, DICT_MAX_SIZE) {
             Ok(dict) => {
                 cpac_trace!(

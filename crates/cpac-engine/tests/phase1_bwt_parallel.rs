@@ -14,12 +14,7 @@ fn roundtrip_block_size_text_with_smart_transforms() {
     let sentence = b"The quick brown fox jumps over the lazy dog. ";
     // 17 MB — the approximate per-block size the parallel path would create
     let block_size = 17 * 1024 * 1024;
-    let data: Vec<u8> = sentence
-        .iter()
-        .copied()
-        .cycle()
-        .take(block_size)
-        .collect();
+    let data: Vec<u8> = sentence.iter().copied().cycle().take(block_size).collect();
 
     let config = CompressConfig {
         backend: Some(Backend::Zstd),
@@ -57,12 +52,7 @@ fn roundtrip_block_size_json_with_smart_transforms() {
     let record = br#"{"name": "Alice", "age": 30, "city": "New York", "active": true}
 "#;
     let block_size = 17 * 1024 * 1024;
-    let data: Vec<u8> = record
-        .iter()
-        .copied()
-        .cycle()
-        .take(block_size)
-        .collect();
+    let data: Vec<u8> = record.iter().copied().cycle().take(block_size).collect();
 
     let config = CompressConfig {
         backend: Some(Backend::Zstd),

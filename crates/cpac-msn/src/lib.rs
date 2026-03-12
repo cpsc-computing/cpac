@@ -164,19 +164,13 @@ impl MsnResult {
             match value {
                 serde_json::Value::Array(arr) if !arr.is_empty() => {
                     // Try as all-integer
-                    let ints: Vec<i64> = arr
-                        .iter()
-                        .filter_map(|v| v.as_i64())
-                        .collect();
+                    let ints: Vec<i64> = arr.iter().filter_map(|v| v.as_i64()).collect();
                     if ints.len() == arr.len() {
                         cols.int_columns.push((name.clone(), ints));
                         continue;
                     }
                     // Try as all-float (numbers including decimals)
-                    let floats: Vec<f64> = arr
-                        .iter()
-                        .filter_map(|v| v.as_f64())
-                        .collect();
+                    let floats: Vec<f64> = arr.iter().filter_map(|v| v.as_f64()).collect();
                     if floats.len() == arr.len() {
                         cols.float_columns.push((name.clone(), floats));
                         continue;

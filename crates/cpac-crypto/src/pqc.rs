@@ -225,9 +225,9 @@ fn keygen_mldsa65() -> CpacResult<PqcKeyPair> {
 
 fn sign_mldsa65(message: &[u8], secret_key: &[u8]) -> CpacResult<Vec<u8>> {
     use ml_dsa::{MlDsa65, Seed, SigningKey};
-    let seed: Seed = secret_key
-        .try_into()
-        .map_err(|_| CpacError::Encryption("invalid ML-DSA-65 seed length (expected 32 bytes)".into()))?;
+    let seed: Seed = secret_key.try_into().map_err(|_| {
+        CpacError::Encryption("invalid ML-DSA-65 seed length (expected 32 bytes)".into())
+    })?;
     let sk = SigningKey::<MlDsa65>::from_seed(&seed);
     let sig = sk
         .sign_deterministic(message, &[])

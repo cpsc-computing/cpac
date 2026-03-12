@@ -452,8 +452,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // per-block frame.  The frame stores original_size = residual size so the
     // per-block decompressor returns the residual directly.  The caller
     // (compress_parallel) stores metadata once and applies reconstruction.
-    let msn_applied_externally =
-        config.msn_metadata_external && !msn_metadata.is_empty();
+    let msn_applied_externally = config.msn_metadata_external && !msn_metadata.is_empty();
     if msn_applied_externally {
         cpac_trace!(
             "[TRACE] Phase 2: MSN applied externally — metadata excluded from frame ({}B meta, {}B residual)",
@@ -1022,8 +1021,7 @@ pub(crate) fn decompress_with_dict(
     let (header, payload) = cpac_frame::decode_frame(data)?;
 
     // 2. Entropy decompress with dictionary
-    let decompressed_payload =
-        cpac_entropy::decompress_with_dict(payload, header.backend, dict)?;
+    let decompressed_payload = cpac_entropy::decompress_with_dict(payload, header.backend, dict)?;
 
     // 2.5 MSN inline metadata split
     let (inline_meta_bytes, data_to_unpreprocess) =
@@ -1046,8 +1044,7 @@ pub(crate) fn decompress_with_dict(
     let mut result = if header.dag_descriptor.is_empty() {
         cpac_transforms::unpreprocess(&data_to_unpreprocess, &[])
     } else {
-        let (ids, metas, _consumed) =
-            cpac_dag::deserialize_dag_descriptor(&header.dag_descriptor)?;
+        let (ids, metas, _consumed) = cpac_dag::deserialize_dag_descriptor(&header.dag_descriptor)?;
         let registry = cached_transform_registry();
         let dag = TransformDAG::compile_from_ids(registry, &ids)?;
         let meta_chain: Vec<(u8, Vec<u8>)> = ids.into_iter().zip(metas).collect();
