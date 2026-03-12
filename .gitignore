@@ -5,8 +5,6 @@ fuzz/target/
 # Rust backup files
 **/*.rs.bk
 
-# Dependency lock (library — consumers pin their own)
-Cargo.lock
 
 # Working directories (all temporary/generated files must go here)
 .work/
