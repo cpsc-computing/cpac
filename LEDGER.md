@@ -2,6 +2,37 @@
 
 Session-by-session record of significant changes, investigations, and decisions.
 
+## Session 28 — 2026-03-12 (Security Fixes + CI Hardening)
+
+### Focus
+Resolve all Dependabot and CodeQL code-scanning alerts on the repository.
+
+### Dependabot Alerts (3 moderate — ml-dsa)
+All three ml-dsa vulnerabilities were already patched — the dependency was at
+`0.1.0-rc.7`, newer than all three patched versions (rc.2, rc.4, rc.5).
+Dependabot couldn't verify this because `Cargo.lock` was gitignored.
+
+**Fix**: Removed `Cargo.lock` from `.gitignore` and committed the lockfile.
+Dependabot can now resolve versions and auto-close the alerts.
+
+Patched vulnerabilities:
+- Timing side-channel in ML-DSA decomposition (patched in rc.2)
+- UseHint off-by-two error when r0 equals zero (patched in rc.5)
+- Signature verification accepts repeated hint indices (patched in rc.4)
+
+### CodeQL Code-Scanning Alerts (9 findings — missing workflow permissions)
+All 9 alerts were for missing `permissions` blocks in GitHub Actions workflows.
+
+- `ci.yml` — Added top-level `permissions: contents: read` (least privilege)
+- `release.yml` — Already had `permissions: contents: write` on develop
+
+### Files Modified
+- `.gitignore` — Removed `Cargo.lock` exclusion
+- `Cargo.lock` — Committed to repository (5,140 lines)
+- `.github/workflows/ci.yml` — Added permissions block
+
+---
+
 ## Session 27 — 2026-03-12 (Benchmarking + Profile Tuning)
 
 ### Focus
