@@ -5,6 +5,10 @@ fuzz/target/
 # Rust backup files
 **/*.rs.bk
 
+# Fuzz workspace lockfiles (independent workspaces, not tracked)
+fuzz/Cargo.lock
+crates/cpac-msn/fuzz/Cargo.lock
+
 
 # Working directories (all temporary/generated files must go here)
 .work/
