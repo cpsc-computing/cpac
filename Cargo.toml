@@ -48,7 +48,7 @@ sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 flate2 = "1"
 xz2 = "0.1"
 snap = "1"
-lzzzz = "1"
+lzzzz = "2"
 cpac-lzham-sys = { path = "crates/cpac-lzham-sys" }
 libz-ng-sys = "1.1"
 cpac-lizard-sys = { path = "crates/cpac-lizard-sys" }
