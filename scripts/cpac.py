@@ -167,6 +167,17 @@ def cargo_env() -> dict:
 # ---------------------------------------------------------------------------
 
 
+def cmd_update(args: argparse.Namespace) -> None:
+    """Update Cargo dependencies (runs cargo update)."""
+    cargo = resolve_cargo()
+    cmd = [cargo, "update"]
+    if args.package:
+        cmd.extend(["-p", args.package])
+    if args.dry_run:
+        cmd.append("--dry-run")
+    run(cmd, env=cargo_env())
+
+
 def cmd_build(args: argparse.Namespace) -> None:
     """Build the CPAC workspace."""
     cargo = resolve_cargo()
@@ -1967,6 +1978,11 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="command", help="Available commands")
 
+    # update
+    p = sub.add_parser("update", help="Update Cargo dependencies")
+    p.add_argument("-p", "--package", help="Update a specific package")
+    p.add_argument("--dry-run", action="store_true", help="Show what would be updated")
+
     # build
     p = sub.add_parser("build", help="Build workspace")
     p.add_argument("--release", action="store_true", help="Release build")
@@ -2108,6 +2124,7 @@ def main() -> None:
         sys.exit(0)
 
     dispatch = {
+        "update": cmd_update,
         "build": cmd_build,
         "test": cmd_test,
         "clippy": cmd_clippy,

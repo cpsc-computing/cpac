@@ -54,6 +54,7 @@ Available commands (via `scripts/cpac.py`):
 
 | Command | Description |
 |---|---|
+| `update` | `cargo update` (bump Cargo.lock deps) |
 | `build` | `cargo build --workspace` |
 | `test` | `cargo test --workspace` |
 | `clippy` | `cargo clippy --workspace -- -D warnings` |
@@ -394,3 +395,57 @@ Normative specifications and legal documentation:
 2. Any file not matching the permitted list → move to `.work/` appropriate subfolder
 3. Periodic cleanup: `git status --ignored` to find violations
 4. PRs that add root clutter will be rejected
+
+## GitHub Security Audit
+
+Use the `gh` CLI to audit all four GitHub security categories.
+Run these periodically and before merges to `main`.
+
+### Dependabot Alerts (vulnerable dependencies)
+
+```powershell
+# List all open alerts
+gh api "repos/cpsc-computing/cpac/dependabot/alerts?state=open" --jq '.[] | "\(.number) | \(.security_advisory.severity) | \(.security_vulnerability.package.name) | \(.security_advisory.summary)"'
+
+# Fix: bump transitive deps
+.\shell.ps1 update                  # cargo update (all deps)
+.\shell.ps1 update -p quinn-proto    # update a single package
+
+# Fix: bump direct deps — edit the relevant Cargo.toml, then run update
+```
+
+### Code Scanning Alerts (CodeQL)
+
+```powershell
+# List open alerts
+gh api "repos/cpsc-computing/cpac/code-scanning/alerts?state=open&per_page=100" --jq '.[] | "\(.number) | \(.rule.id) | \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)"'
+
+# Dismiss a false positive
+gh api --method PATCH "repos/cpsc-computing/cpac/code-scanning/alerts/<N>" -f state=dismissed -f "dismissed_reason=used in tests" -f dismissed_comment="Reason here"
+
+# Valid dismissed_reason values: "false positive", "won't fix", "used in tests"
+```
+
+### Secret Scanning Alerts
+
+```powershell
+gh api "repos/cpsc-computing/cpac/secret-scanning/alerts" --jq '.[] | "\(.number) | \(.state) | \(.secret_type_display_name)"'
+```
+
+### Full Audit (all categories at once)
+
+```powershell
+Write-Host "=== Dependabot ==="; gh api "repos/cpsc-computing/cpac/dependabot/alerts?state=open" --jq '.[] | "\(.number) | \(.security_advisory.severity) | \(.security_vulnerability.package.name)"'
+Write-Host "=== Code Scanning ==="; gh api "repos/cpsc-computing/cpac/code-scanning/alerts?state=open&per_page=100" --jq '.[] | "\(.number) | \(.rule.id) | \(.most_recent_instance.location.path)"'
+Write-Host "=== Secret Scanning ==="; gh api "repos/cpsc-computing/cpac/secret-scanning/alerts" --jq '.[] | "\(.number) | \(.state) | \(.secret_type_display_name)"'
+```
+
+### Known Dismissed Alerts
+
+- **`rust/hard-coded-cryptographic-value`** (alerts #10–37): All test fixtures
+  (`#[cfg(test)]` blocks) or HKDF domain-separation constants
+  (`b"CPHE-hybrid-salt"`, `b"CPHE-hybrid-v1"`). Dismissed as "used in tests".
+- **`py/insecure-temporary-file`** (alerts #38–44): `tempfile.mktemp()` calls
+  in `scripts/cpac.py` benchmark runners. Dismissed as "used in tests".
+- **`actions/missing-workflow-permissions`** (alerts #1–9): Fixed — added
+  `permissions` blocks to `ci.yml` and `release.yml`.
