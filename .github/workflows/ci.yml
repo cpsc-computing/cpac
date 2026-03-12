@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v6
       
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # master
         with:
           toolchain: ${{ matrix.rust }}
       
@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
           components: clippy
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
@@ -80,7 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       
       - name: Build CLI
         run: cargo build --release -p cpac-cli
@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
@@ -107,7 +107,7 @@ jobs:
         run: cargo tarpaulin --workspace --timeout 300 --out Xml
       
       - name: Upload coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
         with:
           files: ./cobertura.xml
           fail_ci_if_error: false
