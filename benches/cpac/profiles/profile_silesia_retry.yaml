@@ -1,0 +1,20 @@
+# Silesia retry profile — re-run timed-out large files with higher timeout
+# Targets: mozilla (48.8MB), webster (39.5MB), nci (32MB), samba (20.6MB)
+
+id: silesia_retry
+description: "Silesia corpus retry with extended timeout for large files"
+
+corpora:
+  - silesia
+
+iterations: 3
+timeout_seconds: 3600
+large_file_threshold_mb: 15
+large_file_iterations: 1
+track1: true
+skip_baselines: false
+
+# Match balanced profile backend/level config
+backends: [zstd, brotli, gzip, lzma, xz, lz4, snappy, lzham, lizard, zlib-ng, openzl, raw]
+cpac_levels: [ultrafast, fast, default, high, best]
+discovery: false

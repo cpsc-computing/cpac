@@ -167,24 +167,30 @@ Inspired by OpenZL's managed compression concept:
 ## Known Issues (Critical)
 
 ### Smart Transform Roundtrip Failure on Parallel Path
-**Status**: Identified, reproduction test exists, fix pending.
+**Status**: **RESOLVED** (Session 24 — Phase 1).
 
-Smart transforms (`normalize` + `bwt_chain`) produce significantly better
-compression ratios on large text data (up to +45% on silesia/nci) but fail
-roundtrip verification when the file exceeds the 4 MiB parallel threshold.
-The decompressed output has the correct size but corrupted content.
+Root cause: `compress_parallel()` set `skip_expensive_transforms = true` on
+all sub-blocks, preventing BWT (the main ratio driver) from running.  The
+original corruption report was caused by an earlier pipeline bug that has
+since been fixed; the overly-conservative guard remained.
 
-- Individual transforms roundtrip correctly at 100KB and 5MB (single-block).
-- The failure occurs specifically in the `compress_parallel` → per-block
-  smart transform → `decompress_parallel` path.
-- Reproduction test: `roundtrip_smart_transforms_parallel_text` in
-  `cpac-engine/src/lib.rs`.
-- This is the #1 blocking issue for ratio improvement claims.
+Fix: removed the `skip_expensive_transforms = true` override in
+`compress_parallel()`.  BWT now runs on parallel sub-blocks where the
+analyzer recommends it (blocks ≥ 16 MB, ascii_ratio > 0.85, entropy < 5.5).
+All roundtrip tests pass including `roundtrip_smart_transforms_parallel_text`.
+
+Note: normalize still bails out on large blocks due to u16 metadata length
+limit in the DAG descriptor.  This is correct behaviour — normalize's
+uncompressed metadata would exceed the savings.  A future phase can add
+inline descriptor compression to make normalize viable on large blocks.
 
 ### `compress_parallel` Track Reporting
-`compress_parallel()` hardcodes `track: Track::Track2` in `CompressResult`,
-making benchmark labels misleading for large text files. Should report the
-actual track from block-level SSR analysis.
+**Status**: **RESOLVED** (Session 26 — Phase 5).
+
+`compress_parallel()` previously hardcoded `track: Track::Track2` in
+`CompressResult`.  Fix: each block now derives its track from
+`block_config.cached_ssr` via `auto_select_backend()`, so the reported track
+matches the actual per-block SSR analysis.
 
 ## Additional Baseline Codecs
 

@@ -15,8 +15,8 @@ corpora:
   - kodak
 
 iterations: 3
-timeout_seconds: 900
-large_file_threshold_mb: 50
+timeout_seconds: 3600
+large_file_threshold_mb: 15
 large_file_iterations: 1
 track1: true
 skip_baselines: false

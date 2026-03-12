@@ -80,6 +80,33 @@ fn default_msn_version() -> u8 {
     1
 }
 
+/// Typed column data extracted from MSN fields for CAS analysis.
+#[derive(Clone, Debug, Default)]
+pub struct TypedColumns {
+    /// Integer columns: (field_name, values)
+    pub int_columns: Vec<(String, Vec<i64>)>,
+    /// String columns: (field_name, values)
+    pub string_columns: Vec<(String, Vec<String>)>,
+    /// Float columns: (field_name, values)
+    pub float_columns: Vec<(String, Vec<f64>)>,
+}
+
+impl TypedColumns {
+    /// Whether any typed columns were extracted.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.int_columns.is_empty()
+            && self.string_columns.is_empty()
+            && self.float_columns.is_empty()
+    }
+
+    /// Total number of columns across all types.
+    #[must_use]
+    pub fn column_count(&self) -> usize {
+        self.int_columns.len() + self.string_columns.len() + self.float_columns.len()
+    }
+}
+
 impl MsnResult {
     /// Create a passthrough result (MSN not applied).
     #[must_use]
@@ -120,6 +147,64 @@ impl MsnResult {
             domain_id: self.domain_id.clone(),
             confidence: self.confidence,
         }
+    }
+
+    /// Extract typed column data from MSN fields for CAS constraint analysis.
+    ///
+    /// Converts MSN fields into typed column vectors:
+    /// - Array fields with all-integer values → `int_columns`
+    /// - Array fields with all-string values → `string_columns`
+    /// - Array fields with all-numeric (float) values → `float_columns`
+    /// - Scalar fields: treated as single-element columns
+    #[must_use]
+    pub fn typed_columns(&self) -> TypedColumns {
+        let mut cols = TypedColumns::default();
+
+        for (name, value) in &self.fields {
+            match value {
+                serde_json::Value::Array(arr) if !arr.is_empty() => {
+                    // Try as all-integer
+                    let ints: Vec<i64> = arr
+                        .iter()
+                        .filter_map(|v| v.as_i64())
+                        .collect();
+                    if ints.len() == arr.len() {
+                        cols.int_columns.push((name.clone(), ints));
+                        continue;
+                    }
+                    // Try as all-float (numbers including decimals)
+                    let floats: Vec<f64> = arr
+                        .iter()
+                        .filter_map(|v| v.as_f64())
+                        .collect();
+                    if floats.len() == arr.len() {
+                        cols.float_columns.push((name.clone(), floats));
+                        continue;
+                    }
+                    // Try as all-string
+                    let strings: Vec<String> = arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect();
+                    if strings.len() == arr.len() {
+                        cols.string_columns.push((name.clone(), strings));
+                    }
+                }
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        cols.int_columns.push((name.clone(), vec![i]));
+                    } else if let Some(f) = n.as_f64() {
+                        cols.float_columns.push((name.clone(), vec![f]));
+                    }
+                }
+                serde_json::Value::String(s) => {
+                    cols.string_columns.push((name.clone(), vec![s.clone()]));
+                }
+                _ => {}
+            }
+        }
+
+        cols
     }
 }
 

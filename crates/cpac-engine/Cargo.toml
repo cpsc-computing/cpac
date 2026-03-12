@@ -18,6 +18,7 @@ cpac-frame = { workspace = true }
 cpac-transforms = { workspace = true }
 cpac-cas = { workspace = true }
 cpac-dag = { workspace = true }
+cpac-dict = { workspace = true }
 sysinfo = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }

@@ -2,6 +2,216 @@
 
 Session-by-session record of significant changes, investigations, and decisions.
 
+## Session 27 — 2026-03-12 (Benchmarking + Profile Tuning)
+
+### Focus
+Full corpus benchmarking of all 6 ratio-improvement phases.  Fix profile
+timeouts on large Silesia files, run targeted retry, disk cleanup.
+
+### Benchmark Results — Balanced Profile (773/777 OK)
+Ran `benchmark-all` with `profile_balanced.yaml`.  4 Silesia files timed out
+(nci, samba, webster, mozilla) at the default 900 s timeout.
+
+Key corpus averages (best ratio per file):
+- loghub2_2k: 16.63× (Brotli@11 most common best backend; Zstd Best 15.25×)
+- nasa_logs: 8.56×
+- canterbury: 5.84×
+- silesia (excl. timed-out): 4.30×
+- calgary: 4.03×
+- enwik8: 3.75×
+- cloud_configs: 3.63×
+- kodak: 1.08× (near-incompressible images)
+
+### Silesia Retry (12/12 OK)
+Created `profile_silesia_retry.yaml` with `timeout: 3600` and
+`large_file_threshold: 15 MB`.  All 12 Silesia files completed:
+- nci: 20.68×
+- samba: 5.74×
+- webster: 4.94×
+- mozilla: 3.83×
+
+### Profile Changes
+- `profile_balanced.yaml` — timeout 900 → 3600 s, large_file_threshold 50 → 15 MB
+- `profile_silesia_retry.yaml` — new profile targeting Silesia corpus only
+
+### Disk Cleanup
+Removed `target/debug` (~33 GB freed, ~30.8 GB now free).
+
+### Files Modified
+- `benches/cpac/profiles/profile_balanced.yaml` — timeout + threshold
+- `benches/cpac/profiles/profile_silesia_retry.yaml` — new
+
+---
+
+## Session 26 — 2026-03-11 (Phases 3–6: Dictionary, Conditioned BWT, Backend Selection, CAS Bridge)
+
+### Focus
+Implement remaining 4 phases of the Compression Ratio Improvement Plan in a
+single session.  All 4 phases pass presubmit (build + test + clippy).
+
+### Phase 3 — Auto-Dictionary for Parallel Blocks
+
+1. **CPBL v3 wire format** — Extends v2 with a shared zstd dictionary:
+   `dict_len(4B)` + `dict_data` in the CPBL header.  V1/v2 remain readable.
+
+2. **Dictionary training** — `compress_parallel()` collects the first N blocks
+   (min 3, max 8, max 64 KB total dict size) and trains a zstd dictionary via
+   `cpac-dict`.  Dict is stored once in the CPBL header and applied to all
+   blocks via `compress_with_dict()` / `decompress_with_dict()`.
+
+3. **Dependency** — Added `cpac-dict` to `cpac-engine/Cargo.toml`.
+
+### Phase 4 — Conditioned BWT Composition
+
+1. **New transform** — `ConditionedBwtTransform` (ID = 26) in
+   `cpac-transforms/src/conditioned_bwt.rs`.  Partitions input via
+   `cpac_conditioning::partition()`, applies BWT + MTF + RLE0 per qualifying
+   stream.  Reassembles with a length-prefixed partition table.
+
+2. **Registry** — Registered in `TransformRegistry::with_builtins()` in
+   `cpac-dag/src/registry.rs` (now 26 transforms total).
+
+### Phase 5 — Per-Block Backend Selection
+
+1. **Fix** — Replaced hardcoded `Track::Track2` with per-block track derived
+   from `block_config.cached_ssr` in `compress_parallel()`.  Each block now
+   runs `auto_select_backend()` using its own SSR analysis rather than a
+   single file-level decision.
+
+### Phase 6 — CAS Bridge for MSN Fields
+
+1. **TypedColumns** — New struct `TypedColumns` + `MsnResult::typed_columns()`
+   in `cpac-msn/src/lib.rs`.  Exposes MSN-extracted fields as typed columns
+   (numeric, string, timestamp, boolean) for downstream CAS analysis.
+
+2. **CAS constraint bridge** — `compress_parallel()` calls
+   `typed_columns()` on MSN results, feeds columns into CAS constraint
+   inference, and applies per-column transforms when the cost model accepts.
+
+### Files Modified
+- `cpac-engine/src/parallel.rs` — CPBL v3 dict, per-block backend, CAS bridge
+- `cpac-engine/src/lib.rs` — dict-aware compress path wiring
+- `cpac-engine/Cargo.toml` — `cpac-dict` dependency
+- `cpac-transforms/src/conditioned_bwt.rs` — new: ConditionedBwtTransform
+- `cpac-transforms/src/lib.rs` — module registration
+- `cpac-dag/src/registry.rs` — registered transform ID 26
+- `cpac-msn/src/lib.rs` — TypedColumns, typed_columns()
+
+### Validation
+- Build: `shell.ps1 build` ✓
+- Tests: full workspace (all suites) ✓
+- Clippy: `shell.ps1 clippy` (0 warnings) ✓
+
+---
+
+## Session 25 — 2026-03-11 (Phase 2: MSN Cross-Block Metadata Deduplication)
+
+### Focus
+Implement Phase 2 of the Compression Ratio Improvement Plan: store MSN
+metadata once in the CPBL header instead of duplicating it in every parallel
+block frame.
+
+### Implementation
+
+1. **Type system** — Added `msn_metadata_external: bool` to `CompressConfig`
+   and `msn_applied: bool` to `CompressResult` in `cpac-types/src/lib.rs`.
+   Updated all `CompressResult` construction sites (engine + streaming).
+
+2. **Engine compress()** — When `msn_metadata_external=true` and MSN applies,
+   the per-block frame is CP v1 (no inline metadata), `original_size` is set
+   to the residual length, and `msn_applied=true` signals the caller.
+
+3. **CPBL v2 wire format** — New format in `parallel.rs` adds:
+   `shared_meta_len(4B)` after the v1 header, plus `block_flags(1B×N)` and
+   `shared_metadata` between the block size table and payloads.  V1 emitted
+   when no MSN metadata (backward compatible).
+
+4. **Compress path** — MSN probe in `compress_parallel()` now sets
+   `msn_metadata_external=true` on the block config, collects per-block
+   `msn_applied` flags, and writes CPBL v2 with shared metadata.
+
+5. **Decompress path** — `decompress_parallel()` accepts both v1 and v2.
+   For v2, decodes shared metadata once, then reconstructs MSN-flagged
+   blocks via `metadata.with_residual()` + `cpac_msn::reconstruct()`.
+
+6. **Block size cap** — When MSN is enabled, block size is capped at
+   `MAX_DOMAIN_EXTRACT_SIZE` (8 MB) so per-block MSN extraction stays
+   within domain handler limits.  Probe sample also truncated.
+
+### Files Modified
+- `cpac-types/src/lib.rs` — New config/result fields
+- `cpac-engine/src/lib.rs` — External MSN path in compress()
+- `cpac-engine/src/parallel.rs` — CPBL v2 format, compress + decompress
+- `cpac-streaming/src/lib.rs` — Updated CompressResult construction
+- `cpac-engine/tests/phase2_msn_dedup.rs` — New: 4 roundtrip tests
+  (JSON v2, YAML v1, binary v1, XML v2)
+
+### Validation
+- Build: `shell.ps1 build` ✓
+- Tests: full workspace (all suites including new Phase 2 tests) ✓
+- Clippy: `shell.ps1 clippy` (0 warnings) ✓
+
+### Key Discovery
+Adaptive block sizing could produce blocks larger than MSN domain handlers
+accept (BLOCK_SIZE_LARGE=32 MB > MAX_DOMAIN_EXTRACT_SIZE=8 MB).  The MSN
+extraction silently returned `not_applied` on oversized blocks, causing the
+parallel path to emit CPBL v1 even when MSN would have succeeded.  Fixed by
+capping block size at the domain limit when MSN is enabled.
+
+---
+
+## Session 24 — 2026-03-11 (Phase 1: Fix Parallel Smart Transform Roundtrip)
+
+### Focus
+Execute Phase 1 of the Compression Ratio Improvement Plan: enable smart
+transforms (primarily BWT) on the parallel compression path.
+
+### Investigation Findings
+
+1. **Original bug no longer reproduces** — The "corrupted output" reported in
+   Sessions 21/22 was caused by an earlier pipeline issue that has since been
+   fixed by other session changes.  The `skip_expensive_transforms = true`
+   guard in `compress_parallel()` prevented the bug from manifesting but also
+   killed all ratio improvement from transforms.
+
+2. **BWT roundtrips correctly at block sizes** — Tested BWT on 4 MB and 17 MB
+   blocks (single-stream and parallel) with full roundtrip verification.
+   BWT metadata is only 4 bytes (the original index), well within the u16
+   DAG descriptor limit.
+
+3. **Normalize u16 hypothesis (H4) confirmed but moot** — The normalize
+   transform generates hundreds of KB to MB of metadata on large blocks
+   (one diff per whitespace removal).  The u16 guard at normalize.rs:317
+   correctly bails out, and the `smart_preprocess` cost check would also
+   reject it because uncompressed metadata overhead exceeds savings.  A
+   future phase can add inline descriptor compression to make normalize
+   viable.
+
+### Fix Applied
+Removed `block_config.skip_expensive_transforms = true` from
+`compress_parallel()` in `cpac-engine/src/parallel.rs`.  BWT now runs on
+parallel sub-blocks where the analyzer recommends it (≥ 16 MB blocks,
+ascii_ratio > 0.85, entropy < 5.5).
+
+### Files Modified
+- `cpac-engine/src/parallel.rs` — Removed skip_expensive_transforms override
+- `cpac-engine/tests/phase1_bwt_parallel.rs` — New: 2 roundtrip tests at
+  17 MB block size (plain text + JSON) verifying smart transforms work
+- `docs/ROADMAP.md` — Updated known issues: marked parallel roundtrip as RESOLVED
+
+### Validation
+- Build: `shell.ps1 build` ✓
+- Tests: full workspace (95 cpac-msn + 77 cpac-engine + all integration) ✓
+- Clippy: `shell.ps1 clippy` (0 warnings) ✓
+- Phase 1 investigation tests: 2 new tests pass at 17 MB block size ✓
+
+### Expected Impact
++15–45% compression ratio on large text files (≥32 MB) that trigger the
+parallel path.  Verified on synthetic test data; real-world corpus
+benchmarks pending.
+
+---
+
 ## Session 23 — 2026-03-11 (MSN Large-File Regression Fix + Ratio Improvement Plan)
 
 ### Focus

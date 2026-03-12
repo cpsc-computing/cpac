@@ -167,10 +167,21 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // file only to discard the result — each parallel block applies MSN independently.
     // Skip if disable_parallel flag is set (prevents recursive calls from compress_parallel).
     // Phase 4C: when no explicit block size is set, use entropy-adaptive sizing.
-    let effective_block_size = if config.block_size > 0 {
-        config.block_size
-    } else {
-        parallel::adaptive_block_size(ssr.entropy_estimate, original_size)
+    let effective_block_size = {
+        let base = if config.block_size > 0 {
+            config.block_size
+        } else {
+            parallel::adaptive_block_size(ssr.entropy_estimate, original_size)
+        };
+        // Phase 2: MSN domain extractors have a per-domain size limit
+        // (MAX_DOMAIN_EXTRACT_SIZE = 8 MB) in addition to the global MSN
+        // limit (16 MB).  When MSN is enabled, cap blocks to the stricter
+        // per-domain limit so per-block extract/extract_with_fields work.
+        if config.enable_msn {
+            base.min(cpac_msn::MAX_DOMAIN_EXTRACT_SIZE)
+        } else {
+            base
+        }
     };
     // P3: use higher threshold for text-heavy data (ascii_ratio > 0.85)
     let base_threshold = if ssr.ascii_ratio > 0.85 {
@@ -436,15 +447,33 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         msn_data // P8: move instead of clone
     };
 
+    // Phase 2: When MSN metadata is managed externally (CPBL shared header),
+    // we still extracted the residual above but do NOT embed metadata in the
+    // per-block frame.  The frame stores original_size = residual size so the
+    // per-block decompressor returns the residual directly.  The caller
+    // (compress_parallel) stores metadata once and applies reconstruction.
+    let msn_applied_externally =
+        config.msn_metadata_external && !msn_metadata.is_empty();
+    if msn_applied_externally {
+        cpac_trace!(
+            "[TRACE] Phase 2: MSN applied externally — metadata excluded from frame ({}B meta, {}B residual)",
+            msn_metadata.len(),
+            preprocessed.len()
+        );
+    }
+
     // 6. Entropy coding (level-aware, with optional dictionary for Zstd).
     //
-    // If MSN metadata is present, prepend it to the preprocessed residual *before*
-    // entropy coding so both are compressed in the same stream.  Sharing a
-    // single zstd context lets the encoder discover cross-references between the
-    // repeated token strings that appear in both the metadata dictionary and the
-    // residual body, eliminating the per-frame uncompressed metadata overhead.
-    let inline_msn_meta_len = msn_metadata.len();
-    let data_for_entropy: Vec<u8> = if !msn_metadata.is_empty() {
+    // If MSN metadata is present AND not external, prepend it to the
+    // preprocessed residual *before* entropy coding so both are compressed
+    // in the same stream.  When external, skip the prepend — the caller
+    // stores metadata in the CPBL header.
+    let inline_msn_meta_len = if msn_applied_externally {
+        0
+    } else {
+        msn_metadata.len()
+    };
+    let data_for_entropy: Vec<u8> = if !msn_metadata.is_empty() && !msn_applied_externally {
         let mut combined = Vec::with_capacity(msn_metadata.len() + preprocessed.len());
         combined.extend_from_slice(&msn_metadata);
         combined.extend_from_slice(&preprocessed);
@@ -465,11 +494,24 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     )?;
 
     // 7. Frame encoding.
+    //   - External MSN: CP v1 frame, original_size = residual size.
     //   - No MSN + no DAG: standard CP v1 frame.
-    //   - MSN present: CP2 inline frame (FLAG_MSN_INLINE).
+    //   - MSN present (not external): CP2 inline frame (FLAG_MSN_INLINE).
     //   - DAG descriptor is embedded in the frame header for both versions.
-    let frame = if msn_metadata.is_empty() {
-        cpac_frame::encode_frame(&compressed_payload, backend, original_size, &dag_descriptor)
+    let frame_original_size = if msn_applied_externally {
+        // Residual size: the decompressor will return the residual, and the
+        // CPBL-level code handles MSN reconstruction.
+        data_for_entropy.len()
+    } else {
+        original_size
+    };
+    let frame = if msn_metadata.is_empty() || msn_applied_externally {
+        cpac_frame::encode_frame(
+            &compressed_payload,
+            backend,
+            frame_original_size,
+            &dag_descriptor,
+        )
     } else {
         cpac_frame::encode_frame_cp2_inline(
             &compressed_payload,
@@ -488,6 +530,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         compressed_size,
         track: effective_track,
         backend,
+        msn_applied: msn_applied_externally,
     })
 }
 
@@ -934,6 +977,103 @@ pub fn decompress(data: &[u8]) -> CpacResult<DecompressResult> {
     });
     if let Some(mb) = msn_bytes {
         // Auto-detect encoding: 0x01 prefix = MessagePack (new), '{' prefix = JSON (legacy).
+        let msn_metadata = cpac_msn::decode_metadata_compact(&mb)?;
+        let msn_result = msn_metadata.with_residual(result);
+        result = cpac_msn::reconstruct(&msn_result)?;
+    }
+
+    // 5. Verify size
+    if result.len() != header.original_size as usize {
+        return Err(CpacError::DecompressFailed(format!(
+            "size mismatch: expected {}, got {}",
+            header.original_size,
+            result.len()
+        )));
+    }
+
+    Ok(DecompressResult {
+        data: result,
+        success: true,
+        error: None,
+    })
+}
+
+/// Internal decompression helper that accepts an optional dictionary.
+///
+/// Used by `decompress_parallel` for Phase 3 auto-dictionary support.
+/// When `dict` is `Some`, uses dictionary-aware entropy decompression.
+pub(crate) fn decompress_with_dict(
+    data: &[u8],
+    dict: Option<&[u8]>,
+) -> CpacResult<DecompressResult> {
+    // If no dict, delegate to normal path
+    if dict.is_none() {
+        return decompress(data);
+    }
+
+    // Check if this is a CPBL (parallel) frame first — shouldn't happen in
+    // per-block context, but guard against it.
+    if is_cpbl(data) {
+        let num_threads = rayon::current_num_threads();
+        return decompress_parallel(data, num_threads);
+    }
+
+    // 1. Decode frame
+    let (header, payload) = cpac_frame::decode_frame(data)?;
+
+    // 2. Entropy decompress with dictionary
+    let decompressed_payload =
+        cpac_entropy::decompress_with_dict(payload, header.backend, dict)?;
+
+    // 2.5 MSN inline metadata split
+    let (inline_meta_bytes, data_to_unpreprocess) =
+        if header.flags & cpac_frame::FLAG_MSN_INLINE != 0 && header.msn_meta_len > 0 {
+            let split = header.msn_meta_len;
+            if decompressed_payload.len() < split {
+                return Err(CpacError::DecompressFailed(format!(
+                    "inline MSN meta split {split} > decompressed payload {}",
+                    decompressed_payload.len()
+                )));
+            }
+            let meta = decompressed_payload[..split].to_vec();
+            let rest = decompressed_payload[split..].to_vec();
+            (Some(meta), rest)
+        } else {
+            (None, decompressed_payload)
+        };
+
+    // 3. Reverse transforms
+    let mut result = if header.dag_descriptor.is_empty() {
+        cpac_transforms::unpreprocess(&data_to_unpreprocess, &[])
+    } else {
+        let (ids, metas, _consumed) =
+            cpac_dag::deserialize_dag_descriptor(&header.dag_descriptor)?;
+        let registry = cached_transform_registry();
+        let dag = TransformDAG::compile_from_ids(registry, &ids)?;
+        let meta_chain: Vec<(u8, Vec<u8>)> = ids.into_iter().zip(metas).collect();
+        let output = dag.execute_backward(
+            cpac_types::CpacType::Serial(data_to_unpreprocess),
+            &meta_chain,
+        )?;
+        match output {
+            cpac_types::CpacType::Serial(bytes) => bytes,
+            _ => {
+                return Err(CpacError::DecompressFailed(
+                    "DAG produced non-Serial output".into(),
+                ))
+            }
+        }
+    };
+
+    // 4. MSN reconstruction
+    let msn_bytes = inline_meta_bytes.or_else(|| {
+        if !header.msn_metadata.is_empty() {
+            Some(header.msn_metadata.clone())
+        } else {
+            None
+        }
+    });
+    if let Some(mb) = msn_bytes {
         let msn_metadata = cpac_msn::decode_metadata_compact(&mb)?;
         let msn_result = msn_metadata.with_residual(result);
         result = cpac_msn::reconstruct(&msn_result)?;

@@ -132,6 +132,7 @@ pub fn compress_streaming(
         compressed_size,
         track: cpac_types::Track::Track2,
         backend: config.backend.unwrap_or(cpac_types::Backend::Zstd),
+        msn_applied: false,
     })
 }
 
@@ -327,6 +328,7 @@ pub fn compress_streaming_with_progress(
         compressed_size,
         track: cpac_types::Track::Track2,
         backend: config.backend.unwrap_or(cpac_types::Backend::Zstd),
+        msn_applied: false,
     })
 }
 

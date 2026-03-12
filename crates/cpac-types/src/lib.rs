@@ -656,6 +656,16 @@ pub struct CompressConfig {
     /// Default: None.
     pub cached_ssr: Option<CachedSsr>,
 
+    // --- Phase 2: MSN cross-block metadata deduplication ---
+    /// When true, MSN metadata is managed externally (e.g. shared CPBL header).
+    /// `compress()` runs MSN extraction and compresses the residual, but does
+    /// NOT embed metadata in the per-block frame.  The frame is CP v1 with
+    /// `original_size` set to the residual length so the decompressor returns
+    /// the residual directly.  The caller (e.g. `compress_parallel`) stores
+    /// metadata once in the CPBL header and applies reconstruction.
+    /// Default: false.
+    pub msn_metadata_external: bool,
+
     // --- Phase 7: integrated encryption ---
     /// Encryption config for compress-then-encrypt (CPCE format).
     /// Default: no encryption.
@@ -684,6 +694,7 @@ impl Default for CompressConfig {
             skip_expensive_transforms: false,
             cached_transform_recs: None,
             cached_ssr: None,
+            msn_metadata_external: false,
             encryption: EncryptionConfig::default(),
         }
     }
@@ -721,6 +732,10 @@ pub struct CompressResult {
     pub track: Track,
     /// Backend used.
     pub backend: Backend,
+    /// Phase 2: Whether MSN was applied with external metadata storage.
+    /// When true, the decompressed output is the MSN residual (not original data)
+    /// and requires reconstruction with the shared CPBL metadata.
+    pub msn_applied: bool,
 }
 
 impl CompressResult {
