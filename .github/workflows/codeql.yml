@@ -19,9 +19,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ python ]
-        # Note: Rust is not yet supported by CodeQL. The 'actions' category
-        # is handled automatically by GitHub's default analysis.
+        include:
+          - language: python
+            build-mode: none
+          - language: actions
+            build-mode: none
     steps:
       - uses: actions/checkout@v6
 
@@ -29,10 +31,8 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
           queries: security-extended
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
