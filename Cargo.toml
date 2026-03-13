@@ -22,10 +22,11 @@ members = [
     "crates/cpac-predict",
     "crates/cpac-lizard-sys",
     "crates/cpac-lzham-sys",
+    "crates/cpac-transcode",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "LicenseRef-CPAC-Research-Evaluation-1.0"
 repository = "https://github.com/BitConcepts/cpac-engine-python"
@@ -78,6 +79,8 @@ cpac-lab = { path = "crates/cpac-lab" }
 cpac-dict = { path = "crates/cpac-dict" }
 cpac-conditioning = { path = "crates/cpac-conditioning" }
 cpac-predict = { path = "crates/cpac-predict" }
+cpac-transcode = { path = "crates/cpac-transcode" }
+image = { version = "0.25", default-features = false, features = ["png", "bmp", "tiff", "webp"] }
 
 [profile.release]
 lto = "fat"

@@ -257,6 +257,27 @@ pub fn matched_baselines(level: CompressionLevel) -> Vec<StandaloneCodec> {
     .collect()
 }
 
+/// Return [`matched_baselines`] plus high-compression reference points.
+///
+/// Always includes zstd-12, zstd-19, and brotli-11 regardless of the
+/// requested level, so every benchmark run can compare against the
+/// industry’s strongest general-purpose settings.
+#[must_use]
+pub fn extended_baselines(level: CompressionLevel) -> Vec<StandaloneCodec> {
+    let mut baselines = matched_baselines(level);
+    let extras = [
+        StandaloneCodec { backend: Backend::Zstd, cpac_level: CompressionLevel::High },     // zstd-12
+        StandaloneCodec { backend: Backend::Zstd, cpac_level: CompressionLevel::Best },     // zstd-19
+        StandaloneCodec { backend: Backend::Brotli, cpac_level: CompressionLevel::Best },   // brotli-11
+    ];
+    for extra in extras {
+        if !baselines.iter().any(|b| b.backend == extra.backend && b.cpac_level == extra.cpac_level) {
+            baselines.push(extra);
+        }
+    }
+    baselines
+}
+
 /// Parse a [`CompressionLevel`] from a string.
 pub fn parse_compression_level(s: &str) -> Option<CompressionLevel> {
     match s.to_ascii_lowercase().as_str() {
@@ -861,7 +882,7 @@ impl BenchmarkRunner {
                 }
             }
             if !self.skip_baselines {
-                let baselines = matched_baselines(self.bench_level);
+                let baselines = extended_baselines(self.bench_level);
                 for codec in &baselines {
                     if let Ok(r) = self.bench_standalone(file, codec) {
                         results.push(r);
@@ -1312,8 +1333,8 @@ mod tests {
         let dir = create_temp_corpus();
         let runner = BenchmarkRunner::new(BenchProfile::Quick);
         let results = runner.bench_directory(dir.path(), None);
-        // 2 files × (12 CPAC backends + 11 standalone baselines) = 46
-        assert_eq!(results.len(), 46);
+        // 2 files × (12 CPAC backends + 14 extended baselines) = 52
+        assert_eq!(results.len(), 52);
     }
 
     #[test]

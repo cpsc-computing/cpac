@@ -2,6 +2,89 @@
 
 Session-by-session record of significant changes, investigations, and decisions.
 
+## Session 29 — 2026-03-12 (v0.2.0 Release Readiness Sprint)
+
+### Focus
+Feature completion and release preparation for v0.2.0. New crates, CLI
+subcommands, hardware detection, documentation updates, CI additions, and
+version bump.
+
+### A1: Remove publish-crates from release.yml
+Deleted the `publish-crates` job — crates are not published to crates.io.
+
+### B1: Inline Descriptor Compression
+Extended `serialize_dag_descriptor()` / `deserialize_dag_descriptor()` in
+`cpac-dag/src/dag.rs` to zstd-compress metadata that exceeds the u16 length
+prefix. High bit of transform ID used as compression flag. Removed the u16
+bail-out in `normalize.rs:317`. Added `zstd` dependency to `cpac-dag`.
+
+### B2: Extended Default Baselines
+Added `extended_baselines()` to `cpac-lab/src/bench.rs` returning zstd-12,
+zstd-19, brotli-11 alongside matched baselines. Updated
+`bench_directory_with_baselines` test assertion (46→52).
+
+### C1-C4: Transcode Compression
+New `cpac-transcode` crate with CPTC wire format for lossless image
+compression: byte-plane split → delta encode → zstd. CLI `--transcode` flag
+falls back to normal CPAC for non-image files. 10 tests.
+
+### D1-D4: Closed-Loop Auto-Analysis
+New `cpac-lab/src/auto_analyze.rs` with `auto_analyze()`, `format_report()`,
+`generate_yaml_config()`. CLI subcommand `auto-analyze` (alias `aa`) with
+`--output`, `--quick`, `--write-config` flags. Wired into `scripts/cpac.py`.
+
+### E1-E4: Hardware Acceleration
+Feature flags in `cpac-engine/Cargo.toml`: `accel-qat`, `accel-iaa`,
+`accel-gpu`, `accel-sve2`. Runtime detection in `accel.rs` for QAT devices,
+IAA CPUID, GPU runtime (CUDA/nvcuda), with `format_accelerators()` helper.
+Documented in `docs/HARDWARE_ACCEL.md`.
+
+### A2: README Benchmarks
+Updated benchmark table with Phase 1–6 results (loghub2_2k 16.63×, nasa_logs
+8.56×, silesia 4.30×). Updated feature list (12 backends, 539+ tests,
+transcode, auto-analysis, hardware accel).
+
+### A3: Python Bindings CI
+Added `python-bindings` job to `.github/workflows/ci.yml`: Ubuntu, maturin
+build, smoke-test import.
+
+### F1: Version Bump
+Workspace version 0.1.0→0.2.0 in `Cargo.toml`, `pyproject.toml`, README
+badge and footer. `VERSION` constant uses `env!("CARGO_PKG_VERSION")`.
+
+### F2: CHANGELOG.md
+Added full v0.2.0 release notes covering all sessions 20–29.
+
+### Files Modified
+- `.github/workflows/release.yml` — removed publish-crates
+- `.github/workflows/ci.yml` — python-bindings job
+- `Cargo.toml` — workspace version, cpac-transcode member + deps, image dep
+- `python/cpac-py/pyproject.toml` — version 0.2.0
+- `README.md` — benchmarks, feature list, version badge
+- `CHANGELOG.md` — v0.2.0 release notes
+- `cpac-dag/src/dag.rs` — inline descriptor compression
+- `cpac-dag/Cargo.toml` — zstd dep
+- `cpac-transforms/src/normalize.rs` — removed u16 bail-out
+- `cpac-lab/src/bench.rs` — extended_baselines()
+- `cpac-lab/src/auto_analyze.rs` — new: auto-analysis engine
+- `cpac-lab/src/lib.rs` — module registration
+- `cpac-lab/Cargo.toml` — cpac-engine dep
+- `cpac-transcode/src/lib.rs` — new: CPTC wire format
+- `cpac-transcode/Cargo.toml` — new crate
+- `cpac-engine/src/accel.rs` — runtime detection improvements
+- `cpac-engine/Cargo.toml` — feature flags
+- `cpac-cli/src/main.rs` — --transcode, auto-analyze subcommand
+- `cpac-cli/Cargo.toml` — cpac-transcode dep
+- `scripts/cpac.py` — auto-analyze subcommand
+- `docs/HARDWARE_ACCEL.md` — new
+
+### Validation
+- Build: `shell.ps1 build` ✓
+- Tests: 539+ pass (0 failures) ✓
+- Clippy: `shell.ps1 clippy` (0 warnings) ✓
+
+---
+
 ## Session 28 — 2026-03-12 (Security Fixes + CI Hardening)
 
 ### Focus

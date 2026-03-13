@@ -93,6 +93,34 @@ jobs:
           # Run benchmark
           cargo run --release -p cpac-cli -- benchmark test.txt --quick
 
+  python-bindings:
+    name: Python Bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build cpac-py wheel
+        working-directory: python/cpac-py
+        run: maturin build --release
+
+      - name: Install and smoke-test
+        working-directory: python/cpac-py
+        run: |
+          pip install target/wheels/*.whl
+          python -c "import cpac; print('cpac version:', cpac.__version__ if hasattr(cpac, '__version__') else 'ok')"
+
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest

@@ -117,6 +117,11 @@ enum Commands {
         /// Disable automatic dictionary selection from .work/benchmarks/.
         #[arg(long)]
         no_auto_dict: bool,
+        /// Transcode-compress lossless images (PNG, BMP, TIFF, WebP).
+        /// Decodes to raw pixels, applies byte-plane split + delta + zstd.
+        /// Falls back to normal compression for non-image files.
+        #[arg(long)]
+        transcode: bool,
         /// Encrypt output with a password (reads CPAC_PASSWORD env or prompts).
         /// Produces CPCE wire format (.cpac-enc) combining compression + encryption.
         #[arg(long)]
@@ -347,6 +352,21 @@ enum Commands {
     Pqc {
         #[command(subcommand)]
         action: PqcAction,
+    },
+    /// Auto-analyze a directory and recommend optimal compression settings.
+    #[command(alias = "aa")]
+    AutoAnalyze {
+        /// Directory (or single file) to analyze.
+        input: PathBuf,
+        /// Write Markdown report to a file.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Quick mode: fewer files, smaller size cap.
+        #[arg(long)]
+        quick: bool,
+        /// Write recommended YAML config to .cpac-config.yml in the directory.
+        #[arg(long)]
+        write_config: bool,
     },
     /// Transform Laboratory tools.
     #[command(alias = "l")]
@@ -635,6 +655,7 @@ fn cmd_compress(
     msn_domain: Option<String>,
     level: CompressionLevel,
     smart: bool,
+    transcode: bool,
     preset: Option<Preset>,
     accel: Option<AccelBackend>,
     dict: Option<PathBuf>,
@@ -710,7 +731,35 @@ fn cmd_compress(
             || (file_path.to_str() != Some("-")
                 && cpac_streaming::mmap::should_use_mmap(file_path));
 
-        let (compressed_data, original_size, compressed_size) = if streaming {
+        let (compressed_data, original_size, compressed_size) = if transcode {
+            // Transcode path: lossless image → pixel decode → byte-plane split → zstd
+            let data = read_input(file_path);
+            let orig = data.len();
+            match cpac_transcode::transcode_compress(&data) {
+                Ok(frame) => {
+                    if verbose >= 2 {
+                        eprintln!("Transcode: lossless image detected, using CPTC format");
+                    }
+                    let csz = frame.len();
+                    (frame, orig, csz)
+                }
+                Err(_) => {
+                    // Not a recognized lossless image — fall through to normal CPAC
+                    if verbose >= 1 {
+                        eprintln!("Transcode: not a lossless image, using standard CPAC");
+                    }
+                    let res = cpac_engine::compress(&data, &config);
+                    match res {
+                        Ok(r) => (r.data.clone(), r.original_size, r.data.len()),
+                        Err(e) => {
+                            eprintln!("Compression failed for '{}': {e}", file_path.display());
+                            if files.len() > 1 { continue; }
+                            process::exit(1);
+                        }
+                    }
+                }
+            }
+        } else if streaming {
             // Streaming path: incremental, bounded-memory compression.
             let msn_cfg = cpac_streaming::MsnConfig {
                 enable: enable_msn,
@@ -1907,6 +1956,37 @@ fn cmd_pqc(action: PqcAction) {
     }
 }
 
+fn cmd_auto_analyze(input: PathBuf, output: Option<PathBuf>, quick: bool, write_config: bool) {
+    if !input.is_dir() {
+        eprintln!("Error: {} is not a directory", input.display());
+        eprintln!("Hint: auto-analyze requires a directory. Use 'cpac analyze' for single files.");
+        process::exit(1);
+    }
+
+    eprintln!("Analyzing {}...", input.display());
+    let report = cpac_lab::auto_analyze::auto_analyze(&input, quick);
+    let md = cpac_lab::auto_analyze::format_report(&report);
+
+    if let Some(ref out_path) = output {
+        std::fs::write(out_path, &md).unwrap_or_else(|e| {
+            eprintln!("Error writing report: {e}");
+            process::exit(1);
+        });
+        println!("Report written to {}", out_path.display());
+    } else {
+        print!("{md}");
+    }
+
+    if write_config {
+        let config_path = input.join(".cpac-config.yml");
+        std::fs::write(&config_path, &report.recommended_config).unwrap_or_else(|e| {
+            eprintln!("Error writing config: {e}");
+            process::exit(1);
+        });
+        println!("Config written to {}", config_path.display());
+    }
+}
+
 fn cmd_analyze(input: PathBuf) {
     let data = read_input(&input);
     let filename = input.to_str();
@@ -2370,6 +2450,7 @@ fn main() {
             encrypt,
             encrypt_key,
             encrypt_algo,
+            transcode,
         } => cmd_compress(
             input,
             output,
@@ -2386,6 +2467,7 @@ fn main() {
             msn_domain,
             parse_level(&level),
             smart,
+            transcode,
             preset.and_then(|s| Preset::from_str_loose(&s)),
             AccelBackend::from_str_loose(&accel),
             dict,
@@ -2449,6 +2531,12 @@ fn main() {
         Commands::Analyze { input } => cmd_analyze(input),
         Commands::Profile { input, quick } => cmd_profile(input, quick),
         Commands::AutoCas { input, compress } => cmd_auto_cas(input, compress),
+        Commands::AutoAnalyze {
+            input,
+            output,
+            quick,
+            write_config,
+        } => cmd_auto_analyze(input, output, quick, write_config),
         Commands::Encrypt {
             input,
             output,

@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "cpac"
-version = "0.1.0"
+version = "0.2.0"
 description = "CPAC - Constraint-Projected Adaptive Compression for Python"
 authors = [{name = "BitConcepts, LLC", email = "info@bitconcepts.tech"}]
 license = {text = "LicenseRef-CPSC-Research-Evaluation-1.0"}

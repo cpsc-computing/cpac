@@ -12,12 +12,16 @@ cpac-dag = { workspace = true }
 cpac-ssr = { workspace = true }
 cpac-msn = { workspace = true }
 cpac-cas = { workspace = true }
+cpac-engine = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 zstd = { workspace = true }
 clap = { workspace = true }
 rayon = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [[bin]]
 name = "transform_study"

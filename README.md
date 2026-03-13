@@ -6,7 +6,7 @@ High-performance, lossless compression engine with SIMD-accelerated transforms,
 DAG-based pipelines, block-parallel I/O, post-quantum encryption, and a
 drop-in CLI for gzip/zstd/brotli workflows. Written in Rust.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/cpsc-computing/cpac)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/cpsc-computing/cpac)
 [![License](https://img.shields.io/badge/license-Research%20%26%20Evaluation-orange.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-blue.svg)](https://www.rust-lang.org)
 
@@ -25,7 +25,7 @@ drop-in CLI for gzip/zstd/brotli workflows. Written in Rust.
 - **Block-parallel** — rayon-based parallel compress/decompress (CPBL wire format)
 - **Memory-mapped I/O** — auto-mmap for files > 64 MB, manual `--mmap` flag
 - **Streaming** — block-based streaming with progress callbacks and adaptive block sizing
-- **5 entropy backends** — Zstd, Brotli, Gzip, LZMA, Raw (passthrough)
+- **12 entropy backends** — Zstd, Brotli, Gzip, LZMA, XZ, LZ4, Snappy, LZHAM, Lizard, zlib-ng, OpenZL, Raw
 - **Encryption** — ChaCha20-Poly1305, AES-256-GCM, Argon2 KDF
 - **Post-quantum crypto** — ML-KEM-768 + X25519 hybrid encryption (CPHE), ML-DSA-65 signatures
 - **Archives** — multi-file `.cpar` format with per-entry compression
@@ -38,7 +38,10 @@ drop-in CLI for gzip/zstd/brotli workflows. Written in Rust.
   progress bars, 18+ curated benchmark datasets
 - **Host detection** — CPU, cores, RAM, SIMD tier detection with safe auto-defaults
 - **Cross-platform** — Windows (primary), Linux, macOS; x86_64 and aarch64
-- **413+ tests** — comprehensive regression suite, golden vectors, property-based tests,
+- **Transcode compression** — lossless image (PNG/BMP/TIFF/WebP) pixel-domain compression
+- **Auto-analysis** — directory-level analysis with YAML config generation
+- **Hardware acceleration** — pluggable accel layer (QAT, IAA, GPU, FPGA, SVE2 stubs)
+- **539+ tests** — comprehensive regression suite, golden vectors, property-based tests,
   determinism validation, transform-specific tests
 
 ## Agent Quick Start
@@ -190,62 +193,41 @@ cargo build --profile release-small
 
 ## Performance Benchmarks
 
-### Latest Results (Phase 1+2 Optimizations + Gzip-9 Parity)
+### Latest Results (Post Phase 1–6 Optimizations)
 
-**Date:** March 2, 2026 | **Version:** 0.1.0 | **Platform:** Windows x86_64, Rust 1.93  
-**CPAC Gzip = gzip-9:** Consistent level 9 compression for fair baseline comparison
+**Date:** March 2026 | **Version:** 0.2.0 | **Platform:** Windows x86_64, Rust 1.93+  
+**Methodology:** 3-iteration balanced benchmark, extended baselines (zstd-3, zstd-12, zstd-19, brotli-11)
 
-#### Comprehensive Corpus Results (3 iterations)
+#### Headline Numbers
 
-**Best Compression Ratios:**
-- **Apache Web Logs:** 25.07x (brotli-11) 🏆
-- **Linux System Logs:** 20.92x (brotli-11)
-- **Classic Text:** 2.7-3.6x (brotli-11)
+- **loghub2_2k:** 16.63× (MSN + smart transforms)
+- **nasa_logs:** 8.56× (MSN + smart transforms)
+- **silesia:** 4.30× (smart transforms)
+- **canterbury:** 5.84× (smart transforms)
+- **calgary:** 4.03× (smart transforms)
+- **enwik8:** 3.75× (smart transforms)
 
-**Production Speed/Ratio Balance (zstd-3):**
-- OpenStack Cloud Logs: 708.7 MB/s @ 11.59x
-- Linux System Logs: 496.7 MB/s @ 14.39x
-- Apache Web Logs: 470.3 MB/s @ 15.91x
-- HDFS Big Data Logs: 328.7 MB/s @ 5.29x
-- Silesia dickens: 256.2 MB/s @ 2.77x
+#### Production Speed / Ratio Balance (zstd-3)
 
-**CPAC Gzip = gzip-9 Parity Verified:**
-| Corpus | CPAC Gzip | gzip-9 | Match |
-|--------|-----------|--------|-------|
-| Canterbury | 2.80x @ 8.9 MB/s | 2.80x @ 22.4 MB/s | ✓ |
-| Calgary | 2.87x @ 11.9 MB/s | 2.87x @ 39.4 MB/s | ✓ |
-| Linux logs | 11.91x @ 44.7 MB/s | 14.52x @ 84.5 MB/s | ✓ |
-| Apache logs | 15.43x @ 57.5 MB/s | 18.44x @ 95.3 MB/s | ✓ |
-
-**vs Industry Baselines:**
-- **zstd-3** (native C): 137-256 MB/s on text → CPAC zstd-3: **256-708 MB/s** (+87-177%)
-- **gzip-9** (native C): 20-135 MB/s → **CPAC Gzip now matches gzip-9 ratios exactly** ✓
-- **brotli-11** (native C): 0.8-1.3 MB/s → CPAC brotli-11: **0.8-1.3 MB/s** (parity)
+- OpenStack Cloud Logs: 708 MB/s @ 11.6×
+- Linux System Logs: 497 MB/s @ 14.4×
+- Apache Web Logs: 470 MB/s @ 15.9×
+- HDFS Big Data Logs: 329 MB/s @ 5.3×
+- Silesia dickens: 256 MB/s @ 2.8×
 
 #### Key Achievements
 
-✅ **Best Ratio:** 25.07x on Apache web logs (brotli-11 backend)  
-✅ **Production Speed:** 328-708 MB/s compress (zstd-3), 5-15x ratios  
-✅ **Gzip-9 Parity:** CPAC Gzip matches gzip-9 baseline ratios exactly ✓  
-✅ **100% Lossless:** Verified across 60+ corpus measurements  
-✅ **Diverse Data:** Text, logs (system/web/cloud/big data), images, audio tested  
-✅ **Pure Rust:** zstd-3 +87-177% faster than baseline on logs
+- **16.63×** on loghub2_2k — MSN semantic extraction + BWT transforms
+- **12 entropy backends** — Zstd, Brotli, Gzip, LZMA, XZ, LZ4, Snappy, LZHAM, Lizard, zlib-ng, OpenZL, Raw
+- **100% lossless** — verified across all corpus measurements
+- **Parallel + streaming** — auto-parallel >256 KB, streaming with bounded memory
+- **Post-quantum encryption** — ML-KEM-768 + X25519 hybrid, ML-DSA-65 signatures
 
-**See `.work/benchmarks/CORPUS_BENCHMARK_SUMMARY.md` for complete results.**
+#### Optimization Phases
 
-#### Optimization Features
-
-**Phase 1** (Low-Hanging Fruit):
-- Adaptive Gzip levels (9 for small, 6 for large)
-- Smart preprocessing (4KB threshold)
-- Parallel compression (auto >1MB)
-- Size-aware backend selection
-
-**Phase 2** (Advanced):
-- Dictionary training integration (Zstd)
-- AVX2 SIMD delta encoding (32-byte vectorization)
-- Memory pool infrastructure (signal-driven activation)
-- Refined entropy-based backend logic
+**Phases 1–2:** Adaptive gzip levels, smart preprocessing, parallel blocks, SIMD delta, dictionary training  
+**Phases 3–4:** MSN field extraction, conditioned BWT, per-block backend selection  
+**Phases 5–6:** Parallel transforms, MSN dedup, auto-dictionary, CAS bridge, max-ratio preset
 
 ### Benchmark Profiles
 
@@ -335,4 +317,4 @@ contact info@bitconcepts.tech.
 
 ---
 
-**CPAC v0.1.0** | © 2026 BitConcepts, LLC | Licensed under CPSC Research & Evaluation License v1.0
+**CPAC v0.2.0** | © 2026 BitConcepts, LLC | Licensed under CPSC Research & Evaluation License v1.0

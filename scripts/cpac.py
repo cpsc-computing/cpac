@@ -1462,6 +1462,19 @@ def cmd_analyze(args: argparse.Namespace) -> None:
     run([binary, "analyze", str(args.input)])
 
 
+def cmd_auto_analyze(args: argparse.Namespace) -> None:
+    """Auto-analyze a directory for optimal compression settings (wraps cpac CLI)."""
+    binary = resolve_cpac_binary()
+    cmd = [binary, "auto-analyze", str(args.input)]
+    if args.quick:
+        cmd.append("--quick")
+    if args.output:
+        cmd.extend(["--output", str(args.output)])
+    if args.write_config:
+        cmd.append("--write-config")
+    run(cmd)
+
+
 def cmd_profile_corpus(args: argparse.Namespace) -> None:
     """Profile all files in a corpus/directory with cpac profile.
 
@@ -2100,6 +2113,13 @@ def main() -> None:
     p.add_argument("--max-size", type=int, default=128 * 1024,
                     help="Max dictionary size in bytes (default: 131072 = 128 KB)")
 
+    # auto-analyze
+    p = sub.add_parser("auto-analyze", help="Auto-analyze a directory for optimal compression settings")
+    p.add_argument("input", type=pathlib.Path, help="Directory to analyze")
+    p.add_argument("-o", "--output", type=pathlib.Path, help="Output Markdown report file")
+    p.add_argument("--quick", action="store_true", help="Quick mode (fewer files, smaller cap)")
+    p.add_argument("--write-config", action="store_true", help="Write .cpac-config.yml to directory")
+
     # compress
     p = sub.add_parser("compress", help="Compress a file")
     p.add_argument("input", type=pathlib.Path, help="Input file")
@@ -2144,6 +2164,7 @@ def main() -> None:
         "profile-corpus": cmd_profile_corpus,
         "calibrate": cmd_calibrate,
         "train-dict": cmd_train_dict,
+        "auto-analyze": cmd_auto_analyze,
         "compress": cmd_compress,
         "decompress": cmd_decompress,
     }

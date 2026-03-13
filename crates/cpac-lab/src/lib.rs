@@ -37,6 +37,7 @@
     clippy::cast_sign_loss
 )]
 
+pub mod auto_analyze;
 pub mod calibrate;
 pub mod collector;
 pub mod experiment;

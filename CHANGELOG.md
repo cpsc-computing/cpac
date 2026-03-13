@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-12
+
+### Added
+
+- **Transcode compression** (`cpac-transcode`): New crate with CPTC wire format for lossless image compression via byte-plane split + delta encoding + zstd. CLI `--transcode` flag.
+- **Closed-loop auto-analysis** (`auto-analyze` / `aa`): New CLI subcommand analyzes files, reports optimal backends, and optionally writes a YAML config. Also wired into `scripts/cpac.py`.
+- **Hardware acceleration probing**: Runtime detection for Intel QAT, Intel IAA, NVIDIA GPU (CUDA), and ARM SVE2. Feature flags: `accel-qat`, `accel-iaa`, `accel-gpu`, `accel-sve2`. See `docs/HARDWARE_ACCEL.md`.
+- **Inline descriptor compression**: DAG descriptors with metadata exceeding the u16 limit are now zstd-compressed inline, removing the previous bail-out.
+- **Extended default baselines**: `bench_directory` now includes zstd-12, zstd-19, and brotli-11 alongside matched baselines.
+- **CPBL v2 wire format**: MSN metadata stored once in the header instead of per-block (cross-block deduplication).
+- **CPBL v3 wire format**: Shared zstd dictionary trained from initial blocks, stored in the CPBL header.
+- **ConditionedBwtTransform** (ID 26): Partitions input via conditioning, applies BWT+MTF+RLE0 per qualifying stream.
+- **Per-block backend selection**: Each parallel block runs `auto_select_backend()` using its own SSR analysis.
+- **CAS bridge for MSN fields**: `TypedColumns` exposes MSN-extracted fields for CAS constraint inference and per-column transforms.
+- **Python bindings CI**: New `python-bindings` job in CI builds `cpac-py` with maturin and runs a smoke test.
+
+### Changed
+
+- Parallel smart transforms re-enabled (BWT now runs on parallel sub-blocks). +15–45% ratio on large text files.
+- Balanced profile: timeout 900→3600s, large_file_threshold 50→15 MB.
+- Removed `publish-crates` job from `release.yml` (crates are not published to crates.io).
+- Updated README benchmarks with post-improvement results and feature list (12 backends, 539+ tests).
+
+### Fixed
+
+- Parallel smart transform roundtrip corruption (BWT + normalize interaction with DAG descriptors on large text).
+- MSN large-file regression: eliminated double-copy on passthrough, added per-domain size guards (16 MB top-level, 8 MB per-domain, 2 MB XML), fixed XML O(N×tags) blowup.
+- Parallel block size capped at `MAX_DOMAIN_EXTRACT_SIZE` (8 MB) when MSN is enabled to prevent silent extraction failures.
+- Hardcoded `Track::Track2` in `compress_parallel()` replaced with per-block track from SSR analysis.
+
+### Security
+
+- Committed `Cargo.lock` to repository, enabling Dependabot to resolve ml-dsa dependency versions and close 3 moderate alerts.
+- Added `permissions: contents: read` to `ci.yml`, resolving 9 CodeQL code-scanning alerts.
+
+### Performance
+
+Benchmark results (balanced profile, best ratio per file):
+- loghub2_2k: **16.63×** — nasa_logs: **8.56×** — canterbury: **5.84×**
+- silesia: **4.30×** (nci: 20.68×) — calgary: **4.03×** — enwik8: **3.75×**
+
 ## [0.1.0] - 2026-03-11
 
 ### Added
@@ -45,5 +86,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Binary domain false positives and CSV line ending handling.
 - Clippy warnings resolved across all crates (zero warnings with `-D warnings`).
 
-[unreleased]: https://github.com/cpsc-computing/cpac/compare/v0.1.0...HEAD
+[unreleased]: https://github.com/cpsc-computing/cpac/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/cpsc-computing/cpac/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cpsc-computing/cpac/releases/tag/v0.1.0

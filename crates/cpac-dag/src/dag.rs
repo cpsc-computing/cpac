@@ -175,19 +175,52 @@ impl TransformDAG {
     }
 }
 
+/// Threshold above which per-step metadata is zstd-compressed in the
+/// DAG descriptor.  The high bit of the transform ID signals compression.
+const META_COMPRESS_THRESHOLD: usize = 32_768;
+
+/// Bit mask for the "compressed metadata" flag in a transform ID byte.
+const META_COMPRESSED_FLAG: u8 = 0x80;
+
 /// Serialize a DAG descriptor to bytes for the frame.
 ///
 /// Format: `[count:1][ids...][per-step: meta_len:2 LE + meta_bytes]`.
+///
+/// When a step's metadata exceeds [`META_COMPRESS_THRESHOLD`] bytes, it is
+/// zstd-compressed before storage and the high bit of that step's transform
+/// ID is set.  This keeps the u16 length field viable for large metadata
+/// (e.g. normalize diffs on multi-MB blocks).
 #[must_use]
 pub fn serialize_dag_descriptor(meta_chain: &[(u8, Vec<u8>)]) -> Vec<u8> {
     let mut out = Vec::new();
     out.push(meta_chain.len() as u8);
-    for (id, _) in meta_chain {
-        out.push(*id);
+
+    // Prepare per-step: decide which need compression, write ID bytes
+    let mut compressed_metas: Vec<Option<Vec<u8>>> = Vec::with_capacity(meta_chain.len());
+    for (id, meta) in meta_chain {
+        if meta.len() > META_COMPRESS_THRESHOLD {
+            // Compress and set flag bit
+            if let Ok(compressed) = zstd::bulk::compress(meta, 1) {
+                if compressed.len() <= u16::MAX as usize {
+                    out.push(*id | META_COMPRESSED_FLAG);
+                    compressed_metas.push(Some(compressed));
+                    continue;
+                }
+            }
+            // Compression failed or still too large — fall back to truncated/raw
+            out.push(*id);
+            compressed_metas.push(None);
+        } else {
+            out.push(*id);
+            compressed_metas.push(None);
+        }
     }
-    for (_, meta) in meta_chain {
-        out.extend_from_slice(&(meta.len() as u16).to_le_bytes());
-        out.extend_from_slice(meta);
+
+    // Write metadata payloads
+    for ((_id, meta), compressed) in meta_chain.iter().zip(compressed_metas.iter()) {
+        let payload = compressed.as_deref().unwrap_or(meta);
+        out.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        out.extend_from_slice(payload);
     }
     out
 }
@@ -195,6 +228,9 @@ pub fn serialize_dag_descriptor(meta_chain: &[(u8, Vec<u8>)]) -> Vec<u8> {
 /// Deserialize a DAG descriptor from bytes.
 ///
 /// Returns `(transform_ids, metadata_per_step, bytes_consumed)`.
+///
+/// If a transform ID has the high bit set ([`META_COMPRESSED_FLAG`]), the
+/// corresponding metadata payload is zstd-decompressed before returning.
 pub fn deserialize_dag_descriptor(data: &[u8]) -> CpacResult<(Vec<u8>, Vec<Vec<u8>>, usize)> {
     if data.is_empty() {
         return Err(CpacError::Transform("empty DAG descriptor".into()));
@@ -204,10 +240,15 @@ pub fn deserialize_dag_descriptor(data: &[u8]) -> CpacResult<(Vec<u8>, Vec<Vec<u
     if offset + count > data.len() {
         return Err(CpacError::Transform("truncated DAG descriptor".into()));
     }
-    let ids: Vec<u8> = data[offset..offset + count].to_vec();
+    let raw_ids: Vec<u8> = data[offset..offset + count].to_vec();
     offset += count;
+
+    // Strip flag bits to get real IDs; remember which are compressed
+    let ids: Vec<u8> = raw_ids.iter().map(|b| b & !META_COMPRESSED_FLAG).collect();
+    let compressed_flags: Vec<bool> = raw_ids.iter().map(|b| b & META_COMPRESSED_FLAG != 0).collect();
+
     let mut metas = Vec::with_capacity(count);
-    for _ in 0..count {
+    for is_compressed in &compressed_flags {
         if offset + 2 > data.len() {
             return Err(CpacError::Transform(
                 "truncated DAG descriptor metadata".into(),
@@ -220,8 +261,17 @@ pub fn deserialize_dag_descriptor(data: &[u8]) -> CpacResult<(Vec<u8>, Vec<Vec<u
                 "truncated DAG descriptor metadata payload".into(),
             ));
         }
-        metas.push(data[offset..offset + meta_len].to_vec());
+        let raw = &data[offset..offset + meta_len];
         offset += meta_len;
+
+        if *is_compressed && !raw.is_empty() {
+            // Decompress — allow up to 4 MB for normalize metadata
+            let decompressed = zstd::bulk::decompress(raw, 4 * 1024 * 1024)
+                .map_err(|e| CpacError::Transform(format!("DAG meta decompress: {e}")))?;
+            metas.push(decompressed);
+        } else {
+            metas.push(raw.to_vec());
+        }
     }
     Ok((ids, metas, offset))
 }
@@ -314,5 +364,31 @@ mod tests {
         assert_eq!(ids, vec![1, 4]);
         assert_eq!(metas, vec![vec![0x10, 0x20], vec![]]);
         assert_eq!(consumed, encoded.len());
+    }
+
+    #[test]
+    fn descriptor_roundtrip_large_metadata() {
+        // Generate metadata larger than META_COMPRESS_THRESHOLD to trigger
+        // inline zstd compression in the DAG descriptor.
+        let large_meta: Vec<u8> = (0u8..=255).cycle().take(50_000).collect();
+        let meta_chain = vec![(17u8, large_meta.clone()), (3u8, vec![0xAA])];
+        let encoded = serialize_dag_descriptor(&meta_chain);
+
+        // The large metadata should have been compressed (ID byte has high bit set)
+        assert_eq!(encoded[0], 2); // 2 steps
+        assert!(encoded[1] & META_COMPRESSED_FLAG != 0, "expected compression flag");
+        assert_eq!(encoded[1] & !META_COMPRESSED_FLAG, 17); // real ID
+        assert_eq!(encoded[2], 3); // second ID unchanged
+
+        // Deserialize and verify roundtrip
+        let (ids, metas, consumed) = deserialize_dag_descriptor(&encoded).unwrap();
+        assert_eq!(ids, vec![17, 3]);
+        assert_eq!(metas[0], large_meta);
+        assert_eq!(metas[1], vec![0xAA]);
+        assert_eq!(consumed, encoded.len());
+
+        // Compressed form should be smaller than raw
+        let raw_size = 1 + 2 + (2 + 50_000) + (2 + 1); // naive uncompressed
+        assert!(encoded.len() < raw_size, "expected compression savings");
     }
 }

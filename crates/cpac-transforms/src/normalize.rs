@@ -313,10 +313,8 @@ impl TransformNode for NormalizeTransform {
                     return Ok((CpacType::Serial(data), Vec::new()));
                 }
                 let meta = encode_diffs(data.len(), mode, &diffs);
-                // Guard: DAG descriptor uses u16 for per-step metadata length.
-                if meta.len() > u16::MAX as usize {
-                    return Ok((CpacType::Serial(data), Vec::new()));
-                }
+                // Note: large metadata is handled by DAG descriptor inline
+                // compression (zstd) — no need to bail at u16::MAX.
                 Ok((CpacType::Serial(normalized), meta))
             }
             _ => Err(CpacError::Transform(

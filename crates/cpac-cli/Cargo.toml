@@ -25,6 +25,7 @@ cpac-cas = { workspace = true }
 cpac-archive = { workspace = true }
 cpac-lab = { workspace = true }
 cpac-dict = { workspace = true }
+cpac-transcode = { workspace = true }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 toml = { workspace = true }

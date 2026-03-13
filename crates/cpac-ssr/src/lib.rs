@@ -13,7 +13,7 @@
 
 mod simd;
 
-use cpac_types::{DomainHint, Track};
+use cpac_types::{DomainHint, ImageFormat, Track};
 
 /// Default viability threshold for Track 1.
 pub const DEFAULT_VIABILITY_THRESHOLD: f64 = 0.3;
@@ -180,6 +180,30 @@ fn detect_domain(data: &[u8]) -> Option<DomainHint> {
 
     if trimmed.is_empty() {
         return None;
+    }
+
+    // --- Lossless image detection (before generic binary) ---
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if data.len() >= 8 && data[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+        return Some(DomainHint::Image(ImageFormat::Png));
+    }
+    // BMP: 42 4D
+    if data.len() >= 2 && data[..2] == [0x42, 0x4D] {
+        return Some(DomainHint::Image(ImageFormat::Bmp));
+    }
+    // TIFF: 49 49 2A 00 (little-endian) or 4D 4D 00 2A (big-endian)
+    if data.len() >= 4
+        && (data[..4] == [0x49, 0x49, 0x2A, 0x00] || data[..4] == [0x4D, 0x4D, 0x00, 0x2A])
+    {
+        return Some(DomainHint::Image(ImageFormat::Tiff));
+    }
+    // WebP: RIFF....WEBP + VP8L (lossless)
+    if data.len() >= 16
+        && data[..4] == [0x52, 0x49, 0x46, 0x46]
+        && data[8..12] == [0x57, 0x45, 0x42, 0x50]
+        && data[12..16] == [0x56, 0x50, 0x38, 0x4C]
+    {
+        return Some(DomainHint::Image(ImageFormat::WebPLossless));
     }
 
     // --- Binary format detection (before text formats) ---

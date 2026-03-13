@@ -440,6 +440,15 @@ pub enum Track {
 // Domain hints
 // ---------------------------------------------------------------------------
 
+/// Lossless image codec detected by SSR / transcode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageFormat {
+    Png,
+    Bmp,
+    Tiff,
+    WebPLossless,
+}
+
 /// Hint about the data's domain format.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DomainHint {
@@ -449,6 +458,8 @@ pub enum DomainHint {
     Yaml,
     Log,
     Binary,
+    /// Lossless image suitable for transcode compression.
+    Image(ImageFormat),
     Unknown,
 }
 

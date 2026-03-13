@@ -1,0 +1,11 @@
+[package]
+name = "cpac-transcode"
+description = "Transcode compression for lossless image formats"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpac-types = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png", "bmp", "tiff", "webp"] }
+zstd = { workspace = true }

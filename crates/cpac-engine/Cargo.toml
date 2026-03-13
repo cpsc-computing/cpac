@@ -8,6 +8,10 @@ license.workspace = true
 [features]
 default = []
 download = ["dep:reqwest", "dep:tar", "dep:zip"]
+accel-qat = []    # Intel QuickAssist Technology
+accel-iaa = []    # Intel In-Memory Analytics Accelerator
+accel-gpu = []    # GPU Compute (CUDA/Vulkan)
+accel-sve2 = []   # ARM SVE2 wide-vector
 
 [dependencies]
 cpac-types = { workspace = true }
