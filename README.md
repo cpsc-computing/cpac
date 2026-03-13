@@ -6,7 +6,7 @@ High-performance, lossless compression engine with SIMD-accelerated transforms,
 DAG-based pipelines, block-parallel I/O, post-quantum encryption, and a
 drop-in CLI for gzip/zstd/brotli workflows. Written in Rust.
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/cpsc-computing/cpac)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/cpsc-computing/cpac)
 [![License](https://img.shields.io/badge/license-Research%20%26%20Evaluation-orange.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-blue.svg)](https://www.rust-lang.org)
 
@@ -193,41 +193,47 @@ cargo build --profile release-small
 
 ## Performance Benchmarks
 
-### Latest Results (Post Phase 1–6 Optimizations)
+### Latest Results (Session 21 — Post Phase 1–6 Optimizations)
 
-**Date:** March 2026 | **Version:** 0.2.0 | **Platform:** Windows x86_64, Rust 1.93+  
-**Methodology:** 3-iteration balanced benchmark, extended baselines (zstd-3, zstd-12, zstd-19, brotli-11)
+**Date:** March 2026 | **Version:** 0.3.0 | **Platform:** Windows x86_64, Rust 1.93+  
+**Methodology:** Balanced profile, 3 iterations, 12 entropy backends, 777 files across 8 standard corpora. All results verified lossless.
 
-#### Headline Numbers
+#### Headline Numbers (Best Ratio per Corpus)
 
-- **loghub2_2k:** 16.63× (MSN + smart transforms)
-- **nasa_logs:** 8.56× (MSN + smart transforms)
-- **silesia:** 4.30× (smart transforms)
-- **canterbury:** 5.84× (smart transforms)
-- **calgary:** 4.03× (smart transforms)
-- **enwik8:** 3.75× (smart transforms)
+| Corpus | Files | Avg Best | Range |
+|--------|-------|----------|-------|
+| loghub2_2k | 14 | **16.63×** | 6.97–32.63× |
+| nasa_logs | 4 | **8.56×** | 1.00–16.23× |
+| canterbury | 11 | **5.84×** | 2.86–20.96× |
+| silesia | 12 | **4.30×** | 1.63–12.42× |
+| calgary | 18 | **4.03×** | 1.85–12.56× |
+| enwik8 | 1 | **3.75×** | — |
+| cloud_configs | 691 | **3.63×** | 0.00–17.98× |
 
-#### Production Speed / Ratio Balance (zstd-3)
+#### Zstd Ratio by CPAC Level (corpus average)
 
-- OpenStack Cloud Logs: 708 MB/s @ 11.6×
-- Linux System Logs: 497 MB/s @ 14.4×
-- Apache Web Logs: 470 MB/s @ 15.9×
-- HDFS Big Data Logs: 329 MB/s @ 5.3×
-- Silesia dickens: 256 MB/s @ 2.8×
+| Corpus | Fast | Default | High | Best |
+|--------|------|---------|------|------|
+| loghub2_2k | 11.04× | 12.87× | 13.61× | **15.25×** |
+| nasa_logs | 5.41× | 6.30× | 7.09× | **8.41×** |
+| silesia | 3.17× | 3.46× | 3.71× | **4.04×** |
+| canterbury | 3.96× | 4.17× | 4.22× | **5.06×** |
+| enwik8 | 2.82× | 3.06× | 3.27× | **3.64×** |
 
 #### Key Achievements
 
-- **16.63×** on loghub2_2k — MSN semantic extraction + BWT transforms
+- **16.63×** on loghub2_2k — MSN semantic extraction + BWT + auto-dictionary
+- **777 files benchmarked** across 8 standard corpora (773 OK, 4 timeout)
 - **12 entropy backends** — Zstd, Brotli, Gzip, LZMA, XZ, LZ4, Snappy, LZHAM, Lizard, zlib-ng, OpenZL, Raw
-- **100% lossless** — verified across all corpus measurements
+- **100% lossless** — verified roundtrip across all measurements
 - **Parallel + streaming** — auto-parallel >256 KB, streaming with bounded memory
 - **Post-quantum encryption** — ML-KEM-768 + X25519 hybrid, ML-DSA-65 signatures
 
 #### Optimization Phases
 
-**Phases 1–2:** Adaptive gzip levels, smart preprocessing, parallel blocks, SIMD delta, dictionary training  
-**Phases 3–4:** MSN field extraction, conditioned BWT, per-block backend selection  
-**Phases 5–6:** Parallel transforms, MSN dedup, auto-dictionary, CAS bridge, max-ratio preset
+**Phases 1–2:** Re-enabled parallel smart transforms, CPBL v2 shared MSN header  
+**Phases 3–4:** Auto-dictionary (CPBL v3), ConditionedBwtTransform (ID 26)  
+**Phases 5–6:** Per-block backend selection, CAS bridge for MSN fields
 
 ### Benchmark Profiles
 
@@ -317,4 +323,4 @@ contact info@bitconcepts.tech.
 
 ---
 
-**CPAC v0.2.0** | © 2026 BitConcepts, LLC | Licensed under CPSC Research & Evaluation License v1.0
+**CPAC v0.3.0** | © 2026 BitConcepts, LLC | Licensed under CPSC Research & Evaluation License v1.0

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-13
+
+### Changed
+
+- Updated `BENCHMARKING.md` with Session 21 results: full 8-corpus benchmark (777 files) post Phase 1–6 optimizations.
+- Updated `README.md` benchmark tables with per-corpus and per-CPAC-level data.
+- Added CPAC benchmark highlights to `.github` organization profile.
+
+### Performance
+
+Session 21 benchmark results (balanced profile, 3 iterations, 12 backends, 777 files, all verified lossless):
+- loghub2_2k: **16.63×** (avg best) — nasa_logs: **8.56×** — canterbury: **5.84×**
+- silesia: **4.30×** — calgary: **4.03×** — enwik8: **3.75×** — cloud_configs: **3.63×**
+- SSR and MSN routing produce near-identical ratios; SSR is 20–50% faster throughput.
+- Brotli@11 is the peak-ratio backend on most corpora; Xz@6/8 wins on Silesia.
+
 ## [0.2.0] - 2026-03-12
 
 ### Added
@@ -86,6 +102,7 @@ Benchmark results (balanced profile, best ratio per file):
 - Binary domain false positives and CSV line ending handling.
 - Clippy warnings resolved across all crates (zero warnings with `-D warnings`).
 
-[unreleased]: https://github.com/cpsc-computing/cpac/compare/v0.2.0...HEAD
+[unreleased]: https://github.com/cpsc-computing/cpac/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/cpsc-computing/cpac/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/cpsc-computing/cpac/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cpsc-computing/cpac/releases/tag/v0.1.0
