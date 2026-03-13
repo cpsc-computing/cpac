@@ -718,9 +718,9 @@ fn cmd_compress(
         if preset.is_none() || smart {
             config.enable_smart_transforms = smart || preset.is_none_or(|p| p.smart_transforms());
         }
-        if preset.is_none() || enable_msn {
-            config.enable_msn = enable_msn || preset.is_some_and(|p| p.msn_enabled());
-        }
+        // MSN is only enabled by explicit --enable-msn flag.
+        // Presets no longer auto-enable MSN (see Preset::msn_enabled docs).
+        config.enable_msn = enable_msn;
         if preset.is_none() {
             config.level = level;
             config.msn_confidence = msn_confidence;
@@ -753,7 +753,9 @@ fn cmd_compress(
                         Ok(r) => (r.data.clone(), r.original_size, r.data.len()),
                         Err(e) => {
                             eprintln!("Compression failed for '{}': {e}", file_path.display());
-                            if files.len() > 1 { continue; }
+                            if files.len() > 1 {
+                                continue;
+                            }
                             process::exit(1);
                         }
                     }

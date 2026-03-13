@@ -234,7 +234,14 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
         ssr.track,
         config.force_track
     );
-    let (msn_data, msn_metadata) = if config.enable_msn && effective_track == Track::Track1 {
+    // P10: Use Cow to avoid a full data copy on the common no-MSN path.
+    // When MSN is disabled (default), msn_data borrows the input slice
+    // directly — zero allocation.  Only when MSN extraction succeeds and
+    // produces a smaller residual do we allocate an owned Vec.
+    use std::borrow::Cow;
+    let (msn_data, msn_metadata): (Cow<'_, [u8]>, Vec<u8>) = if config.enable_msn
+        && effective_track == Track::Track1
+    {
         // Phase 4A: if a cached MSN metadata was provided (from parallel block
         // probing), use extract_with_metadata for consistent field indices and
         // to skip the O(N-domains) detection loop.
@@ -246,12 +253,12 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
             None
         };
         let msn_result = msn_result.unwrap_or_else(|| {
-            let r = cpac_msn::extract(data, msn_filename, config.msn_confidence)
-                .unwrap_or_else(|_| cpac_msn::MsnResult::not_applied());
-            cpac_trace!("[TRACE] MSN extract: applied={} domain={:?} confidence={:.3} fields={} residual={}B original={}B",
-                r.applied, r.domain_id, r.confidence, r.fields.len(), r.residual.len(), data.len());
-            r
-        });
+                let r = cpac_msn::extract(data, msn_filename, config.msn_confidence)
+                    .unwrap_or_else(|_| cpac_msn::MsnResult::not_applied());
+                cpac_trace!("[TRACE] MSN extract: applied={} domain={:?} confidence={:.3} fields={} residual={}B original={}B",
+                    r.applied, r.domain_id, r.confidence, r.fields.len(), r.residual.len(), data.len());
+                r
+            });
         match msn_result {
             result if result.applied => {
                 // MSN succeeded - use residual as input, store metadata (without residual).
@@ -268,23 +275,19 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                 let msn_savings_margin = data.len() / 20; // 5%
                 if result.residual.len() + metadata.len() + msn_savings_margin < data.len() {
                     // Roundtrip verification: reconstruct from the residual and confirm
-                    // the output bytes exactly match the original block.  This catches
-                    // extraction bugs where global String::replace interactions produce a
-                    // residual whose reconstruction differs in size or content from the
-                    // source (e.g. NASA access logs where short IP sub-strings collide
-                    // with placeholder tokens, inflating the reconstructed output).
+                    // the output bytes exactly match the original block.
                     match cpac_msn::reconstruct(&result) {
                         Ok(ref reconstructed) if reconstructed.as_slice() == data => {
                             cpac_trace!("[TRACE] MSN → APPLIED: domain={:?} conf={:.3} residual={}B meta={}B original={}B savings={:.1}%",
-                                result.domain_id, result.confidence, result.residual.len(), metadata.len(), data.len(),
-                                (1.0 - result.residual.len() as f64 / data.len() as f64) * 100.0);
+                                    result.domain_id, result.confidence, result.residual.len(), metadata.len(), data.len(),
+                                    (1.0 - result.residual.len() as f64 / data.len() as f64) * 100.0);
                             if msn_verbose {
                                 let savings_pct = (1.0
                                     - result.residual.len() as f64 / data.len() as f64)
                                     * 100.0;
                                 eprintln!(
                                     "[MSN] domain={} conf={:.2} fields={} \
-                                     residual={}B original={}B ({:.1}% saved) → APPLIED",
+                                         residual={}B original={}B ({:.1}% saved) → APPLIED",
                                     result.domain_id.as_deref().unwrap_or("?"),
                                     result.confidence,
                                     result.fields.len(),
@@ -293,7 +296,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                                     savings_pct,
                                 );
                             }
-                            (result.residual, metadata)
+                            (Cow::Owned(result.residual), metadata)
                         }
                         Ok(ref reconstructed) => {
                             cpac_trace!(
@@ -304,41 +307,41 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                             if msn_verbose {
                                 eprintln!(
                                     "[MSN] domain={} conf={:.2} → BYPASSED \
-                                     (roundtrip mismatch: expected {}B got {}B)",
+                                         (roundtrip mismatch: expected {}B got {}B)",
                                     result.domain_id.as_deref().unwrap_or("?"),
                                     result.confidence,
                                     data.len(),
                                     reconstructed.len(),
                                 );
                             }
-                            (data.to_vec(), Vec::new())
+                            (Cow::Borrowed(data), Vec::new())
                         }
                         Err(e) => {
                             if msn_verbose {
                                 eprintln!(
                                     "[MSN] domain={} conf={:.2} → BYPASSED \
-                                     (roundtrip error: {e})",
+                                         (roundtrip error: {e})",
                                     result.domain_id.as_deref().unwrap_or("?"),
                                     result.confidence,
                                 );
                             }
-                            (data.to_vec(), Vec::new())
+                            (Cow::Borrowed(data), Vec::new())
                         }
                     }
                 } else {
                     cpac_trace!("[TRACE] MSN → BYPASSED: no size savings residual+meta={}B vs original={}B (need 5% margin={}B)",
-                        result.residual.len() + metadata.len(), data.len(), msn_savings_margin);
+                            result.residual.len() + metadata.len(), data.len(), msn_savings_margin);
                     if msn_verbose {
                         eprintln!(
                             "[MSN] domain={} conf={:.2} → BYPASSED \
-                             (no size savings: residual+meta={}B original={}B)",
+                                 (no size savings: residual+meta={}B original={}B)",
                             result.domain_id.as_deref().unwrap_or("?"),
                             result.confidence,
                             result.residual.len() + metadata.len(),
                             data.len(),
                         );
                     }
-                    (data.to_vec(), Vec::new())
+                    (Cow::Borrowed(data), Vec::new())
                 }
             }
             _ => {
@@ -353,11 +356,11 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                         config.msn_confidence,
                     );
                 }
-                (data.to_vec(), Vec::new())
+                (Cow::Borrowed(data), Vec::new())
             }
         }
     } else {
-        // MSN disabled or Track 2 — passthrough.
+        // MSN disabled or Track 2 — zero-copy passthrough.
         if msn_verbose && config.enable_msn {
             let why = if config.force_track == Some(Track::Track2) {
                 "force_track=T2"
@@ -366,7 +369,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
             };
             eprintln!("[MSN] → BYPASSED ({why})");
         }
-        (data.to_vec(), Vec::new())
+        (Cow::Borrowed(data), Vec::new())
     };
 
     // 5. Adaptive preprocessing
@@ -390,10 +393,9 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     // Track DAG descriptor for the frame header (non-empty when smart transforms used).
     let mut dag_descriptor: Vec<u8> = Vec::new();
 
-    // P8: use `msn_data` by reference for analysis/transforms, then MOVE
-    // (not clone) into `preprocessed` on the no-transform fallback paths.
-    // This eliminates a full-size allocation on the common path.
-    let preprocessed = if should_preprocess {
+    // P10: use `msn_data` by reference for analysis/transforms; Cow avoids
+    // allocation on the common no-MSN, no-transform path.
+    let preprocessed: Cow<'_, [u8]> = if should_preprocess {
         // Re-analyze entropy from the actual data being preprocessed.  When MSN
         // extraction was applied the residual can have meaningfully different
         // entropy characteristics from the original (e.g. FQCN removal lowers
@@ -426,7 +428,7 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
                 smart_data.len(), smart_dag_desc.len(), msn_data.len(),
                 (1.0 - smart_data.len() as f64 / msn_data.len() as f64) * 100.0);
             dag_descriptor = smart_dag_desc;
-            smart_data
+            Cow::Owned(smart_data)
         } else if config.enable_smart_transforms && residual_ssr.ascii_ratio > 0.50 {
             cpac_trace!("[TRACE] smart_preprocess → NONE (text data, skip legacy TP)");
             // Smart transforms evaluated candidates and found nothing that
@@ -436,15 +438,15 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
             // For BINARY data (ascii_ratio <= 0.50), fall through to legacy TP
             // because transpose/float_split/field_lz can genuinely help
             // (e.g. transpose on x-ray image blocks).
-            msn_data // P8: move instead of clone
+            msn_data
         } else {
             // Smart mode disabled: use legacy SSR-guided TP preprocess.
             let (preprocessed, _transform_meta) =
                 cpac_transforms::preprocess(&msn_data, &transform_ctx);
-            preprocessed
+            Cow::Owned(preprocessed)
         }
     } else {
-        msn_data // P8: move instead of clone
+        msn_data
     };
 
     // Phase 2: When MSN metadata is managed externally (CPBL shared header),
@@ -472,11 +474,13 @@ pub fn compress(data: &[u8], config: &CompressConfig) -> CpacResult<CompressResu
     } else {
         msn_metadata.len()
     };
-    let data_for_entropy: Vec<u8> = if !msn_metadata.is_empty() && !msn_applied_externally {
+    // P10: when no MSN metadata needs prepending, pass the preprocessed
+    // Cow directly to entropy coding — avoids allocation when Borrowed.
+    let data_for_entropy: Cow<'_, [u8]> = if !msn_metadata.is_empty() && !msn_applied_externally {
         let mut combined = Vec::with_capacity(msn_metadata.len() + preprocessed.len());
         combined.extend_from_slice(&msn_metadata);
         combined.extend_from_slice(&preprocessed);
-        combined
+        Cow::Owned(combined)
     } else {
         preprocessed
     };

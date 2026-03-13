@@ -159,14 +159,15 @@ pub enum Preset {
     /// General purpose (DEFAULT): zstd-3, auto threads, smart transforms ON,
     /// MSN OFF, 4 MB blocks.
     Balanced,
-    /// Batch jobs: zstd-9, all threads, smart + MSN ON, 8 MB blocks.
+    /// Batch jobs: zstd-9, all threads, smart transforms, 8 MB blocks.
     Maximum,
-    /// Cold storage: zstd-19, all threads, aggressive transforms + MSN, 16 MB blocks.
+    /// Cold storage: zstd-19, all threads, aggressive transforms, 16 MB blocks.
     Archive,
     /// Phase 5B: Absolute maximum ratio using brotli-11 backend.
     /// Designed for write-once cold storage where compress time is irrelevant
     /// but every byte of storage cost matters. Forces Brotli backend at
-    /// Best level with full MSN + smart transforms and 32 MB blocks.
+    /// Best level with full smart transforms and 32 MB blocks.
+    /// MSN can be added via `--enable-msn` for structured data.
     MaxRatio,
 }
 
@@ -210,9 +211,15 @@ impl Preset {
     }
 
     /// Whether MSN is enabled.
+    ///
+    /// Currently returns `false` for all presets — MSN is disabled by default
+    /// and must be explicitly enabled via `--enable-msn`.  Presets that
+    /// previously auto-enabled MSN (Maximum, Archive, MaxRatio) no longer do
+    /// so because benchmarks showed MSN provides near-zero marginal ratio
+    /// improvement over SSR while adding 20-50% throughput overhead.
     #[must_use]
     pub fn msn_enabled(self) -> bool {
-        matches!(self, Self::Maximum | Self::Archive | Self::MaxRatio)
+        false
     }
 
     /// MSN confidence threshold.

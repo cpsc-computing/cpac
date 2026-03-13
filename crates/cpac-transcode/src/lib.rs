@@ -26,7 +26,7 @@
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
+    clippy::missing_panics_doc
 )]
 
 pub mod detect;
@@ -176,9 +176,7 @@ pub fn is_transcode_frame(data: &[u8]) -> bool {
 /// Note: This returns the *raw pixel data*, not the re-encoded image file.
 /// Re-encoding to the original format (PNG, BMP, etc.) requires the caller
 /// to use the `image` crate with the returned metadata.
-pub fn transcode_decompress(
-    frame: &[u8],
-) -> CpacResult<(u32, u32, u8, u8, ImageFormat, Vec<u8>)> {
+pub fn transcode_decompress(frame: &[u8]) -> CpacResult<(u32, u32, u8, u8, ImageFormat, Vec<u8>)> {
     if frame.len() < CPTC_HEADER_SIZE || frame[..4] != *CPTC_MAGIC {
         return Err(CpacError::InvalidFrame("not a CPTC frame".into()));
     }
@@ -196,8 +194,7 @@ pub fn transcode_decompress(
     let channels = frame[14];
     let bit_depth = frame[15];
     let _original_len = u32::from_le_bytes([frame[16], frame[17], frame[18], frame[19]]);
-    let payload_len =
-        u32::from_le_bytes([frame[20], frame[21], frame[22], frame[23]]) as usize;
+    let payload_len = u32::from_le_bytes([frame[20], frame[21], frame[22], frame[23]]) as usize;
 
     if CPTC_HEADER_SIZE + payload_len > frame.len() {
         return Err(CpacError::InvalidFrame("CPTC payload truncated".into()));
@@ -224,12 +221,7 @@ mod tests {
     fn create_test_png() -> Vec<u8> {
         let mut img = image::RgbaImage::new(4, 4);
         for (x, y, pixel) in img.enumerate_pixels_mut() {
-            *pixel = image::Rgba([
-                (x * 60) as u8,
-                (y * 60) as u8,
-                ((x + y) * 30) as u8,
-                255,
-            ]);
+            *pixel = image::Rgba([(x * 60) as u8, (y * 60) as u8, ((x + y) * 30) as u8, 255]);
         }
         let mut buf = Vec::new();
         let encoder = image::codecs::png::PngEncoder::new(&mut buf);

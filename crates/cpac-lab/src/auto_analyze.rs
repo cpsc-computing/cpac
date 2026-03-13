@@ -67,12 +67,52 @@ struct TrialOutcome {
 
 fn quick_trials(data: &[u8]) -> Vec<TrialOutcome> {
     let configs: Vec<(&str, CompressConfig)> = vec![
-        ("zstd-default", CompressConfig { backend: Some(Backend::Zstd), ..Default::default() }),
-        ("brotli-default", CompressConfig { backend: Some(Backend::Brotli), ..Default::default() }),
-        ("zstd-msn", CompressConfig { backend: Some(Backend::Zstd), enable_msn: true, ..Default::default() }),
-        ("brotli-msn", CompressConfig { backend: Some(Backend::Brotli), enable_msn: true, ..Default::default() }),
-        ("zstd-high", CompressConfig { backend: Some(Backend::Zstd), level: CompressionLevel::High, ..Default::default() }),
-        ("brotli-best", CompressConfig { backend: Some(Backend::Brotli), level: CompressionLevel::Best, ..Default::default() }),
+        (
+            "zstd-default",
+            CompressConfig {
+                backend: Some(Backend::Zstd),
+                ..Default::default()
+            },
+        ),
+        (
+            "brotli-default",
+            CompressConfig {
+                backend: Some(Backend::Brotli),
+                ..Default::default()
+            },
+        ),
+        (
+            "zstd-msn",
+            CompressConfig {
+                backend: Some(Backend::Zstd),
+                enable_msn: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "brotli-msn",
+            CompressConfig {
+                backend: Some(Backend::Brotli),
+                enable_msn: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "zstd-high",
+            CompressConfig {
+                backend: Some(Backend::Zstd),
+                level: CompressionLevel::High,
+                ..Default::default()
+            },
+        ),
+        (
+            "brotli-best",
+            CompressConfig {
+                backend: Some(Backend::Brotli),
+                level: CompressionLevel::Best,
+                ..Default::default()
+            },
+        ),
     ];
 
     let mut results = Vec::new();
@@ -81,7 +121,11 @@ fn quick_trials(data: &[u8]) -> Vec<TrialOutcome> {
         let mut trial_cfg = cfg;
         trial_cfg.disable_parallel = true;
         if let Ok(r) = cpac_engine::compress(data, &trial_cfg) {
-            let ratio = if !r.data.is_empty() { orig as f64 / r.data.len() as f64 } else { 0.0 };
+            let ratio = if !r.data.is_empty() {
+                orig as f64 / r.data.len() as f64
+            } else {
+                0.0
+            };
             results.push(TrialOutcome {
                 label: label.to_string(),
                 compressed_size: r.data.len(),
@@ -105,7 +149,11 @@ pub fn auto_analyze(dir: &Path, quick: bool) -> AutoAnalyzeReport {
 
     let opts = CollectOptions {
         all_types: true,
-        max_file_size: if quick { 10 * 1024 * 1024 } else { 100 * 1024 * 1024 },
+        max_file_size: if quick {
+            10 * 1024 * 1024
+        } else {
+            100 * 1024 * 1024
+        },
         ..Default::default()
     };
     let corpus_files = collect_files(dir, &opts);
@@ -127,28 +175,28 @@ pub fn auto_analyze(dir: &Path, quick: bool) -> AutoAnalyzeReport {
         }
 
         let ssr = cpac_ssr::analyze(&data);
-        let domain = ssr
-            .domain_hint
-            .as_ref()
-            .map(|d| format!("{d:?}"));
+        let domain = ssr.domain_hint.as_ref().map(|d| format!("{d:?}"));
 
         let trials = quick_trials(&data);
         if trials.is_empty() {
             continue;
         }
 
-        let best = trials.iter().max_by(|a, b| a.ratio.partial_cmp(&b.ratio).unwrap()).unwrap();
-        let msn_helpful = trials
+        let best = trials
             .iter()
-            .filter(|t| t.label.contains("msn"))
-            .any(|t| {
-                let non_msn = trials
-                    .iter()
-                    .find(|n| !n.label.contains("msn") && n.label.starts_with(t.label.split('-').next().unwrap_or("")))
-                    .map(|n| n.ratio)
-                    .unwrap_or(0.0);
-                t.ratio > non_msn * 1.01
-            });
+            .max_by(|a, b| a.ratio.partial_cmp(&b.ratio).unwrap())
+            .unwrap();
+        let msn_helpful = trials.iter().filter(|t| t.label.contains("msn")).any(|t| {
+            let non_msn = trials
+                .iter()
+                .find(|n| {
+                    !n.label.contains("msn")
+                        && n.label.starts_with(t.label.split('-').next().unwrap_or(""))
+                })
+                .map(|n| n.ratio)
+                .unwrap_or(0.0);
+            t.ratio > non_msn * 1.01
+        });
 
         let best_backend = best.label.split('-').next().unwrap_or("zstd").to_string();
 
@@ -164,10 +212,12 @@ pub fn auto_analyze(dir: &Path, quick: bool) -> AutoAnalyzeReport {
             msn_helpful,
         };
 
-        ext_stats
-            .entry(cf.extension.clone())
-            .or_default()
-            .push((best_backend, best.ratio, msn_helpful, cf.size));
+        ext_stats.entry(cf.extension.clone()).or_default().push((
+            best_backend,
+            best.ratio,
+            msn_helpful,
+            cf.size,
+        ));
 
         file_results.push(fa);
     }
@@ -231,7 +281,11 @@ fn generate_yaml_config(extensions: &[ExtensionRec]) -> String {
 
     // Find global defaults (most common backend/level across all files)
     let total_files: usize = extensions.iter().map(|e| e.file_count).sum();
-    let global_msn = extensions.iter().filter(|e| e.enable_msn).map(|e| e.file_count).sum::<usize>() as f64
+    let global_msn = extensions
+        .iter()
+        .filter(|e| e.enable_msn)
+        .map(|e| e.file_count)
+        .sum::<usize>() as f64
         / total_files.max(1) as f64
         > 0.5;
     let global_backend = extensions
@@ -267,7 +321,11 @@ fn generate_yaml_config(extensions: &[ExtensionRec]) -> String {
             if ext.enable_msn != global_msn {
                 parts.push(format!("enable_msn: {}", ext.enable_msn));
             }
-            lines.push(format!("  \"*.{}\": {{ {} }}", ext.extension, parts.join(", ")));
+            lines.push(format!(
+                "  \"*.{}\": {{ {} }}",
+                ext.extension,
+                parts.join(", ")
+            ));
         }
     }
 
@@ -332,7 +390,11 @@ mod tests {
         let log = dir.path().join("app.log");
         let mut f = std::fs::File::create(&log).unwrap();
         for i in 0..500 {
-            writeln!(f, "2026-01-01T00:00:{i:02}Z INFO request completed in {i}ms").unwrap();
+            writeln!(
+                f,
+                "2026-01-01T00:00:{i:02}Z INFO request completed in {i}ms"
+            )
+            .unwrap();
         }
         // Text file
         std::fs::write(dir.path().join("readme.txt"), "Hello World! ".repeat(1000)).unwrap();

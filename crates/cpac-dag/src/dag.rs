@@ -245,7 +245,10 @@ pub fn deserialize_dag_descriptor(data: &[u8]) -> CpacResult<(Vec<u8>, Vec<Vec<u
 
     // Strip flag bits to get real IDs; remember which are compressed
     let ids: Vec<u8> = raw_ids.iter().map(|b| b & !META_COMPRESSED_FLAG).collect();
-    let compressed_flags: Vec<bool> = raw_ids.iter().map(|b| b & META_COMPRESSED_FLAG != 0).collect();
+    let compressed_flags: Vec<bool> = raw_ids
+        .iter()
+        .map(|b| b & META_COMPRESSED_FLAG != 0)
+        .collect();
 
     let mut metas = Vec::with_capacity(count);
     for is_compressed in &compressed_flags {
@@ -376,7 +379,10 @@ mod tests {
 
         // The large metadata should have been compressed (ID byte has high bit set)
         assert_eq!(encoded[0], 2); // 2 steps
-        assert!(encoded[1] & META_COMPRESSED_FLAG != 0, "expected compression flag");
+        assert!(
+            encoded[1] & META_COMPRESSED_FLAG != 0,
+            "expected compression flag"
+        );
         assert_eq!(encoded[1] & !META_COMPRESSED_FLAG, 17); // real ID
         assert_eq!(encoded[2], 3); // second ID unchanged
 

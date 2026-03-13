@@ -266,12 +266,24 @@ pub fn matched_baselines(level: CompressionLevel) -> Vec<StandaloneCodec> {
 pub fn extended_baselines(level: CompressionLevel) -> Vec<StandaloneCodec> {
     let mut baselines = matched_baselines(level);
     let extras = [
-        StandaloneCodec { backend: Backend::Zstd, cpac_level: CompressionLevel::High },     // zstd-12
-        StandaloneCodec { backend: Backend::Zstd, cpac_level: CompressionLevel::Best },     // zstd-19
-        StandaloneCodec { backend: Backend::Brotli, cpac_level: CompressionLevel::Best },   // brotli-11
+        StandaloneCodec {
+            backend: Backend::Zstd,
+            cpac_level: CompressionLevel::High,
+        }, // zstd-12
+        StandaloneCodec {
+            backend: Backend::Zstd,
+            cpac_level: CompressionLevel::Best,
+        }, // zstd-19
+        StandaloneCodec {
+            backend: Backend::Brotli,
+            cpac_level: CompressionLevel::Best,
+        }, // brotli-11
     ];
     for extra in extras {
-        if !baselines.iter().any(|b| b.backend == extra.backend && b.cpac_level == extra.cpac_level) {
+        if !baselines
+            .iter()
+            .any(|b| b.backend == extra.backend && b.cpac_level == extra.cpac_level)
+        {
             baselines.push(extra);
         }
     }

@@ -87,7 +87,12 @@ mod tests {
 
     #[test]
     fn codec_id_roundtrip() {
-        for fmt in [ImageFormat::Png, ImageFormat::Bmp, ImageFormat::Tiff, ImageFormat::WebPLossless] {
+        for fmt in [
+            ImageFormat::Png,
+            ImageFormat::Bmp,
+            ImageFormat::Tiff,
+            ImageFormat::WebPLossless,
+        ] {
             assert_eq!(format_from_id(codec_id(fmt)), Some(fmt));
         }
     }
