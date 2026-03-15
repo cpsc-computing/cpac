@@ -2,6 +2,74 @@
 
 Session-by-session record of significant changes, investigations, and decisions.
 
+## Session 30 — 2026-03-15 (Benchmark Infrastructure Fixes + YAML Parser Bug)
+
+### Focus
+Fix all benchmark timeouts, add large/very-large file tiering, exclude
+pre-compressed files from corpora, investigate MSN mismatch on loghub2_2k,
+and fix a YAML inline-comment parsing bug in `cpac.py`.
+
+### A1: enwik8 Timeout Fix
+enwik8 (100 MB) timed out at 3600 s on the balanced profile.  Added
+`large_file_levels` support to `cpac.py` and `profile_balanced.yaml`:
+- Files > 15 MB skip High level (use `[fast, default, best]`)
+- Timeout raised from 3600 → 7200 s (balanced) and 600 → 14400 s (full)
+
+### A2: NASA .gz Exclusion
+Added `exclude_extensions: [".gz"]` to `corpus_nasa_logs.yaml` and
+implemented `exclude_extensions` support in `cpac.py` file collection logic.
+Pre-compressed `.gz` originals always benchmark at 1.00× and waste time.
+
+### A3: NASA Raw Log Timeouts (~180 MB files)
+Added `very_large_file_threshold_mb: 100` and
+`very_large_file_levels: [fast, best]` tier in both balanced and full
+profiles.  Files > 100 MB now skip Default/High levels entirely.
+
+### A4: Full Profile Hardening
+Updated `profile_full.yaml`: timeout 600 → 14400 s, added
+`large_file_levels`, `very_large_file_levels`, `large_file_iterations: 3`.
+
+### B1: MSN Loghub2_2k Mismatch Investigation
+7/14 loghub log files show SSR ≠ MSN compression ratios.  Investigation
+confirmed MSN genuinely improves ratio on structured logs (up to +10% on
+Thunderbird).  MSN has value for logs despite 78% throughput penalty.
+No code change — informational finding.
+
+### C1: YAML Inline-Comment Parser Bug
+`_parse_yaml_simple()` in `cpac.py` did not strip inline `#` comments from
+values.  A value like `[".gz"]  # comment` failed the `endswith("]")`
+check and was stored as a raw string instead of being parsed as a list.
+This broke `exclude_extensions`, `cpac_levels`, `large_file_levels`, and
+`very_large_file_levels` in all profiles.
+
+**Fix**: Added bracket-aware inline comment stripping (lines 290–302 of
+`cpac.py`).  Iterates through characters tracking bracket depth; when `#`
+is found at depth 0 preceded by a space, the value is truncated before the
+comment.
+
+### D1: AGENTS.md — Benchmark Naming Convention
+Added documentation: "full benchmark" = `--profile full`,
+"balanced benchmark" = default profile, "quick benchmark" = `--profile quick`.
+
+### Benchmark Results — Full Profile (776/776 OK)
+Ran `benchmark-all --profile full` after all fixes.  776/776 files OK,
+0 timeouts, 0 failures.  NASA corpus showed 4 files (2 raw logs + 2 .gz)
+because the YAML parser bug prevented `.gz` exclusion — fixed by C1.
+
+### Files Modified
+- `AGENTS.md` — benchmark naming convention
+- `benches/cpac/corpora/corpus_nasa_logs.yaml` — `exclude_extensions: [".gz"]`
+- `benches/cpac/profiles/profile_balanced.yaml` — timeout, large/very-large tiers
+- `benches/cpac/profiles/profile_full.yaml` — timeout, large/very-large tiers
+- `scripts/cpac.py` — `exclude_extensions` support, large/very-large file
+  level tiering, YAML inline-comment parser fix
+
+### Validation
+- Presubmit: `shell.ps1 presubmit` ✓
+- Full benchmark: 776/776 OK, 0 timeouts ✓
+
+---
+
 ## Session 29 — 2026-03-12 (v0.2.0 Release Readiness Sprint)
 
 ### Focus

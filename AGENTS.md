@@ -61,7 +61,7 @@ Available commands (via `scripts/cpac.py`):
 | `fmt` | `cargo fmt --all -- --check` |
 | `check` | clippy + fmt + test |
 | `bench` | run a single benchmark file |
-| `benchmark-all` | full corpus benchmark suite |
+| `benchmark-all` | profile-driven corpus benchmark suite (default: balanced) |
 | `benchmark-external` | compare CPAC vs zstd/brotli/lz4/gzip/xz/snappy on a corpus |
 | `criterion` | Criterion benchmarks |
 | `pgo-build` | PGO-optimised release build |
@@ -78,7 +78,9 @@ Examples:
 .\shell.ps1 test               # run tests
 .\shell.ps1 clippy             # lint
 .\shell.ps1 bench dickens      # benchmark one file
-.\shell.ps1 benchmark-all      # full benchmark suite
+.\shell.ps1 benchmark-all      # balanced benchmark (default profile)
+.\shell.ps1 benchmark-all --profile full    # full benchmark
+.\shell.ps1 benchmark-all --profile quick   # quick benchmark
 .\shell.ps1                    # interactive venv shell
 ```
 
@@ -115,6 +117,15 @@ Quick reference for frequently-used benchmark and development commands.
 All must go through `shell.ps1` / `shell.sh` (see Shell Execution Rule).
 
 ### Benchmarking
+
+**Naming convention for `benchmark-all` profiles** (corpus-wide suite):
+- "full benchmark" → `.\shell.ps1 benchmark-all --profile full`
+- "balanced benchmark" → `.\shell.ps1 benchmark-all` (or `--profile balanced`)
+- "quick benchmark" → `.\shell.ps1 benchmark-all --profile quick`
+
+Profiles live in `benches/cpac/profiles/`. Each profile specifies corpora,
+iterations, timeout, backend/level sets, and adaptive thresholds for large
+files. See `profile_balanced.yaml` for the canonical example.
 
 ```powershell
 # Quick benchmark (1 iteration, all 12 backends + matched baselines + Track 1+2)

@@ -287,6 +287,19 @@ def _parse_yaml_simple(path: pathlib.Path) -> dict:
         if ": " in stripped and not stripped.startswith(" "):
             key, val = stripped.split(": ", 1)
             key = key.strip()
+            # Strip trailing inline comments (" #" outside brackets/quotes)
+            if " #" in val:
+                # Find the comment boundary — naive split is safe for our
+                # YAML subset (no # inside values)
+                bracket_depth = 0
+                for ci, ch in enumerate(val):
+                    if ch == '[':
+                        bracket_depth += 1
+                    elif ch == ']':
+                        bracket_depth -= 1
+                    elif ch == '#' and bracket_depth == 0 and ci > 0 and val[ci - 1] == ' ':
+                        val = val[:ci - 1]
+                        break
             val = val.strip().strip("'\"")
             if val:
                 # Inline list: [a, b]
@@ -417,6 +430,9 @@ def cmd_benchmark_all(args: argparse.Namespace) -> None:
     # Backend / level configuration from profile YAML
     backends_list = profile.get("backends", [])  # e.g. [zstd, brotli, gzip, lzma, raw]
     cpac_levels = profile.get("cpac_levels", [])  # e.g. [fast, default, best]
+    large_file_levels = profile.get("large_file_levels", [])  # reduced levels for big files
+    very_large_threshold = int(profile.get("very_large_file_threshold_mb", 0)) * 1024 * 1024
+    very_large_levels = profile.get("very_large_file_levels", [])  # minimal levels for huge files
     discovery = str(profile.get("discovery", "false")).lower() in ("true", "1", "yes")
     # CLI overrides
     if args.skip_baselines:
@@ -466,10 +482,14 @@ def cmd_benchmark_all(args: argparse.Namespace) -> None:
                 missing_corpora.append(corpus_id)
                 continue
 
-            # Collect files from corpus directory
+            # Collect files from corpus directory, respecting exclude_extensions
+            exclude_exts = set(
+                corpus_cfg.get("exclude_extensions", [])
+            )
+            exclude_exts.add(".cpac")  # always skip .cpac
             files = sorted(
                 f for f in data_dir.rglob("*")
-                if f.is_file() and f.suffix != ".cpac"
+                if f.is_file() and f.suffix not in exclude_exts
             )
             if not files:
                 print(f"  WARNING: no files in {data_dir}, skipping")
@@ -490,10 +510,17 @@ def cmd_benchmark_all(args: argparse.Namespace) -> None:
                 size_kb = file_size / 1024
                 rel = f.relative_to(data_dir)
 
-                # Adaptive iterations: fewer for large files
+                # Adaptive iterations and levels: fewer for large files
                 file_iters = iterations
-                if large_file_threshold and file_size > large_file_threshold:
+                file_levels = cpac_levels
+                if very_large_threshold and file_size > very_large_threshold:
                     file_iters = large_file_iters
+                    if very_large_levels:
+                        file_levels = very_large_levels
+                elif large_file_threshold and file_size > large_file_threshold:
+                    file_iters = large_file_iters
+                    if large_file_levels:
+                        file_levels = large_file_levels
 
                 print(f"  {rel} ({size_kb:.1f} KB)...", end=" ", flush=True)
 
@@ -504,8 +531,8 @@ def cmd_benchmark_all(args: argparse.Namespace) -> None:
                     cmd.append("--skip-baselines")
                 if backends_list:
                     cmd.extend(["--backends", ",".join(str(b) for b in backends_list)])
-                if cpac_levels:
-                    cmd.extend(["--levels", ",".join(str(l) for l in cpac_levels)])
+                if file_levels:
+                    cmd.extend(["--levels", ",".join(str(l) for l in file_levels)])
                 if discovery:
                     cmd.append("--discovery")
 

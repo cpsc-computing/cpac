@@ -6,6 +6,7 @@ download_url:
   - ftp://ita.ee.lbl.gov/traces/NASA_access_log_Aug95.gz
 download_kind: http_gzip_multi
 target_subdir: logs/nasa
+exclude_extensions: [".gz"]          # skip pre-compressed originals (always 1.00x)
 license: Public domain - freely available for research
 citation: |
   NASA HTTP Server Logs, Internet Traffic Archive,
