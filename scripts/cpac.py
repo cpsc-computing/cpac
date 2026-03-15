@@ -94,6 +94,28 @@ CORPUS_DIR = REPO_ROOT / "benches" / "cpac" / "corpora"
 PROFILE_DIR = REPO_ROOT / "benches" / "cpac" / "profiles"
 
 
+def _safe_rglob_files(directory: pathlib.Path) -> list:
+    """Recursively list regular files, skipping symlinks and reparse points.
+
+    On Windows, Unix symlinks from tar archives (e.g. Alpine minirootfs)
+    become untrusted reparse points that raise OSError on stat().  This
+    helper silently skips those entries.
+    """
+    result = []
+    try:
+        for p in directory.rglob("*"):
+            try:
+                if p.is_symlink():
+                    continue
+                if p.is_file():
+                    result.append(p)
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -476,7 +498,7 @@ def cmd_benchmark_all(args: argparse.Namespace) -> None:
                 continue
 
             data_dir = corpus_data_dir(corpus_cfg)
-            if not data_dir.exists() or not any(data_dir.rglob("*")):
+            if not data_dir.exists() or not _safe_rglob_files(data_dir):
                 print(f"  WARNING: corpus '{corpus_id}' not downloaded ({data_dir}), skipping")
                 print(f"           Download with: shell.ps1 download-corpus --corpus {corpus_id}")
                 missing_corpora.append(corpus_id)
@@ -488,8 +510,8 @@ def cmd_benchmark_all(args: argparse.Namespace) -> None:
             )
             exclude_exts.add(".cpac")  # always skip .cpac
             files = sorted(
-                f for f in data_dir.rglob("*")
-                if f.is_file() and f.suffix not in exclude_exts
+                f for f in _safe_rglob_files(data_dir)
+                if f.suffix not in exclude_exts
             )
             if not files:
                 print(f"  WARNING: no files in {data_dir}, skipping")
@@ -1318,6 +1340,64 @@ def _download_single_corpus(corpus_id: str, target_dir: pathlib.Path) -> None:
                         zf.extractall(dest)
                 finally:
                     tmp.unlink(missing_ok=True)
+        elif kind == "http_targz" and len(urls) > 1:
+            # Multiple tar.gz URLs — download and extract each
+            for i, url in enumerate(urls, 1):
+                filename = url.split("?")[0].split("/")[-1]
+                print(f"  [{i}/{len(urls)}] {filename}")
+                tmp = pathlib.Path(tempfile.mktemp(suffix=".tar.gz"))
+                _download_file(url, tmp)
+                print(f"    Extracting TAR.GZ...")
+                try:
+                    subprocess.run(["tar", "-xzf", str(tmp), "-C", str(dest)], check=True)
+                finally:
+                    tmp.unlink(missing_ok=True)
+        elif kind == "http_gzip_multi":
+            # Multiple .gz URLs — download and decompress each
+            import gzip as _gz
+            for i, url in enumerate(urls, 1):
+                filename = url.split("?")[0].split("/")[-1]
+                # Strip .gz suffix for the output filename
+                out_name = filename[:-3] if filename.endswith(".gz") else filename
+                out_path = dest / out_name
+                print(f"  [{i}/{len(urls)}] {filename} -> {out_name}")
+                tmp = pathlib.Path(tempfile.mktemp(suffix=".gz"))
+                _download_file(url, tmp)
+                print(f"    Decompressing...")
+                try:
+                    with _gz.open(tmp, "rb") as gz_in:
+                        with out_path.open("wb") as f_out:
+                            shutil.copyfileobj(gz_in, f_out)
+                finally:
+                    tmp.unlink(missing_ok=True)
+        elif kind == "http_zip_nested":
+            # Single ZIP containing nested ZIPs — extract outer, then inner
+            import zipfile as _zf
+            url = urls[0]
+            print(f"  Downloading: {url}")
+            tmp = pathlib.Path(tempfile.mktemp(suffix=".zip"))
+            _download_file(url, tmp)
+            print("  Extracting outer ZIP...")
+            try:
+                with _zf.ZipFile(tmp) as zf:
+                    zf.extractall(dest)
+            finally:
+                tmp.unlink(missing_ok=True)
+            # Find and extract nested ZIPs
+            nested_zips = list(dest.rglob("*.zip"))
+            if nested_zips:
+                print(f"  Extracting {len(nested_zips)} nested ZIPs...")
+                for i, nz in enumerate(nested_zips, 1):
+                    nz_dest = nz.parent / nz.stem
+                    nz_dest.mkdir(parents=True, exist_ok=True)
+                    try:
+                        with _zf.ZipFile(nz) as zf:
+                            zf.extractall(nz_dest)
+                        nz.unlink(missing_ok=True)
+                        if (i % 5) == 0 or i == len(nested_zips):
+                            print(f"    [{i}/{len(nested_zips)}] extracted")
+                    except _zf.BadZipFile:
+                        print(f"    WARNING: {nz.name} is not a valid ZIP, skipping")
         elif len(urls) > 1 or kind == "http_file_multi":
             for i, url in enumerate(urls, 1):
                 filename = url.split("?")[0].split("/")[-1]
@@ -1346,8 +1426,9 @@ def _download_single_corpus(corpus_id: str, target_dir: pathlib.Path) -> None:
                 filename = url.split("?")[0].split("/")[-1]
                 _download_file(url, dest / filename)
 
-        file_count = sum(1 for f in dest.rglob("*") if f.is_file())
-        total_mb = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file()) / (1024 * 1024)
+        safe_files = _safe_rglob_files(dest)
+        file_count = len(safe_files)
+        total_mb = sum(f.stat().st_size for f in safe_files) / (1024 * 1024)
         print(f"  Done: {file_count} files, {total_mb:.1f} MB\n")
 
     except Exception as e:
@@ -1387,9 +1468,9 @@ def cmd_download_corpus(args: argparse.Namespace) -> None:
     if target_dir.exists():
         for d in sorted(target_dir.iterdir()):
             if d.is_dir():
-                files = list(d.rglob("*"))
-                fc = sum(1 for f in files if f.is_file())
-                mb = sum(f.stat().st_size for f in files if f.is_file()) / (1024 * 1024)
+                files = _safe_rglob_files(d)
+                fc = len(files)
+                mb = sum(f.stat().st_size for f in files) / (1024 * 1024)
                 print(f"  {d.name:<22} {mb:>8.1f} MB   {fc} files")
 
 

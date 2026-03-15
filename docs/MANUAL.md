@@ -1,6 +1,6 @@
 # CPAC User Manual
 
-**Version**: 0.1.0
+**Version**: 0.3.0
 **Copyright (c) 2026 BitConcepts, LLC. All rights reserved.**
 **License**: LicenseRef-CPAC-Research-Evaluation-1.0
 
@@ -14,7 +14,7 @@ engine that adapts its pipeline to the structure of your data. It combines:
 - **Structural analysis** (SSR) — lightweight heuristic gating in <1 ms
 - **Semantic extraction** (MSN) — domain-aware normalization for JSON, CSV, XML, logs, and more
 - **27 composable transforms** — delta, zigzag, transpose, ROLZ, tokenize, dedup, and others
-- **Multiple entropy backends** — Zstd, Brotli, Gzip, LZMA, Raw
+- **12 entropy backends** — Zstd, Brotli, Gzip, LZMA, XZ, LZ4, Snappy, LZHAM, Lizard, zlib-ng, OpenZL, Raw
 - **Post-quantum encryption** — X25519 + ML-KEM-768 hybrid (FIPS 203), ML-DSA-65 signatures (FIPS 204)
 - **Hardware acceleration** — Intel QAT/IAA, AMD Xilinx FPGA, GPU compute, ARM SVE2
 - **Parallel block compression** — scales across all CPU cores
@@ -96,7 +96,7 @@ cpac compress [OPTIONS] <INPUT>
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-o, --output` | Output path (or `-` for stdout) | `<input>.cpac` |
-| `-b, --backend` | Entropy backend: `raw`, `zstd`, `brotli`, `gzip`, `lzma` | auto |
+| `-b, --backend` | Entropy backend (see §6 for all 12) | auto |
 | `-f, --force` | Overwrite existing output | off |
 | `-r, --recursive` | Recurse into directories | off |
 | `-v` | Verbosity (`-v`, `-vv`, `-vvv`) | quiet |
@@ -329,19 +329,30 @@ cpac compress --preset archive --backend zstd data.bin
 
 ## 6. Entropy Backends
 
+CPAC ships 12 entropy backends. SSR analysis auto-selects when none is specified.
+
 | Backend | Best For | Ratio | Speed |
 |---------|----------|-------|-------|
 | `zstd` | General purpose, fast decompression | Good | Fast |
 | `brotli` | Maximum ratio, web content | Best | Moderate |
 | `gzip` | Compatibility, interop | OK | Moderate |
 | `lzma` | High ratio, archival | Very Good | Slow |
+| `xz` | Archival, LZMA2 with standardized container | Very Good | Slow |
+| `lz4` | Maximum throughput, real-time | Low | Very Fast |
+| `snappy` | Lowest latency, hot-path data | Low | Very Fast |
+| `lzham` | High-ratio archival, offline | Very Good | Slow |
+| `lizard` | Tunable speed/ratio (4 modes) | Good | Fast–Moderate |
+| `zlib-ng` | gzip-compatible, optimized engine | OK | Moderate |
+| `openzl` | Datacenter workloads (delegates to Zstd) | Good | Fast |
 | `raw` | Testing, pre-compressed data | 1:1 | Instant |
-
-CPAC's SSR analysis automatically selects the optimal backend if none is specified.
 
 ---
 
 ## 7. Multi-Scale Normalization (MSN)
+
+> **MSN is disabled by default.** Use `--enable-msn` to opt in. MSN is most
+> beneficial on structured/repetitive data (JSON, CSV, logs). For binary or
+> pre-compressed data it adds overhead with no gain.
 
 MSN extracts domain-specific patterns before entropy coding, dramatically improving
 ratio on structured data.

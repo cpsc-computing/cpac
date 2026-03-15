@@ -49,9 +49,9 @@ CPAC will support a **transcode compression** mode for compressed media:
 
 ### Phases
 
-- **Phase 1 — Lossless image formats**: PNG, BMP, TIFF, lossless WebP.
-  Decode to pixel buffer, compress with byte-plane + delta + zstd. Expected
-  10–30% improvement over original PNG.
+- **Phase 1 — Lossless image formats**: ✅ **Done** (cpac-transcode crate).
+  PNG, BMP, TIFF, lossless WebP. Decode to pixel buffer, compress with
+  byte-plane + delta + zstd.
 - **Phase 2 — Lossless audio**: FLAC, ALAC, WAV. Decode to PCM, compress
   with delta + float-split + zstd. Expected 5–15% improvement.
 - **Phase 3 — Lossy image formats**: JPEG, WebP lossy. Transcode via DCT
@@ -144,8 +144,9 @@ To enable extensibility without requiring changes to core CPAC:
 
 ### Phases
 
-- **Phase 1 — CLI auto-analyze**: `cpac auto-analyze <dir>` runs the full
-  pipeline and produces a Markdown report + YAML config. No plugins yet.
+- **Phase 1 — CLI auto-analyze**: ✅ **Done** (cpac-lab crate,
+  `auto_analyze` module). `cpac auto-analyze <dir>` runs the full pipeline
+  and produces a Markdown report + YAML config.
 - **Phase 2 — Recommendation engine**: Suggestions for new MSN domains,
   dictionary training, transform chains. Includes "what-if" estimates.
 - **Phase 3 — Plugin system**: `CpacPlugin` trait, dynamic loading,

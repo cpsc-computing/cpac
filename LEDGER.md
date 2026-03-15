@@ -2,6 +2,77 @@
 
 Session-by-session record of significant changes, investigations, and decisions.
 
+## Session 31 — 2026-03-15 (Documentation Overhaul + Corpus Download Fixes)
+
+### Focus
+Comprehensive documentation overhaul: bring all 9 maintained docs up to date
+with the current v0.3.0 codebase (21 crates, 12 backends, 26 transforms,
+MSN disabled by default).  Also fix corpus download handlers and Windows
+symlink enumeration in `cpac.py`.
+
+### Documentation Updates (9 files)
+
+1. **README.md** — Stripped all inline benchmark tables; added link to
+   `docs/BENCHMARKING.md`.  Updated crate count 16→21, features (12 backends,
+   26+ transforms, MSN opt-in).  Removed stale "Completed/Planned Features".
+
+2. **docs/BENCHMARKING.md** — Removed Sessions 11–20 historical results; kept
+   Session 21 as latest comprehensive benchmark.  Added Session 22–30
+   infrastructure notes.  Full corpora table (17 corpora with sizes).  Updated
+   download commands to `--profile full`.
+
+3. **docs/ARCHITECTURE.md** — v0.3.0 header, accurate 21-crate tree with new
+   crates (cpac-lab, cpac-conditioning, cpac-predict, cpac-transcode, sys
+   crates), 12 backends in pipeline diagram.  Removed stale v0.2.0/v0.3.0
+   roadmap.  Updated references section.
+
+4. **docs/MANUAL.md** — v0.3.0 header.  Expanded §6 Entropy Backends from 5
+   to 12 with full table.  Added MSN-disabled-by-default callout in §7.
+   Updated `--backend` help text.
+
+5. **docs/MSN_GUIDE.md** — Added prominent opt-in notice at top.  Updated
+   version history: 19 domain handlers, u32 metadata, MSN off by default.
+
+6. **docs/MSN_SPEC.md** — Fixed `msn_metadata_len` from u16 (2 bytes) to u32
+   (4 bytes) matching code (`cpac-frame/src/lib.rs`).  CP2 minimum header now
+   correctly documented as 16 bytes.  Added `FLAG_MSN_INLINE` (0x0001).
+   Updated backend ID range 0x00–0x0B.
+
+7. **docs/RELEASE.md** — v0.3.0 examples throughout.  Updated crate publish
+   order from 15 to 21 crates (added sys crates, cpac-conditioning,
+   cpac-predict, cpac-lab, cpac-transcode).
+
+8. **docs/SPEC.md** — v1.1.  All 12 backend IDs (0x00–0x0B).  All 26
+   transform IDs corrected to match `cpac-transforms` source (old SPEC had
+   wrong ID assignments for Delta/ZigZag/Transpose/etc.).
+
+9. **docs/ROADMAP.md** — Marked transcode Phase 1 (cpac-transcode crate) and
+   auto-analysis Phase 1 (cpac-lab auto_analyze module) as done.
+
+### Corpus Download Fixes (scripts/cpac.py)
+
+- Fixed `http_targz` handler for multi-URL corpora (docker_layers)
+- Fixed `http_gzip_multi` handler (github_events_large)
+- Fixed `http_zip_nested` handler (loghub2_full)
+- Added `_safe_rglob_files()` helper to skip Windows symlinks/reparse points
+  (Alpine minirootfs untrusted reparse points caused WinError 448)
+- Applied safe enumeration to benchmark file collection, download summary,
+  and "already present" check
+
+### Files Modified
+- `README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/BENCHMARKING.md`
+- `docs/MANUAL.md`
+- `docs/MSN_GUIDE.md`
+- `docs/MSN_SPEC.md`
+- `docs/RELEASE.md`
+- `docs/ROADMAP.md`
+- `docs/SPEC.md`
+- `scripts/cpac.py`
+
+---
+
 ## Session 30 — 2026-03-15 (Benchmark Infrastructure Fixes + YAML Parser Bug)
 
 ### Focus

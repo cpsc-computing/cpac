@@ -23,8 +23,8 @@ Create and push a version tag:
 ```bash
 # Update version in all Cargo.toml files (if needed)
 # Then create and push the tag:
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 The GitHub Actions workflow will automatically:
@@ -60,14 +60,14 @@ Each platform build:
 
 ### Artifacts Generated
 
-For release `v0.1.0`, the following files are created:
+For release `v0.3.0`, the following files are created:
 
 ```
-cpac-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-cpac-v0.1.0-aarch64-unknown-linux-gnu.tar.gz
-cpac-v0.1.0-x86_64-apple-darwin.tar.gz
-cpac-v0.1.0-aarch64-apple-darwin.tar.gz
-cpac-v0.1.0-x86_64-pc-windows-msvc.zip
+cpac-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
+cpac-v0.3.0-aarch64-unknown-linux-gnu.tar.gz
+cpac-v0.3.0-x86_64-apple-darwin.tar.gz
+cpac-v0.3.0-aarch64-apple-darwin.tar.gz
+cpac-v0.3.0-x86_64-pc-windows-msvc.zip
 checksums.txt
 ```
 
@@ -98,20 +98,26 @@ To enable automatic crates.io publishing:
 Crates are published in dependency order with 30-second delays to allow crates.io indexing:
 
 1. `cpac-types`
-2. `cpac-ssr`
-3. `cpac-transforms`
-4. `cpac-entropy`
-5. `cpac-frame`
-6. `cpac-dag`
-7. `cpac-crypto`
-8. `cpac-dict`
-9. `cpac-engine`
-10. `cpac-streaming`
-11. `cpac-archive`
-12. `cpac-cas`
-13. `cpac-domains`
-14. `cpac-ffi`
-15. `cpac-cli`
+2. `cpac-lzham-sys`
+3. `cpac-lizard-sys`
+4. `cpac-ssr`
+5. `cpac-transforms`
+6. `cpac-entropy`
+7. `cpac-frame`
+8. `cpac-dag`
+9. `cpac-crypto`
+10. `cpac-dict`
+11. `cpac-conditioning`
+12. `cpac-predict`
+13. `cpac-engine`
+14. `cpac-streaming`
+15. `cpac-archive`
+16. `cpac-cas`
+17. `cpac-domains`
+18. `cpac-lab`
+19. `cpac-transcode`
+20. `cpac-ffi`
+21. `cpac-cli`
 
 ## Version Management
 
@@ -121,7 +127,7 @@ Update the version in `Cargo.toml` workspace:
 
 ```toml
 [workspace.package]
-version = "0.1.1"  # Change this
+version = "0.3.0"  # Change this
 ```
 
 All workspace crates inherit this version, so you only need to update it once.
@@ -292,5 +298,5 @@ Ensure license terms are acceptable before publishing to public repositories.
 
 ---
 
-**Last Updated**: 2026-03-03  
-**Workflow Version**: 1.0
+**Last Updated**: 2026-03-15  
+**Workflow Version**: 1.1

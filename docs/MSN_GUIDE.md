@@ -1,5 +1,9 @@
 # MSN User Guide
 
+> **MSN is disabled by default since v0.3.0.** Pass `--enable-msn` to opt in.
+> MSN is most beneficial on large, repetitive structured data (JSON, CSV,
+> XML, logs). For binary or pre-compressed data it adds overhead with no gain.
+
 Multi-Scale Normalization (MSN) is an optional compression enhancement that extracts semantic structure from structured data formats (JSON, CSV, XML, logs, etc.) to achieve higher compression ratios.
 
 ## Table of Contents
@@ -413,13 +417,7 @@ cpac compress --enable-msn --recursive data/
 ## Version History
 
 ### v1 (Current)
-- Initial MSN implementation
-- 11 domain handlers
+- MSN implementation with 19 domain handlers
 - JSON-serialized metadata
-- CP2 frame format
-
-### Planned (v2)
-- Compressed metadata section
-- Additional domain handlers (Parquet, Avro)
-- Streaming MSN support
-- Dictionary learning across chunks
+- CP2 frame format (`msn_metadata_len` is u32 — supports metadata up to 4 GiB)
+- MSN disabled by default; opt-in via `--enable-msn`

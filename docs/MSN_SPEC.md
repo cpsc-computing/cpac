@@ -11,14 +11,14 @@ Offset  Size  Field
 ------  ----  -----
 0       2     Magic: "CP" (0x43 0x50)
 2       1     Version: 0x02 (CP2)
-3       2     Flags (little-endian u16)
-5       1     Backend ID (0=Raw, 1=Zstd, 2=Brotli, 3=Gzip, 4=Lzma)
+3       2     Flags (little-endian u16)  [0x0001 = FLAG_MSN_INLINE]
+5       1     Backend ID (0x00–0x0B, see SPEC.md §9)
 6       4     Original size (little-endian u32)
 10      2     DAG descriptor length (little-endian u16)
-12      2     MSN metadata length (little-endian u16)
-14      N     DAG descriptor (N bytes, from offset 10)
-14+N    M     MSN metadata (M bytes, from offset 12)
-14+N+M  ...   Compressed payload
+12      4     MSN metadata length (little-endian u32)
+16      N     DAG descriptor (N bytes)
+16+N    M     MSN metadata (M bytes)  [omitted when FLAG_MSN_INLINE]
+16+N+M  ...   Compressed payload
 ```
 
 ## MSN Metadata Format
@@ -100,10 +100,13 @@ MSN Reconstruct: MsnMetadata + Residual → Original Data
 
 ### Version 1 (Current)
 
-- Initial MSN format
-- JSON-serialized metadata
-- Support for 11 domain handlers:
-  - Text: JSON, CSV, XML, YAML
+- MSN metadata stored as raw JSON (uncompressed) or inline (compressed with
+  payload when `FLAG_MSN_INLINE` is set)
+- `msn_metadata_len` is **u32** (supports metadata up to 4 GiB; previously u16
+  which silently truncated at 65 535 bytes)
+- CP2 minimum header: **16 bytes** (12 B base + 4 B MSN length)
+- 19 domain handlers:
+  - Text: JSON, CSV, XML, YAML, and more
   - Binary: MessagePack, CBOR, Protobuf
   - Logs: Syslog, Apache, JSON Log, Passthrough
 

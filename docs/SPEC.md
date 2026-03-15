@@ -1,6 +1,6 @@
 # CPAC Wire Format Specification
 
-Version: 1.0
+Version: 1.1
 Copyright (c) 2026 BitConcepts, LLC. All rights reserved.
 
 Commercial licensing: info@bitconcepts.tech
@@ -32,7 +32,14 @@ Minimum header: 12 bytes.
 - `0x01` — Zstd
 - `0x02` — Brotli
 - `0x03` — Gzip (RFC 1952, deflate)
-- `0x04` — LZMA (xz format)
+- `0x04` — LZMA (raw LZMA stream)
+- `0x05` — XZ (LZMA2, XZ container)
+- `0x06` — LZ4
+- `0x07` — Snappy
+- `0x08` — LZHAM
+- `0x09` — Lizard
+- `0x0A` — zlib-ng
+- `0x0B` — OpenZL (delegates to Zstd)
 
 ### DAG Descriptor
 
@@ -83,19 +90,34 @@ Offset  Size  Field
 
 ### Transform IDs (TP frame)
 
-CPAC supports 11 transforms with SIMD acceleration:
+CPAC supports 26 transforms with SIMD acceleration on select kernels:
 
-- `0x01` — Delta (params: stride as LE u16)
-- `0x02` — ZigZag (params: none)
-- `0x03` — Transpose (params: element_width as LE u16)
+- `0x01` — Transpose (params: element_width as LE u16)
+- `0x02` — FloatSplit (params: none, self-framed)
+- `0x03` — FieldLZ (params: none, self-framed)
 - `0x04` — ROLZ (params: none, self-framed)
-- `0x05` — FloatSplit (params: none, self-framed)
-- `0x06` — FieldLZ (params: none, self-framed)
+- `0x05` — Delta (params: stride as LE u16)
+- `0x06` — ZigZag (params: none)
 - `0x07` — RangePack (params: min, max as LE u64)
 - `0x08` — Tokenize (params: none, self-framed)
 - `0x09` — PrefixStrip (params: prefix_len as LE u16)
 - `0x0A` — Dedup (params: none, self-framed)
 - `0x0B` — ParseInt (params: none, self-framed)
+- `0x0C` — BytePlane (params: none, self-framed)
+- `0x0D` — Vocab (params: none, self-framed)
+- `0x0E` — RLE (params: none, self-framed)
+- `0x0F` — FloatXor (params: none, self-framed)
+- `0x10` — RowSort (params: none, self-framed)
+- `0x11` — Normalize (params: none, self-framed)
+- `0x12` — BwtChain (SA-IS BWT, params: none, self-framed)
+- `0x13` — ContextSplit (params: none, self-framed)
+- `0x14` — ArithDecomp (params: none, self-framed)
+- `0x15` — ConstElim (params: none, self-framed)
+- `0x16` — StrideElim (params: none, self-framed)
+- `0x17` — Condition (params: none, self-framed)
+- `0x18` — Predict (params: none, self-framed)
+- `0x19` — Projection (params: none, self-framed)
+- `0x1A` — ConditionedBwt (params: none, self-framed)
 
 SIMD runtime dispatch (best to worst): AVX-512 → AVX2 → SSE4.1 → SSE2 → NEON → scalar
 
@@ -252,7 +274,7 @@ Automatic corpus management (`crates/cpac-engine/src/corpus.rs`):
 
 ## 9. Compression Backends
 
-CPAC supports five entropy coding backends:
+CPAC supports 12 entropy coding backends:
 
 ### Zstd (Backend ID: 0x01)
 
@@ -387,5 +409,6 @@ Used by transform auto-selection and RangePack transform.
 
 ## Version History
 
-- v1.0 (2026-03-02) — Comprehensive specification with all features, backends,
-  transforms, testing infrastructure, performance tools, corpus management
+- v1.1 (2026-03-15) — 26 transforms, 12 backends, corrected transform IDs to
+  match `cpac-transforms` source, added Backend IDs 0x05–0x0B
+- v1.0 (2026-03-02) — Initial comprehensive specification

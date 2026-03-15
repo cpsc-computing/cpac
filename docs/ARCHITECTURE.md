@@ -1,16 +1,16 @@
 # CPAC Architecture
 
-**Version**: 0.1.0 (Rust Implementation)  
-**Date**: March 3, 2026  
-**Status**: SSR + MSN fully implemented, CP2 frame format available
+**Version**: 0.3.0  
+**Date**: March 2026  
+**Status**: 21-crate workspace, 12 entropy backends, 26+ transforms, MSN disabled by default, CPBL v1/v2/v3 parallel formats
 
 ## Executive Summary
 
 CPAC (Content-Preserving Adaptive Compression) is a multi-stage compression pipeline that combines:
 - **SSR (Structural Summary Record)**: Lightweight heuristic analysis for track selection
-- **MSN (Multi-Scale Normalization)**: Domain-specific semantic extraction for structured data
-- **Generic Transforms**: Delta, zigzag, transpose, ROLZ
-- **Entropy Backends**: Zstd, Brotli, Gzip, Lzma, Raw
+- **MSN (Multi-Scale Normalization)**: Domain-specific semantic extraction for structured data (opt-in)
+- **26+ Transforms**: BWT (SA-IS), delta, zigzag, transpose, ROLZ, normalize, conditioned-BWT, predict, byte-plane, and more
+- **12 Entropy Backends**: Zstd, Brotli, Gzip, LZMA, XZ, LZ4, Snappy, LZHAM, Lizard, zlib-ng, OpenZL, Raw
 
 ## High-Level Pipeline
 
@@ -65,12 +65,10 @@ Input Data (bytes)
                    ▼
 ┌──────────────────────────────────────────┐
 │  Stage 3: Entropy Coding                 │
-│  (cpac-entropy)                          │
-│  • Zstd (fast, 5-15x)                    │
-│  • Brotli (max compression, 7-25x)       │
-│  • Gzip (ubiquitous, 2-18x)              │
-│  • Lzma (high ratio, 1.7-2.7x)           │
-│  • Raw (passthrough, 1.0x)               │
+│  (cpac-entropy) — 12 backends            │
+│  • Zstd, Brotli, Gzip, LZMA, XZ         │
+│  • LZ4, Snappy, LZHAM, Lizard           │
+│  • zlib-ng, OpenZL, Raw                  │
 └──────────────────┬───────────────────────┘
                    │
                    ▼
@@ -137,42 +135,33 @@ pub struct MsnResult {
 
 No overlap, no conflict. SSR is the cheap filter, MSN is the expensive extractor.
 
-## Current Implementation Status
-
-### ✅ Implemented in Rust
-- **cpac-ssr**: SSR analysis (entropy, ASCII ratio, domain hints)
-- **cpac-msn**: Multi-Scale Normalization with 10 domain handlers
-  - Text: JSON, CSV, XML
-  - Binary: MessagePack, CBOR, Protobuf
-  - Logs: Syslog, Apache, JSON Log
-  - Passthrough (Track 2)
-- **cpac-transforms**: Delta, zigzag, transpose, ROLZ
-- **cpac-entropy**: Zstd, Brotli, Gzip, Lzma, Raw backends
-- **cpac-frame**: CP (v1), CP2 (v2 with MSN), and CPBL frame formats
-- **cpac-engine**: Main compression pipeline with MSN integration
-- **cpac-cli**: Command-line interface with --enable-msn flag
-
-## Crate Architecture
+## Crate Architecture (21 crates)
 
 ```
 cpac/
-├─── crates/
-│   ├─── cpac-types/          # Shared types, traits, errors
-│   ├─── cpac-ssr/            # ✅ Structural Summary Record
-│   ├─── cpac-msn/            # ✅ Multi-Scale Normalization
-│   ├── cpac-transforms/     # ✅ Generic transforms (delta, zigzag, etc.)
-│   ├── cpac-entropy/        # ✅ Entropy backends (Zstd, Brotli, etc.)
-│   ├── cpac-frame/          # ✅ Frame encoding/decoding
-│   ├── cpac-engine/         # ✅ Main compression pipeline
-│   ├── cpac-streaming/      # ✅ Streaming compression
-│   ├── cpac-archive/        # ✅ Archive format (.cpac)
-│   ├── cpac-crypto/         # ✅ Encryption/signing
-│   ├── cpac-dag/            # ✅ Transform DAG composition
-│   ├── cpac-dict/           # ✅ Dictionary training
-│   ├── cpac-cas/            # ✅ CAS-YAML modeling
-│   ├── cpac-domains/        # ✅ Domain-specific logic
-│   ├── cpac-cli/            # ✅ Command-line interface
-│   └── cpac-ffi/            # ✅ C FFI bindings
+├── crates/
+│   ├── cpac-types/           # Shared types, traits, errors
+│   ├── cpac-ssr/             # Structural Summary Record
+│   ├── cpac-msn/             # Multi-Scale Normalization (19 domain handlers)
+│   ├── cpac-transforms/      # 26+ transforms + SIMD kernels
+│   ├── cpac-entropy/         # 12 entropy backends
+│   ├── cpac-frame/           # Frame encoding/decoding
+│   ├── cpac-engine/          # Main compression pipeline + parallel
+│   ├── cpac-streaming/       # Streaming compression
+│   ├── cpac-archive/         # Archive format (.cpar)
+│   ├── cpac-crypto/          # Encryption/signing (AEAD + PQC)
+│   ├── cpac-dag/             # Transform DAG composition + profiles
+│   ├── cpac-dict/            # Dictionary training (Zstd)
+│   ├── cpac-cas/             # Constraint-Aware Schema inference
+│   ├── cpac-domains/         # Domain-specific logic
+│   ├── cpac-lab/             # Benchmarking, calibration, auto-analysis
+│   ├── cpac-conditioning/    # Data conditioning / partitioning
+│   ├── cpac-predict/         # Prediction transforms
+│   ├── cpac-transcode/       # Lossless image transcode (CPTC)
+│   ├── cpac-lizard-sys/      # Lizard C library sys crate
+│   ├── cpac-lzham-sys/       # LZHAM C library sys crate
+│   ├── cpac-cli/             # Command-line interface (clap)
+│   └── cpac-ffi/             # C/C++ FFI bindings
 ```
 
 ## Frame Formats
@@ -242,47 +231,17 @@ MSN Metadata (JSON):
 
 **Gap Explanation**: MSN extracts repeated semantic patterns that generic compressors miss.
 
-## Roadmap
-
-### v0.1.0 (March 3, 2026)
-- ✅ Complete Rust implementation with MSN
-- ✅ SSR track selection
-- ✅ MSN with 10 domain handlers (JSON, CSV, XML, logs, binary)
-- ✅ CP2 frame format with MSN metadata
-- ✅ Generic transforms
-- ✅ 5 entropy backends
-- ✅ Parallel compression (CPBL)
-- ✅ CLI `--enable-msn` flag
-- ✅ Benchmarking infrastructure
-
-### v0.2.0 (Planned)
-- [ ] MSN performance optimization
-- [ ] Additional domain handlers (Parquet, Avro, etc.)
-- [ ] Adaptive MSN confidence thresholds
-- [ ] MSN benchmarks vs Python implementation
-
-### v0.3.0 (Future)
-- [ ] MSN enabled by default for Track1
-- [ ] Production validation
-- [ ] Fuzzing (100M+ iterations)
-- [ ] Domain-specific compression tuning
-
-### v1.0.0 (Full Parity)
-- [ ] Feature-complete with Python
-- [ ] Performance equal or better
-- [ ] MSN standard feature
-- [ ] Full documentation
-
 ## References
 
 - **SSR Implementation**: `crates/cpac-ssr/src/lib.rs`
-- **Python MSN**: `../cpac-engine-python/src/cpac/core/msn.py`
-- **MSN Plan**: See Warp plan "MSN Integration Architecture & Rust Port Plan"
-- **Benchmark Results**: `BENCHMARKING.md`
+- **Transform Inventory**: `docs/TRANSFORMS.md`
+- **Wire Format Spec**: `docs/SPEC.md`
+- **Benchmark Results**: `docs/BENCHMARKING.md`
+- **Feature Roadmap**: `docs/ROADMAP.md`
 
 ## See Also
 
-- `CONTRIBUTING.md` - Development guidelines
-- `BENCHMARKING.md` - Performance benchmarks
-- `README.md` - Project overview
-- `.github/BRANCH_RULESETS.md` - GitFlow workflow
+- `README.md` — Project overview
+- `CONTRIBUTING.md` — Development guidelines
+- `docs/BENCHMARKING.md` — Performance benchmarks
+- `docs/MANUAL.md` — User manual and CLI reference
